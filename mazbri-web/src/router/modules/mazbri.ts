@@ -95,6 +95,7 @@ export const mazbriRoutes: AppRouteRecord[] = [
           title: "upstreamConnector.workbenchTitle",
           icon: "ri:plug-line",
           isHide: true,
+          isFullPage: true,
           activePath: "/operations/upstream-supply",
           keepAlive: false,
           // 财务 / 观察者可只读打开；写与发布由 UI + API 限为 R_ADMIN。

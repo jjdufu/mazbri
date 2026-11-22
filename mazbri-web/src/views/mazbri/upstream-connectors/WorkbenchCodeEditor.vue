@@ -1,23 +1,26 @@
 <template>
   <div class="wb-code" :class="{ 'is-fill': fill, 'is-readonly': readonly }">
-    <div v-if="showToolbar" class="wb-code__bar" :title="langLabel">
+    <div v-if="showToolbar" class="wb-code__bar">
+      <span class="wb-code__lang">{{ displayLang }}</span>
       <div class="wb-code__actions">
         <button
-          v-if="!readonly && langLabel === 'JSON'"
+          v-if="!readonly && isJsonLang"
           type="button"
-          class="wb-code__icon"
+          class="wb-code__btn"
           :title="$t('upstreamConnector.formatJson')"
           @click="format"
         >
           <ArtSvgIcon icon="ri:magic-line" />
+          <span>{{ $t("upstreamConnector.formatShort") }}</span>
         </button>
         <button
           type="button"
-          class="wb-code__icon"
+          class="wb-code__btn"
           :title="$t('common.actions.copy')"
           @click="copy"
         >
           <ArtSvgIcon icon="ri:file-copy-line" />
+          <span>{{ $t("common.actions.copy") }}</span>
         </button>
       </div>
     </div>
@@ -35,14 +38,28 @@
 </template>
 
 <script setup lang="ts">
-import { copyWithFeedback } from "@/utils/ui/copy-feedback";
 import { Codemirror } from "vue-codemirror";
-import { StreamLanguage } from "@codemirror/language";
-import { json as jsonMode, javascript } from "@codemirror/legacy-modes/mode/javascript";
-import { xml as xmlMode } from "@codemirror/legacy-modes/mode/xml";
-import { drawSelection, EditorView } from "@codemirror/view";
-import { EditorState } from "@codemirror/state";
+import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
+import { json } from "@codemirror/lang-json";
+import { xml } from "@codemirror/lang-xml";
+import {
+  HighlightStyle,
+  bracketMatching,
+  syntaxHighlighting,
+} from "@codemirror/language";
+import { EditorState, type Extension } from "@codemirror/state";
+import {
+  EditorView,
+  drawSelection,
+  highlightActiveLine,
+  highlightActiveLineGutter,
+  keymap,
+  lineNumbers,
+} from "@codemirror/view";
+import { tags } from "@lezer/highlight";
 import { $t } from "@/locales";
+import { useSettingStore } from "@/store/modules/setting";
+import { copyWithFeedback } from "@/utils/ui/copy-feedback";
 import { prettyJson } from "./workbenchHelpers";
 
 const props = withDefaults(
@@ -53,7 +70,7 @@ const props = withDefaults(
     height?: string;
     showToolbar?: boolean;
     placeholder?: string;
-    langLabel?: "JSON" | "XML" | "GraphQL" | string;
+    langLabel?: "JSON" | "XML" | "GraphQL" | "TEXT" | string;
   }>(),
   {
     readonly: false,
@@ -69,6 +86,7 @@ const emit = defineEmits<{
   "update:modelValue": [string];
 }>();
 
+const settingStore = useSettingStore();
 const local = ref(props.modelValue || "");
 
 watch(
@@ -78,53 +96,118 @@ watch(
   },
 );
 
-function languageMode() {
-  if (props.langLabel === "TEXT") return null;
-  if (props.langLabel === "XML") return xmlMode;
-  if (props.langLabel === "JSON") return jsonMode;
-  return javascript;
+const normalizedLang = computed(() =>
+  (props.langLabel || "JSON").trim().toUpperCase(),
+);
+
+const isJsonLang = computed(() => normalizedLang.value === "JSON");
+
+const displayLang = computed(() => {
+  if (normalizedLang.value === "TEXT") return "RAW TEXT";
+  return props.langLabel || "JSON";
+});
+
+function languageExtension(): Extension {
+  if (normalizedLang.value === "JSON") return json();
+  if (normalizedLang.value === "XML") return xml();
+  return [];
 }
 
-const extensions = computed(() => {
-  const mode = languageMode();
+function buildSyntaxHighlight(dark: boolean): Extension {
+  const style = HighlightStyle.define(
+    dark
+      ? [
+          { tag: tags.propertyName, color: "#79c0ff" },
+          { tag: tags.string, color: "#7ee787" },
+          { tag: tags.number, color: "#ffa657" },
+          { tag: tags.bool, color: "#d2a8ff" },
+          { tag: tags.null, color: "#ff7b72" },
+          { tag: tags.tagName, color: "#7ee787" },
+          { tag: tags.attributeName, color: "#79c0ff" },
+          { tag: tags.attributeValue, color: "#a5d6ff" },
+          { tag: tags.keyword, color: "#ff7b72" },
+          { tag: tags.punctuation, color: "#a1a1aa" },
+        ]
+      : [
+          { tag: tags.propertyName, color: "#0550ae" },
+          { tag: tags.string, color: "#116329" },
+          { tag: tags.number, color: "#953800" },
+          { tag: tags.bool, color: "#8250df" },
+          { tag: tags.null, color: "#cf222e" },
+          { tag: tags.tagName, color: "#116329" },
+          { tag: tags.attributeName, color: "#0550ae" },
+          { tag: tags.attributeValue, color: "#0a3069" },
+          { tag: tags.keyword, color: "#cf222e" },
+          { tag: tags.punctuation, color: "#71717a" },
+        ],
+  );
+  return syntaxHighlighting(style);
+}
+
+const extensions = computed<Extension[]>(() => {
+  const dark = Boolean(settingStore.isDark);
   return [
-    ...(mode ? [StreamLanguage.define(mode)] : []),
+    lineNumbers(),
+    history(),
+    bracketMatching(),
     drawSelection(),
-  EditorView.lineWrapping,
-  EditorView.theme({
-    "&": {
-      height: props.fill ? "100%" : props.height,
-      width: "100%",
-      border: "none",
-      outline: "none",
-      fontSize: "12px",
-      backgroundColor: "transparent",
-    },
-    "&.cm-focused": { outline: "none" },
-    ".cm-scroller": { overflow: "auto" },
-    ".cm-content": {
-      fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-      lineHeight: "1.6",
-      padding: "8px 12px",
-      caretColor: "var(--wb-text, var(--el-text-color-primary))",
-      color: "var(--wb-text, var(--el-text-color-primary))",
-    },
-    ".cm-gutters": {
-      backgroundColor: "var(--wb-surface, var(--el-bg-color))",
-      color: "var(--wb-text-muted, var(--el-text-color-secondary))",
-      border: "none",
-      borderRight: "1px solid var(--wb-divider-light, var(--el-border-color-extra-light))",
-    },
-    ".cm-activeLine": {
-      backgroundColor: "var(--wb-surface-input, var(--el-fill-color-light))",
-    },
-    ".cm-activeLineGutter": {
-      backgroundColor: "var(--wb-surface-input, var(--el-fill-color-light))",
-      color: "var(--wb-text, var(--el-text-color-primary))",
-    },
-  }),
-  EditorState.readOnly.of(props.readonly),
-  EditorView.editable.of(!props.readonly),
+    highlightActiveLine(),
+    highlightActiveLineGutter(),
+    keymap.of([...defaultKeymap, ...historyKeymap]),
+    languageExtension(),
+    buildSyntaxHighlight(dark),
+    EditorView.lineWrapping,
+    EditorView.theme(
+      {
+        "&": {
+          height: props.fill ? "100%" : props.height,
+          width: "100%",
+          border: "none",
+          outline: "none",
+          fontSize: "12.5px",
+          backgroundColor: dark ? "#09090b" : "#ffffff",
+          color: dark ? "#fafafa" : "#09090b",
+        },
+        "&.cm-focused": { outline: "none" },
+        "&.cm-focused .cm-cursor": {
+          borderLeftColor: dark ? "#fafafa" : "#09090b",
+        },
+        ".cm-scroller": {
+          overflow: "auto",
+          fontFamily:
+            "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+          lineHeight: "1.6",
+        },
+        ".cm-content": {
+          padding: "8px 0",
+          caretColor: dark ? "#fafafa" : "#09090b",
+        },
+        ".cm-line": {
+          padding: "0 12px",
+        },
+        ".cm-gutters": {
+          backgroundColor: dark ? "#0c0c0f" : "#fafafa",
+          color: dark ? "#71717a" : "#a1a1aa",
+          border: "none",
+          borderRight: dark ? "1px solid #27272a" : "1px solid #e4e4e7",
+          minWidth: "38px",
+        },
+        ".cm-activeLine": {
+          backgroundColor: dark
+            ? "rgba(255, 255, 255, 0.03)"
+            : "rgba(9, 9, 11, 0.025)",
+        },
+        ".cm-activeLineGutter": {
+          backgroundColor: dark
+            ? "rgba(255, 255, 255, 0.04)"
+            : "rgba(9, 9, 11, 0.04)",
+          color: dark ? "#d4d4d8" : "#52525b",
+        },
+      },
+      { dark },
+    ),
+    EditorState.readOnly.of(props.readonly),
+    EditorView.editable.of(!props.readonly),
   ];
 });
 
@@ -149,69 +232,67 @@ async function copy() {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  border: 1px solid var(--wb-divider-light, var(--el-border-color-light));
-  border-radius: var(--wb-radius, var(--art-form-control-radius));
-  background: var(--wb-surface, var(--el-fill-color-blank));
   overflow: hidden;
+  background: var(--wb-surface, #fff);
+  border: 1px solid var(--wb-divider, #e4e4e7);
+  border-radius: var(--wb-radius, 4px);
 }
+
 .wb-code.is-fill {
   flex: 1;
   height: 100%;
 }
+
 .wb-code__bar {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  padding: 2px 6px;
-  background: var(--wb-surface-input, var(--el-fill-color-light));
-  border-bottom: 1px solid var(--wb-divider-light, var(--el-border-color-lighter));
+  justify-content: space-between;
+  min-height: 30px;
+  padding: 2px 8px 2px 12px;
+  background: var(--wb-surface-subtle, #fafafa);
+  border-bottom: 1px solid var(--wb-divider, #e4e4e7);
 }
+
+.wb-code__lang {
+  font-family: var(--wb-font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--wb-text-muted, #52525b);
+  letter-spacing: 0.04em;
+}
+
 .wb-code__actions {
   display: flex;
+  gap: 4px;
   align-items: center;
-  gap: 2px;
 }
-.wb-code__icon {
-  width: 28px;
-  height: 28px;
-  border: none;
-  background: transparent;
-  color: var(--wb-text-muted, var(--el-text-color-secondary));
-  border-radius: var(--wb-radius, var(--art-form-control-radius));
-  cursor: pointer;
+
+.wb-code__btn {
   display: inline-flex;
+  gap: 4px;
   align-items: center;
-  justify-content: center;
+  height: 24px;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--wb-text-muted, #52525b);
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  border-radius: var(--wb-radius, 4px);
+
   &:hover {
-    color: var(--wb-text, var(--el-text-color-primary));
-    background: var(--wb-surface-hover, var(--el-fill-color));
+    color: var(--wb-text, #09090b);
+    background: var(--wb-surface-hover, #f4f4f5);
   }
 }
+
 .wb-code__cm {
-  min-height: 0;
   flex: 1;
-  background: var(--wb-surface, var(--el-bg-color));
-  color: var(--wb-text, var(--el-text-color-primary));
+  min-height: 0;
 }
+
 .wb-code :deep(.cm-editor) {
-  background: transparent;
-  color: var(--wb-text, var(--el-text-color-primary));
   height: 100%;
-}
-.wb-code :deep(.cm-gutters) {
-  background: var(--wb-surface, var(--el-bg-color));
-  color: var(--wb-text-muted, var(--el-text-color-secondary));
-  border: none;
-  border-right: 1px solid var(--wb-divider-light, var(--el-border-color-extra-light));
-}
-.wb-code :deep(.cm-gutterElement) {
-  color: inherit;
-}
-.wb-code :deep(.cm-activeLine),
-.wb-code :deep(.cm-activeLineGutter) {
-  background: var(--wb-surface-input, var(--el-fill-color-light));
-}
-.wb-code :deep(.cm-cursor) {
-  border-left-color: var(--wb-text, var(--el-text-color-primary));
 }
 </style>

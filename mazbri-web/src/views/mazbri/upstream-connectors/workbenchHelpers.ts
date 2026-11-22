@@ -3,12 +3,18 @@ import { formatDateTime } from "@/utils/format";
 
 import type {
   AssertionSpec,
+  CaptureSpec,
   ConnectorEndpoint,
   ConnectorRun,
   DraftGateItem,
   StageResult,
+  UpstreamTlsSpec,
   WorkbenchEnvEntry,
+  WorkbenchEnvValue,
+  WorkbenchMultiEnvDoc,
 } from "@/api/upstream-connectors";
+
+export const MASKED_SECRET_VALUE = "••••••••";
 
 /** Hoppscotch Header List row. Edit-time truth is this array (order, dup keys, enabled, desc). Empty table is []. */
 export type KvRow = {
@@ -250,9 +256,205 @@ export function kvToEntries(rows: KvRow[]): KvRow[] {
   return rows.map(normalizeKvRow);
 }
 
-/** Load workbench_env: array of KvRow (incl. []). */
-export function workbenchEnvToKv(value: WorkbenchEnvEntry[]): KvRow[] {
-  return entriesToKv(value);
+/** Load workbench_env: array of KvRow (incl. []) or v2 multi-env global rows. */
+export function workbenchEnvToKv(value?: WorkbenchEnvValue | null): KvRow[] {
+  if (!value) return [];
+  if (Array.isArray(value)) return entriesToKv(value);
+  return entriesToKv(value.global || []);
+}
+
+export type WorkbenchNamedEnvState = {
+  id: string;
+  name: string;
+  rows: KvRow[];
+};
+
+export type WorkbenchEnvState = {
+  activeEnvId: string | null;
+  globalRows: KvRow[];
+  environments: WorkbenchNamedEnvState[];
+};
+
+function newNamedEnvId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return `env-${crypto.randomUUID().slice(0, 8)}`;
+  }
+  return `env-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 6)}`;
+}
+
+export function createNamedEnv(
+  name: string,
+  rows: KvRow[] = [],
+): WorkbenchNamedEnvState {
+  return {
+    id: newNamedEnvId(),
+    name: name.trim() || "default",
+    rows: collapseTrailingBlanks(rows.map(normalizeKvRow)),
+  };
+}
+
+export function normalizeWorkbenchEnvDoc(
+  raw?: WorkbenchEnvValue | Record<string, unknown> | null,
+): WorkbenchEnvState {
+  if (!raw) {
+    return { activeEnvId: null, globalRows: [], environments: [] };
+  }
+  if (Array.isArray(raw)) {
+    return {
+      activeEnvId: null,
+      globalRows: entriesToKv(raw),
+      environments: [],
+    };
+  }
+  const obj = raw as Record<string, unknown>;
+  const globalRows = Array.isArray(obj.global)
+    ? entriesToKv(obj.global as WorkbenchEnvEntry[])
+    : [];
+  const rawEnvs = Array.isArray(obj.environments) ? obj.environments : [];
+  const environments: WorkbenchNamedEnvState[] = rawEnvs
+    .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+    .map((item, idx) => ({
+      id:
+        typeof item.id === "string" && item.id.trim()
+          ? item.id.trim()
+          : `env-${idx + 1}`,
+      name:
+        typeof item.name === "string" && item.name.trim()
+          ? item.name.trim()
+          : `env-${idx + 1}`,
+      rows: Array.isArray(item.variables)
+        ? entriesToKv(item.variables as WorkbenchEnvEntry[])
+        : [],
+    }));
+  const rawActive =
+    typeof obj.active_env_id === "string" && obj.active_env_id.trim()
+      ? obj.active_env_id.trim()
+      : null;
+  const activeEnvId =
+    rawActive && environments.some((e) => e.id === rawActive)
+      ? rawActive
+      : (environments[0]?.id ?? null);
+  return { activeEnvId, globalRows, environments };
+}
+
+export function serializeWorkbenchEnvDoc(
+  state: WorkbenchEnvState,
+): WorkbenchMultiEnvDoc {
+  const environments = state.environments.map((env, idx) => ({
+    id: env.id.trim() || `env-${idx + 1}`,
+    name: env.name.trim() || `env-${idx + 1}`,
+    variables: kvToEntries(env.rows),
+  }));
+  const active =
+    state.activeEnvId && environments.some((e) => e.id === state.activeEnvId)
+      ? state.activeEnvId
+      : null;
+  return {
+    version: 2,
+    active_env_id: active,
+    global: kvToEntries(state.globalRows),
+    environments,
+  };
+}
+
+export function resolveActiveEnvMap(
+  state: WorkbenchEnvState,
+): Record<string, string> {
+  const out = kvToMap(state.globalRows);
+  if (state.activeEnvId) {
+    const hit = state.environments.find((e) => e.id === state.activeEnvId);
+    if (hit) {
+      Object.assign(out, kvToMap(hit.rows));
+    }
+  }
+  return out;
+}
+
+export function mergeEnvWithCaptures(
+  env: Record<string, string>,
+  captures: Record<string, string>,
+): Record<string, string> {
+  const out: Record<string, string> = { ...env };
+  for (const [k, v] of Object.entries(captures || {})) {
+    const trimmed = k.trim();
+    if (!trimmed) continue;
+    out[`captures.${trimmed}`] = String(v ?? "");
+  }
+  return out;
+}
+
+export function exportWorkbenchEnvJson(
+  state: WorkbenchEnvState,
+  connectorName?: string,
+): Record<string, unknown> {
+  return {
+    name: (connectorName || "workbench").trim() || "workbench",
+    ...serializeWorkbenchEnvDoc(state),
+  };
+}
+
+export function importWorkbenchEnvJson(
+  rawText: string,
+  prev?: WorkbenchEnvState,
+): WorkbenchEnvState {
+  const parsed: unknown = JSON.parse(rawText);
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error("Invalid environment JSON");
+  }
+  if (Array.isArray(parsed)) {
+    return normalizeWorkbenchEnvDoc(parsed as WorkbenchEnvEntry[]);
+  }
+  const obj = parsed as Record<string, unknown>;
+  if (Array.isArray(obj.environments) || Array.isArray(obj.global)) {
+    return normalizeWorkbenchEnvDoc(obj);
+  }
+  const base: WorkbenchEnvState = prev
+    ? {
+        activeEnvId: prev.activeEnvId,
+        globalRows: [...prev.globalRows],
+        environments: prev.environments.map((e) => ({
+          ...e,
+          rows: [...e.rows],
+        })),
+      }
+    : { activeEnvId: null, globalRows: [], environments: [] };
+
+  // Postman environment format: { name, values: [{ key, value, enabled }] }
+  if (Array.isArray(obj.values)) {
+    const envName =
+      typeof obj.name === "string" && obj.name.trim()
+        ? obj.name.trim()
+        : "postman";
+    const rows = (obj.values as Array<Record<string, unknown>>).map((v) =>
+      normalizeKvRow({
+        key: String(v.key ?? ""),
+        value: String(v.value ?? ""),
+        desc: typeof v.description === "string" ? v.description : "",
+        enabled: v.enabled !== false,
+      }),
+    );
+    const created = createNamedEnv(envName, rows);
+    base.environments.push(created);
+    base.activeEnvId = created.id;
+    return base;
+  }
+
+  // Flat key-value object format: { BASE_HOST: "...", API_KEY: "..." }
+  const flatRows: KvRow[] = [];
+  for (const [k, v] of Object.entries(obj)) {
+    if (!k.trim() || (v != null && typeof v === "object")) continue;
+    flatRows.push(
+      normalizeKvRow({
+        key: k.trim(),
+        value: v == null ? "" : String(v),
+        enabled: true,
+      }),
+    );
+  }
+  const created = createNamedEnv("imported", flatRows);
+  base.environments.push(created);
+  base.activeEnvId = created.id;
+  return base;
 }
 
 /** Egress / engine map only. Last duplicate key wins. Disabled and blank keys dropped. */
@@ -1400,6 +1602,207 @@ export function ensureEndpointAdapterFields(ep: ConnectorEndpoint): ConnectorEnd
   return ep;
 }
 
+export function normalizeCaptureRow(
+  row?: Partial<CaptureSpec> | null,
+): CaptureSpec {
+  return {
+    name: String(row?.name ?? ""),
+    path: String(row?.path ?? ""),
+    uid: row?.uid || newKvUid(),
+  };
+}
+
+export function normalizeCaptureList(
+  rows?: CaptureSpec[] | null,
+): CaptureSpec[] {
+  if (!Array.isArray(rows)) return [];
+  return rows.map(normalizeCaptureRow);
+}
+
+export function serializeCaptureList(
+  rows?: CaptureSpec[] | null,
+): Array<{ name: string; path: string }> {
+  if (!Array.isArray(rows)) return [];
+  return rows
+    .map((r) => ({
+      name: String(r?.name ?? "").trim(),
+      path: String(r?.path ?? "").trim(),
+    }))
+    .filter((r) => Boolean(r.name && r.path));
+}
+
+export function workbenchStaticEnvSurfaceParts(args: {
+  upstreamUrl?: string | null;
+  endpoint?: ConnectorEndpoint | null;
+  authFlow?: {
+    token_url?: string;
+    method?: string;
+    inject_to?: string;
+    inject_key?: string;
+    inject_value_format?: string;
+    request_body_tpl?: string;
+    headers?: Array<{ key?: string; value?: string; enabled?: boolean }>;
+  } | null;
+}): string[] {
+  const ep = args.endpoint ? { ...args.endpoint, body: undefined } : null;
+  return workbenchEnvSurfaceParts({
+    upstreamUrl: args.upstreamUrl,
+    endpoint: ep,
+    authFlow: args.authFlow,
+  });
+}
+
+export function findStaticCapturePlaceholders(args: {
+  upstreamUrl?: string | null;
+  endpoint?: ConnectorEndpoint | null;
+  authFlow?: {
+    token_url?: string;
+    method?: string;
+    inject_to?: string;
+    inject_key?: string;
+    inject_value_format?: string;
+    request_body_tpl?: string;
+    headers?: Array<{ key?: string; value?: string; enabled?: boolean }>;
+  } | null;
+}): string[] {
+  const parts = workbenchStaticEnvSurfaceParts(args);
+  const found = new Set<string>();
+  const re = /\{\{\s*(captures\.[\w.-]+)\s*\}\}/g;
+  for (const part of parts) {
+    if (!part) continue;
+    re.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(part))) {
+      if (m[1]) found.add(m[1]);
+    }
+  }
+  return [...found];
+}
+
+export type TlsFormState = {
+  enabled: boolean;
+  insecure_skip_verify: boolean;
+  ca_cert: string;
+  client_cert: string;
+  client_key: string;
+  has_saved_key: boolean;
+};
+
+export function emptyTlsForm(): TlsFormState {
+  return {
+    enabled: false,
+    insecure_skip_verify: false,
+    ca_cert: "",
+    client_cert: "",
+    client_key: "",
+    has_saved_key: false,
+  };
+}
+
+export function tlsSpecToForm(
+  raw?: UpstreamTlsSpec | Record<string, unknown> | null,
+): TlsFormState {
+  if (!raw || typeof raw !== "object") return emptyTlsForm();
+  const obj = raw as Record<string, unknown>;
+  const insecure = Boolean(obj.insecure_skip_verify);
+  const caCert = typeof obj.ca_cert === "string" ? obj.ca_cert : "";
+  const clientCert = typeof obj.client_cert === "string" ? obj.client_cert : "";
+  const rawKey = typeof obj.client_key === "string" ? obj.client_key : "";
+  const hasSavedKey = rawKey.trim() === MASKED_SECRET_VALUE;
+  const clientKey = hasSavedKey ? "" : rawKey;
+  const enabled = Boolean(
+    insecure ||
+      caCert.trim() ||
+      clientCert.trim() ||
+      clientKey.trim() ||
+      hasSavedKey,
+  );
+  return {
+    enabled,
+    insecure_skip_verify: insecure,
+    ca_cert: caCert,
+    client_cert: clientCert,
+    client_key: clientKey,
+    has_saved_key: hasSavedKey,
+  };
+}
+
+export function tlsFormToSpec(form: TlsFormState): UpstreamTlsSpec | null {
+  if (!form.enabled) return null;
+  const ca_cert = form.ca_cert.trim() || null;
+  const client_cert = form.client_cert.trim() || null;
+  const client_key = form.client_key.trim()
+    ? form.client_key.trim()
+    : form.has_saved_key
+      ? MASKED_SECRET_VALUE
+      : null;
+  const insecure_skip_verify = Boolean(form.insecure_skip_verify);
+  if (!insecure_skip_verify && !ca_cert && !client_cert && !client_key) {
+    return null;
+  }
+  return {
+    insecure_skip_verify,
+    ...(ca_cert ? { ca_cert } : {}),
+    ...(client_cert ? { client_cert } : {}),
+    ...(client_key ? { client_key } : {}),
+  };
+}
+
+export function validateTlsFormClient(form: TlsFormState): string[] {
+  if (!form.enabled) return [];
+  const issues: string[] = [];
+  const ca = form.ca_cert.trim();
+  if (ca && !ca.startsWith("-----BEGIN ")) {
+    issues.push("ca_cert_pem");
+  }
+  const cert = form.client_cert.trim();
+  if (cert && !cert.startsWith("-----BEGIN ")) {
+    issues.push("client_cert_pem");
+  }
+  const key = form.client_key.trim();
+  if (key && !key.startsWith("-----BEGIN ")) {
+    issues.push("client_key_pem");
+  }
+  const hasCert = Boolean(cert);
+  const hasKey = Boolean(key || form.has_saved_key);
+  if (hasCert !== hasKey) {
+    issues.push("mtls_pair_incomplete");
+  }
+  return issues;
+}
+
+export type EndpointTagGroup = {
+  tag: string;
+  items: Array<{ ep: ConnectorEndpoint; index: number }>;
+};
+
+export function groupEndpointsByTag(
+  endpoints: ConnectorEndpoint[],
+  query = "",
+): EndpointTagGroup[] {
+  const needle = query.trim().toLowerCase();
+  const byTag = new Map<string, Array<{ ep: ConnectorEndpoint; index: number }>>();
+  endpoints.forEach((ep, index) => {
+    if (needle) {
+      const hay = [
+        ep.method || "",
+        ep.name || "",
+        ep.path || "",
+        ep.channel_code || "",
+        ep.tag || "",
+      ]
+        .join(" ")
+        .toLowerCase();
+      if (!hay.includes(needle)) return;
+    }
+    const tag = (ep.tag || "").trim();
+    const bucket = byTag.get(tag);
+    if (bucket) bucket.push({ ep, index });
+    else byTag.set(tag, [{ ep, index }]);
+  });
+  return [...byTag.entries()].map(([tag, items]) => ({ tag, items }));
+}
+
 export function normalizeWorkbenchEndpoint(
   ep: ConnectorEndpoint,
   index: number,
@@ -1414,6 +1817,7 @@ export function normalizeWorkbenchEndpoint(
     headers: ep.headers || {},
     query: ep.query || {},
     assertions: Array.isArray(ep.assertions) ? ep.assertions : [],
+    captures: normalizeCaptureList(ep.captures),
     gate: ep.gate !== false,
     adapter: ep.adapter || "http_json",
   });
