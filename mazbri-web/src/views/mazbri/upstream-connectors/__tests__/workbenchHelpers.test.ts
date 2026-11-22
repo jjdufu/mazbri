@@ -10,11 +10,7 @@ import {
 } from "../authMatrix";
 import { isAuthSignFormProfile } from "../cryptoProfileHelpers";
 import {
-  HSPLIT_DEFAULT_LEFT,
   MASKED_SECRET_VALUE,
-  SPLIT_DEFAULT_RATIO,
-  SPLIT_DEFAULT_RIGHT,
-  VSPLIT_DEFAULT_BOTTOM,
   autoChannelsFromEndpoints,
   detectResponseBodyKind,
   ensureEndpointAdapterFields,
@@ -26,9 +22,6 @@ import {
   listMissingAdapterFields,
   mergeEnvWithCaptures,
   normalizeWorkbenchEnvDoc,
-  parseHSplitState,
-  parseSplitLayoutState,
-  parseVSplitState,
   resolveActiveEnvMap,
   serializeCaptureList,
   serializeWorkbenchEnvDoc,
@@ -131,68 +124,6 @@ console.log("workbenchHelpers authMatrix ok");
 assert.equal(isAuthSignFormProfile("sign_form"), true);
 assert.equal(isAuthSignFormProfile("bearer"), false);
 console.log("workbenchHelpers auth vs body crypto boundary ok");
-
-assert.deepEqual(parseHSplitState(null), {
-  left: HSPLIT_DEFAULT_LEFT,
-  collapsed: false,
-});
-assert.deepEqual(parseHSplitState(""), {
-  left: HSPLIT_DEFAULT_LEFT,
-  collapsed: false,
-});
-assert.deepEqual(parseHSplitState("not-json"), {
-  left: HSPLIT_DEFAULT_LEFT,
-  collapsed: false,
-});
-assert.deepEqual(parseHSplitState("{}"), {
-  left: HSPLIT_DEFAULT_LEFT,
-  collapsed: false,
-});
-assert.deepEqual(parseHSplitState(JSON.stringify({ left: 320, collapsed: true })), {
-  left: 320,
-  collapsed: true,
-});
-assert.deepEqual(parseHSplitState(JSON.stringify({ left: 180, collapsed: false })), {
-  left: 180,
-  collapsed: false,
-});
-assert.deepEqual(parseHSplitState(JSON.stringify({ left: 200 })), {
-  left: 200,
-  collapsed: false,
-});
-assert.deepEqual(parseHSplitState(JSON.stringify({ left: -1, collapsed: true })), {
-  left: HSPLIT_DEFAULT_LEFT,
-  collapsed: true,
-});
-
-// VSplit defaults expanded (collapsed=false when missing storage)
-assert.deepEqual(parseVSplitState(null), {
-  bottom: VSPLIT_DEFAULT_BOTTOM,
-  collapsed: false,
-});
-assert.equal(
-  parseVSplitState(JSON.stringify({ bottom: 300, collapsed: true })).collapsed,
-  true,
-);
-assert.deepEqual(parseSplitLayoutState(null), {
-  direction: "horizontal",
-  ratio: SPLIT_DEFAULT_RATIO,
-  bottom: VSPLIT_DEFAULT_BOTTOM,
-  right: SPLIT_DEFAULT_RIGHT,
-  collapsed: false,
-});
-assert.deepEqual(
-  parseSplitLayoutState(
-    JSON.stringify({ direction: "vertical", ratio: 0.42, right: 480, collapsed: false }),
-  ),
-  {
-    direction: "vertical",
-    ratio: 0.42,
-    bottom: VSPLIT_DEFAULT_BOTTOM,
-    right: 480,
-    collapsed: false,
-  },
-);
 
 assert.equal(detectResponseBodyKind('{"ok":true}'), "json");
 assert.equal(detectResponseBodyKind("error sending request for url (...)"), "raw");

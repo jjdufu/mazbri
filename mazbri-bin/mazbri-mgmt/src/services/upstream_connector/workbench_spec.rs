@@ -134,7 +134,33 @@ fn append_kv_rows(items: &[Value], out: &mut HashMap<String, String>) {
     }
 }
 
-/// Parses either legacy `KvRow[]` or structured multi-environment JSON (`{ global, environments, active_env_id }`).
+fn is_multi_env_obj(v: &Value) -> bool {
+    v.as_object()
+        .is_some_and(|o| o.contains_key("global") || o.contains_key("environments"))
+}
+
+/// 满足 `upstream_connector_drafts_workbench_env_check` (`jsonb_typeof(workbench_env) = 'array'`)：
+/// 多环境对象在入库前包装为单元素 JSON 数组，读取与解析时透明解包。
+pub(crate) fn encode_workbench_env_for_db(value: &Value) -> Value {
+    if value.is_object() {
+        serde_json::json!([value])
+    } else {
+        value.clone()
+    }
+}
+
+pub(crate) fn decode_workbench_env_from_db(value: Value) -> Value {
+    if let Value::Array(mut arr) = value {
+        if arr.len() == 1 && is_multi_env_obj(&arr[0]) {
+            return arr.swap_remove(0);
+        }
+        return Value::Array(arr);
+    }
+    value
+}
+
+/// Parses either legacy `KvRow[]`, structured multi-environment JSON (`{ global, environments, active_env_id }`),
+/// or its DB array-wrapped form `[{ global, environments, active_env_id }]`.
 pub(crate) fn parse_workbench_env(value: &Value) -> HashMap<String, String> {
     parse_workbench_env_with_id(value, None)
 }
@@ -144,11 +170,18 @@ pub(crate) fn parse_workbench_env_with_id(
     env_id: Option<&str>,
 ) -> HashMap<String, String> {
     let mut out = HashMap::new();
-    if let Some(items) = value.as_array() {
+    let effective = if let Some([sole]) = value.as_array().map(Vec::as_slice)
+        && is_multi_env_obj(sole)
+    {
+        sole
+    } else {
+        value
+    };
+    if let Some(items) = effective.as_array() {
         append_kv_rows(items, &mut out);
         return out;
     }
-    let Some(obj) = value.as_object() else {
+    let Some(obj) = effective.as_object() else {
         return out;
     };
     if !obj.contains_key("global") && !obj.contains_key("environments") {
@@ -466,7 +499,23 @@ pub(crate) fn leftover_scan_json(
     let auth_flow = cfg
         .and_then(|c| c.auth_flow.as_ref())
         .map(auth_flow_scan_value);
-    let spec_v = serde_json::to_value(spec).unwrap_or(Value::Null);
+    let mut spec_v = serde_json::to_value(spec).unwrap_or(Value::Null);
+    if let Some(tpl_val) = spec_v
+        .get_mut("auth")
+        .and_then(Value::as_object_mut)
+        .and_then(|a| a.get_mut("request_body_tpl"))
+        && let Some(raw_tpl) = tpl_val.as_str()
+    {
+        let mut cleaned = raw_tpl.to_string();
+        for k in cred_keys_of(cfg) {
+            let key = k.trim();
+            if !key.is_empty() {
+                cleaned = cleaned.replace(&format!("{{{{{key}}}}}"), "");
+                cleaned = cleaned.replace(&format!("{{{{ {key} }}}}"), "");
+            }
+        }
+        *tpl_val = Value::String(cleaned);
+    }
     serde_json::json!({
         "upstream_url": upstream_url,
         "auth_flow": auth_flow,
@@ -956,13 +1005,21 @@ fn cred_keys_of(cfg: Option<&SupplierConfig>) -> Vec<String> {
 }
 
 fn auth_flow_scan_value(flow: &AuthFlowConfig) -> Value {
+    let mut tpl = flow.request_body_tpl.clone();
+    for k in flow.credentials.keys() {
+        let key = k.trim();
+        if !key.is_empty() {
+            tpl = tpl.replace(&format!("{{{{{key}}}}}"), "");
+            tpl = tpl.replace(&format!("{{{{ {key} }}}}"), "");
+        }
+    }
     serde_json::json!({
         "token_url": flow.token_url,
         "method": flow.method,
         "inject_to": flow.inject_to,
         "inject_key": flow.inject_key,
         "inject_value_format": flow.inject_value_format,
-        "request_body_tpl": flow.request_body_tpl,
+        "request_body_tpl": tpl,
         "headers": flow.headers,
     })
 }
@@ -1739,5 +1796,72 @@ mod tests {
         }]);
         assert!(super::super::sanitize_and_encrypt_endpoints_tls(&eps, None, false).is_err());
         assert!(super::super::sanitize_and_encrypt_endpoints_tls(&eps, None, true).is_ok());
+    }
+
+    #[test]
+    fn db_array_wrapper_roundtrips_multi_env_and_preserves_legacy_array() {
+        let multi = serde_json::json!({
+            "version": 2,
+            "active_env_id": "staging",
+            "global": [{ "key": "REGION", "value": "cn", "enabled": true }],
+            "environments": [{
+                "id": "staging",
+                "name": "staging",
+                "variables": [{ "key": "SEARCH_KW", "value": "alpha", "enabled": true }]
+            }]
+        });
+        let encoded = encode_workbench_env_for_db(&multi);
+        assert!(encoded.is_array());
+        let parsed_from_wrapped = parse_workbench_env(&encoded);
+        assert_eq!(
+            parsed_from_wrapped.get("SEARCH_KW").map(String::as_str),
+            Some("alpha")
+        );
+        assert_eq!(
+            parsed_from_wrapped.get("REGION").map(String::as_str),
+            Some("cn")
+        );
+        let decoded = decode_workbench_env_from_db(encoded);
+        assert_eq!(decoded, multi);
+
+        let legacy = serde_json::json!([{ "key": "K", "value": "V", "enabled": true }]);
+        assert_eq!(
+            decode_workbench_env_from_db(encode_workbench_env_for_db(&legacy)),
+            legacy
+        );
+    }
+
+    #[test]
+    fn auth_flow_credential_placeholders_in_request_body_tpl_do_not_trigger_unresolved() {
+        let cfg: SupplierConfig = serde_json::from_value(serde_json::json!({
+            "upstream_type": "transparent",
+            "auth_flow": {
+                "enabled": true,
+                "profile": "oauth_cc_form",
+                "token_url": "https://up.example/oauth/token",
+                "method": "POST",
+                "credentials": {
+                    "username": "enc:v2:dummy",
+                    "password": "enc:v2:dummy"
+                },
+                "request_body_tpl": "{\"u\":\"{{username}}\",\"p\":\"{{password}}\"}",
+                "token_jsonpath": "$.access_token",
+                "inject_to": "header",
+                "inject_key": "Authorization"
+            }
+        }))
+        .expect("supplier config");
+        let ep = serde_json::json!({
+            "id": "ep-call",
+            "method": "POST",
+            "path": "/call",
+            "body_encoding": "json",
+            "body": { "ping": 1 },
+            "auth": { "profile": "oauth_cc_form" },
+            "gate": true
+        });
+        let built = build_workbench_spec(&ep, &empty_env(), Some(&cfg), "https://up.example")
+            .expect("credential keys inside request_body_tpl must not fail UNRESOLVED_VARS");
+        assert_eq!(built.payload["ping"], 1);
     }
 }

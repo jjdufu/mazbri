@@ -1266,16 +1266,20 @@ export function useWorkbenchStore() {
         endpoints: endpoints.value,
         upstream_type: CODE_FREE_UPSTREAM_TYPE,
       };
-      supplierTlsForm.value = tlsSpecToForm(
-        (updated.config?.tls as Record<string, unknown> | undefined) ?? null,
-      );
+      const srvSupTls =
+        (updated.config?.tls as Record<string, unknown> | undefined) ?? null;
+      if (srvSupTls) {
+        supplierTlsForm.value = tlsSpecToForm(srvSupTls);
+      }
       if (Array.isArray(updated.endpoints)) {
         updated.endpoints.forEach((srvEp, i) => {
-          if (endpoints.value[i] && srvEp.tls) {
-            endpoints.value[i]!.tls = srvEp.tls;
+          if (endpoints.value[i]) {
+            endpoints.value[i]!.tls = srvEp.tls ?? undefined;
           }
         });
-        endpointTlsForm.value = tlsSpecToForm(activeEp.value?.tls ?? null);
+        if (activeEp.value?.tls) {
+          endpointTlsForm.value = tlsSpecToForm(activeEp.value.tls);
+        }
       }
       dirty.value = false;
       saveError.value = false;

@@ -1,8 +1,8 @@
 use super::{
     ApiError, CreateDraftRequest, DraftDto, GATE_TTL_HOURS, PgPool, RecentGateRun, SupplierConfig,
-    UpdateDraftRequest, Uuid, draft_to_dto, evaluate_endpoint_gates, guard_supplier_tls_privilege,
-    parse_workbench_env, repo, sanitize_and_encrypt_endpoints_tls, strip_workbench_env_from_config,
-    validate_workbench_env,
+    UpdateDraftRequest, Uuid, draft_to_dto, encode_workbench_env_for_db, evaluate_endpoint_gates,
+    guard_supplier_tls_privilege, parse_workbench_env, repo, sanitize_and_encrypt_endpoints_tls,
+    strip_workbench_env_from_config, validate_workbench_env,
 };
 
 // ---------- Draft CRUD ----------
@@ -32,6 +32,7 @@ pub async fn create_draft(
     let endpoints = sanitize_and_encrypt_endpoints_tls(&raw_endpoints, None, is_super_admin)?;
     let workbench_env = req.workbench_env.unwrap_or_else(|| serde_json::json!([]));
     validate_workbench_env(&workbench_env)?;
+    let db_workbench_env = encode_workbench_env_for_db(&workbench_env);
     let upstream_url = req.upstream_url.clone();
     let upstream_type = req.upstream_type.clone();
     let source = req.source.unwrap_or_else(|| "manual".into());
@@ -53,7 +54,7 @@ pub async fn create_draft(
             upstream_url: &upstream_url,
             config: &config_value,
             endpoints: &endpoints,
-            workbench_env: &workbench_env,
+            workbench_env: &db_workbench_env,
             source: &source,
             linked_supplier_id: None,
             created_by: Some(actor),
@@ -134,9 +135,12 @@ pub async fn update_draft(
         .map_err(|e| ApiError::internal(format!("get draft: {e}")))?
         .ok_or_else(|| ApiError::not_found("draft".into(), id.to_string()))?;
 
-    if let Some(env) = req.workbench_env.as_ref() {
+    let db_workbench_env = if let Some(env) = req.workbench_env.as_ref() {
         validate_workbench_env(env)?;
-    }
+        Some(encode_workbench_env_for_db(env))
+    } else {
+        None
+    };
     let mut config_opt = None;
     if let Some(ref raw) = req.config {
         let mut raw = raw.clone();
@@ -163,7 +167,7 @@ pub async fn update_draft(
             upstream_url: req.upstream_url.as_deref(),
             config: config_opt.as_ref(),
             endpoints: endpoints_opt.as_ref(),
-            workbench_env: req.workbench_env.as_ref(),
+            workbench_env: db_workbench_env.as_ref(),
             status: req.status.as_deref(),
         },
     )

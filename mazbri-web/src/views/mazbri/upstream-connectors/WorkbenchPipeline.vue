@@ -7,21 +7,21 @@
       <section class="wb-pipe__col">
         <header>
           <ArtSvgIcon icon="ri:send-plane-line" />
-          {{ $t("upstreamConnector.pipeTenantReq") }}
+          <span>{{ $t("upstreamConnector.pipeTenantReq") }}</span>
         </header>
         <pre>{{ inboundText }}</pre>
       </section>
       <section class="wb-pipe__col">
         <header>
           <ArtSvgIcon icon="ri:flashlight-line" />
-          {{ $t("upstreamConnector.pipeUpstreamReq") }}
+          <span>{{ $t("upstreamConnector.pipeUpstreamReq") }}</span>
         </header>
         <pre>{{ transformedText }}</pre>
       </section>
       <section class="wb-pipe__col">
         <header>
           <ArtSvgIcon icon="ri:exchange-line" />
-          {{ $t("upstreamConnector.pipeUpstreamRes") }}
+          <span>{{ $t("upstreamConnector.pipeUpstreamRes") }}</span>
         </header>
         <pre>{{ upstreamText }}</pre>
       </section>
@@ -49,12 +49,17 @@ const hasData = computed(
 function pack(rec?: Record<string, unknown> | null) {
   if (!rec) return "";
   const parts: string[] = [];
-  if (rec.method) parts.push(String(rec.method));
-  if (rec.url) parts.push(String(rec.url));
+  if (rec.method || rec.url) {
+    parts.push(`${String(rec.method || "")} ${String(rec.url || "")}`.trim());
+  }
   if (rec.detail) parts.push(String(rec.detail));
-  if (rec.status != null) parts.push(`status ${rec.status}`);
+  if (rec.status != null) parts.push(`HTTP ${rec.status}`);
+  const hdrs = rec.headers_masked || rec.headers;
+  if (hdrs && typeof hdrs === "object" && Object.keys(hdrs as object).length) {
+    parts.push(prettyJson(hdrs));
+  }
   if (rec.body_preview != null) parts.push(prettyJson(rec.body_preview));
-  return parts.join("\n");
+  return parts.join("\n\n");
 }
 
 const inboundText = computed(() => {
@@ -79,6 +84,7 @@ const upstreamText = computed(() => {
   return pack({
     status: t.status,
     url: t.url,
+    headers: t.headers,
     body_preview: t.body,
   });
 });
@@ -88,41 +94,53 @@ const upstreamText = computed(() => {
 .wb-pipe {
   min-height: 0;
 }
+
 .wb-pipe__empty {
-  font-size: 12px;
-  color: var(--el-text-color-placeholder);
   padding: 12px 0;
+  font-size: 12px;
+  color: var(--wb-text-faint);
 }
+
 .wb-pipe__cols {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
+
 .wb-pipe__col {
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: var(--wb-radius, var(--art-form-control-radius));
-  overflow: hidden;
   min-width: 0;
+  overflow: hidden;
+  background: var(--wb-surface);
+  border: 1px solid var(--wb-divider);
+  border-radius: var(--wb-radius);
+
   header {
     display: flex;
-    align-items: center;
     gap: 6px;
-    font-size: 12px;
+    align-items: center;
+    padding: 6px 10px;
+    font-size: 11.5px;
     font-weight: 600;
-    padding: 6px 8px;
-    background: var(--el-fill-color-light);
+    color: var(--wb-text);
+    background: var(--wb-surface-subtle);
+    border-bottom: 1px solid var(--wb-divider);
   }
+
   pre {
+    max-height: 240px;
+    padding: 8px 10px;
     margin: 0;
-    padding: 8px;
-    font-size: 11px;
-    max-height: 220px;
     overflow: auto;
+    font-family: var(--wb-font-mono);
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--wb-text);
     white-space: pre-wrap;
     word-break: break-all;
   }
 }
-@media (max-width: 1100px) {
+
+@media (width <= 1100px) {
   .wb-pipe__cols {
     grid-template-columns: 1fr;
   }

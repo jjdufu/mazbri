@@ -1,4 +1,7 @@
-use super::{Deserialize, HashMap, Serialize, Uuid, mask_config_credentials, mask_endpoints_secrets, repo};
+use super::{
+    Deserialize, HashMap, Serialize, Uuid, decode_workbench_env_from_db, mask_config_credentials,
+    mask_endpoints_secrets, repo,
+};
 
 // ---------- API types ----------
 
@@ -46,7 +49,7 @@ pub(super) fn draft_to_dto(row: repo::DraftRow) -> DraftDto {
         upstream_url: row.upstream_url,
         config,
         endpoints,
-        workbench_env: row.workbench_env,
+        workbench_env: decode_workbench_env_from_db(row.workbench_env),
         status: row.status,
         source: row.source,
         linked_supplier_id: row.linked_supplier_id,

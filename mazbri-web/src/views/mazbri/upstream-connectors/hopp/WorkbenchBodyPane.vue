@@ -315,7 +315,10 @@ watch(
 const jsonText = computed({
   get: () => bodyToEditorText(props.endpoint.body, "json"),
   set: (v: string) => {
-    props.endpoint.body = editorTextToBody(v, "json");
+    const parsed = editorTextToBody(v, "json");
+    props.endpoint.body = parsed;
+    jsonCoerceFailed.value =
+      typeof parsed !== "object" || parsed === null || Array.isArray(parsed);
   },
 });
 

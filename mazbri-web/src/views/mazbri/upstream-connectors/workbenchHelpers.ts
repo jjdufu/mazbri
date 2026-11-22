@@ -70,85 +70,7 @@ export {
 } from "./authMatrix";
 export type { AuthFieldGroup, AuthPickerId, AuthProfileId } from "./authMatrix";
 export const WRAP_OPTIONS = ["method_biz_content", "none"] as const;
-export const HSPLIT_DEFAULT_LEFT = 240;
-export const VSPLIT_DEFAULT_BOTTOM = 260;
-export const VSPLIT_COLLAPSED_HEIGHT = 0;
-export const SPLIT_LAYOUT_STORAGE_KEY = "mazbri:wb:split-layout";
-export const SPLIT_DEFAULT_RATIO = 0.38;
-export const SPLIT_DEFAULT_RIGHT = 420;
-
 export type SplitDirection = "horizontal" | "vertical";
-export type HSplitState = { left: number; collapsed: boolean };
-export type VSplitState = { bottom: number; collapsed: boolean };
-export type SplitLayoutState = {
-  direction: SplitDirection;
-  ratio: number;
-  bottom: number;
-  right: number;
-  collapsed: boolean;
-};
-
-function finiteNonNeg(n: unknown, fallback: number): number {
-  return typeof n === "number" && Number.isFinite(n) && n >= 0 ? n : fallback;
-}
-
-function asPersistObject(raw: string): Record<string, unknown> | null {
-  try {
-    const p: unknown = JSON.parse(raw);
-    if (p == null || typeof p !== "object" || Array.isArray(p)) return null;
-    return p as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-}
-
-
-export function parseHSplitState(raw: string | null): HSplitState {
-  if (!raw) return { left: HSPLIT_DEFAULT_LEFT, collapsed: false };
-  const p = asPersistObject(raw);
-  if (!p) return { left: HSPLIT_DEFAULT_LEFT, collapsed: false };
-  return {
-    left: finiteNonNeg(p.left, HSPLIT_DEFAULT_LEFT),
-    collapsed: typeof p.collapsed === "boolean" ? p.collapsed : false,
-  };
-}
-
-
-export function parseVSplitState(raw: string | null): VSplitState {
-  if (!raw) return { bottom: VSPLIT_DEFAULT_BOTTOM, collapsed: false };
-  const p = asPersistObject(raw);
-  if (!p) return { bottom: VSPLIT_DEFAULT_BOTTOM, collapsed: false };
-  return {
-    bottom: finiteNonNeg(p.bottom, VSPLIT_DEFAULT_BOTTOM),
-    collapsed: typeof p.collapsed === "boolean" ? p.collapsed : false,
-  };
-}
-
-export function parseSplitLayoutState(raw: string | null): SplitLayoutState {
-  const defaults: SplitLayoutState = {
-    direction: "horizontal",
-    ratio: SPLIT_DEFAULT_RATIO,
-    bottom: VSPLIT_DEFAULT_BOTTOM,
-    right: SPLIT_DEFAULT_RIGHT,
-    collapsed: false,
-  };
-  if (!raw) return defaults;
-  const p = asPersistObject(raw);
-  if (!p) return defaults;
-  const direction: SplitDirection =
-    p.direction === "vertical" ? "vertical" : "horizontal";
-  const rawRatio = typeof p.ratio === "number" && Number.isFinite(p.ratio)
-    ? p.ratio
-    : SPLIT_DEFAULT_RATIO;
-  const ratio = Math.min(0.7, Math.max(0.2, rawRatio));
-  return {
-    direction,
-    ratio,
-    bottom: finiteNonNeg(p.bottom, VSPLIT_DEFAULT_BOTTOM),
-    right: finiteNonNeg(p.right, SPLIT_DEFAULT_RIGHT),
-    collapsed: typeof p.collapsed === "boolean" ? p.collapsed : false,
-  };
-}
 
 
 export const CODE_FREE_UPSTREAM_TYPE = "transparent";
@@ -773,6 +695,7 @@ export function workbenchEnvSurfaceParts(args: {
     inject_value_format?: string;
     request_body_tpl?: string;
     headers?: Array<{ key?: string; value?: string; enabled?: boolean }>;
+    credentials?: Array<{ key?: string; value?: string }>;
   } | null;
 }): string[] {
   const parts: string[] = [];
@@ -809,13 +732,25 @@ export function workbenchEnvSurfaceParts(args: {
   }
   const auth = args.authFlow;
   if (auth) {
+    let bodyTpl = auth.request_body_tpl || "";
+    if (bodyTpl && Array.isArray(auth.credentials)) {
+      for (const c of auth.credentials) {
+        const ck = (c.key || "").trim();
+        if (!ck) continue;
+        const escaped = ck.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        bodyTpl = bodyTpl.replace(
+          new RegExp(`\\{\\{\\s*${escaped}\\s*\\}\\}`, "g"),
+          "",
+        );
+      }
+    }
     for (const s of [
       auth.token_url,
       auth.method,
       auth.inject_to,
       auth.inject_key,
       auth.inject_value_format,
-      auth.request_body_tpl,
+      bodyTpl,
     ]) {
       if (s) parts.push(s);
     }
@@ -1642,6 +1577,7 @@ export function workbenchStaticEnvSurfaceParts(args: {
     inject_value_format?: string;
     request_body_tpl?: string;
     headers?: Array<{ key?: string; value?: string; enabled?: boolean }>;
+    credentials?: Array<{ key?: string; value?: string }>;
   } | null;
 }): string[] {
   const ep = args.endpoint ? { ...args.endpoint, body: undefined } : null;
@@ -1663,6 +1599,7 @@ export function findStaticCapturePlaceholders(args: {
     inject_value_format?: string;
     request_body_tpl?: string;
     headers?: Array<{ key?: string; value?: string; enabled?: boolean }>;
+    credentials?: Array<{ key?: string; value?: string }>;
   } | null;
 }): string[] {
   const parts = workbenchStaticEnvSurfaceParts(args);
@@ -1991,7 +1928,7 @@ export function extractPipeline(run: ConnectorRun | null | undefined) {
   return {
     stages,
     auth,
-    transformedRequest: reqTx?.request_summary,
+    transformedRequest: reqTx?.request_summary || upstream?.request_summary,
     upstreamResponse: upstream?.response_summary,
     tenantResponse: resTx?.response_summary || extractRunResponse(run),
   };
