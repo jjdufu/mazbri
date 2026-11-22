@@ -3,8 +3,8 @@ use super::{
     DraftGateItem, FromStr, GATE_REASON_SKIPPED, GATE_TTL_HOURS, PgPool, PublishChannel,
     PublishRequest, PublishResult, RecentGateRun, Row, SsrfChecker, SupplierConfig, Uuid,
     apply_env_str, apply_env_to_supplier_config, build_workbench_spec, channel_config_with_egress,
-    connector_metrics, endpoint_by_id, evaluate_endpoint_gates, info, mask_config_credentials,
-    parse_workbench_env, repo, ssrf,
+    connector_metrics, endpoint_by_id, evaluate_endpoint_gates, guard_channel_tls_privilege,
+    guard_supplier_tls_privilege, info, mask_config_credentials, parse_workbench_env, repo, ssrf,
 };
 use mazbri_core::num::SaturatingFrom;
 
@@ -23,6 +23,7 @@ pub struct PublishDraftParams<'a> {
     pub actor: &'a str,
     pub user_id: Uuid,
     pub can_force_publish: bool,
+    pub is_super_admin: bool,
     pub client_ip: Option<String>,
 }
 
@@ -41,6 +42,7 @@ pub async fn publish_draft(
         actor,
         user_id,
         can_force_publish,
+        is_super_admin,
         client_ip,
     } = params;
     let PreparedPublish {
@@ -49,7 +51,7 @@ pub async fn publish_draft(
         publish_cfg,
         expanded_url,
         config_value,
-    } = prepare_publish(pool, checker, id, &req, can_force_publish).await?;
+    } = prepare_publish(pool, checker, id, &req, can_force_publish, is_super_admin).await?;
 
     let (supplier_code, name) = supplier_identity(&req)?;
 
@@ -74,6 +76,7 @@ pub async fn publish_draft(
         cfg: &publish_cfg,
         upstream_url: &expanded_url,
         ssrf: checker,
+        is_super_admin,
     };
     let (channel_ids, channels_snapshot) =
         publish_channels(&mut tx, supplier_id, &req, &ctx).await?;
@@ -230,6 +233,7 @@ struct ChannelBuildCtx<'a> {
     cfg: &'a SupplierConfig,
     upstream_url: &'a str,
     ssrf: &'a SsrfChecker,
+    is_super_admin: bool,
 }
 
 fn check_publish_gates(
@@ -380,7 +384,10 @@ async fn publish_channel(
         Some(ctx.cfg),
         ctx.upstream_url,
     )?;
-    let egress = built.spec;
+    let egress = built
+        .spec
+        .encrypt_secrets_for_storage()
+        .map_err(|e| ApiError::internal(format!("encrypt egress secrets: {e}")))?;
     if ctx.cfg.is_transparent() {
         mazbri_core::validate_egress_spec(&egress)
             .map_err(|e| ApiError::validation(format!("CONFIG_INVALID: {e}")))?;
@@ -396,8 +403,10 @@ async fn publish_channel(
     .await
     .map_err(|e| ApiError::internal(format!("lookup channel: {e}")))?;
 
+    let old_ch_cfg = existing_ch.as_ref().map(|(_, _, c)| c);
     let (existing_id, channel_config) =
-        prepare_channel_upsert_config(supplier_id, channel_code, existing_ch, &egress)?;
+        prepare_channel_upsert_config(supplier_id, channel_code, existing_ch.clone(), &egress)?;
+    guard_channel_tls_privilege(&channel_config, old_ch_cfg, ctx.is_super_admin)?;
 
     let cid = if let Some(id) = existing_id {
         sqlx::query(
@@ -790,6 +799,7 @@ async fn prepare_publish(
     id: Uuid,
     req: &PublishRequest,
     can_force_publish: bool,
+    is_super_admin: bool,
 ) -> Result<PreparedPublish, ApiError> {
     let draft = repo::get_draft(pool, id)
         .await
@@ -798,7 +808,10 @@ async fn prepare_publish(
 
     let mut cfg = SupplierConfig::parse_and_validate(&draft.config)
         .map_err(|e| ApiError::validation(format!("CONFIG_INVALID: {e}")))?;
-    cfg = cfg.normalize_disabled_sections();
+    cfg = cfg
+        .normalize_disabled_sections()
+        .encrypt_credentials_for_storage()
+        .map_err(|e| ApiError::internal(format!("encrypt supplier credentials: {e}")))?;
     cfg.validate_upstream_url_for_type(&draft.upstream_url)
         .map_err(|e| ApiError::validation(format!("CONFIG_INVALID: {e}")))?;
 
@@ -844,6 +857,15 @@ async fn prepare_publish(
     let config_value = publish_cfg
         .to_json_value()
         .map_err(|e| ApiError::validation(e.to_string()))?;
+    if !is_super_admin {
+        let existing_sup_cfg: Option<serde_json::Value> =
+            sqlx::query_scalar("SELECT config FROM suppliers WHERE supplier_code = $1")
+                .bind(req.supplier.supplier_code.trim())
+                .fetch_optional(pool)
+                .await
+                .map_err(|e| ApiError::internal(format!("lookup supplier config: {e}")))?;
+        guard_supplier_tls_privilege(&config_value, existing_sup_cfg.as_ref(), false)?;
+    }
 
     Ok(PreparedPublish {
         draft,

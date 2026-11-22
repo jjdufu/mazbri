@@ -3,6 +3,20 @@ import { API_BASE_PATH } from "@/config/api";
 
 const BASE = `${API_BASE_PATH}/upstream-connectors`;
 
+export interface CaptureSpec {
+  name: string;
+  path: string;
+  /** Client Sortable key. Engine ignores it. */
+  uid?: string;
+}
+
+export interface UpstreamTlsSpec {
+  insecure_skip_verify?: boolean;
+  ca_cert?: string | null;
+  client_cert?: string | null;
+  client_key?: string | null;
+}
+
 export interface ConnectorEndpoint {
   id?: string;
   name?: string;
@@ -34,11 +48,13 @@ export interface ConnectorEndpoint {
   cost_price?: string;
   qps_limit?: number;
   assertions?: AssertionSpec[];
+  captures?: CaptureSpec[];
   gate?: boolean;
   adapter?: string;
   operation?: string;
   wrap?: string;
   unwrap?: string;
+  request_id_header?: string;
   base_url?: string;
   timeout_ms?: number;
   artifact_id?: string;
@@ -50,6 +66,8 @@ export interface ConnectorEndpoint {
   sign_form?: Record<string, unknown>;
   /** 业务体加解密 / 签名 profile；发布时写入 ChannelEgressSpec.crypto */
   crypto?: Record<string, unknown> | null;
+  /** 端点级上游 TLS/mTLS 覆盖；发布时写入 ChannelEgressSpec.tls */
+  tls?: UpstreamTlsSpec | null;
   egress?: Record<string, unknown>;
 
   tag?: string;
@@ -77,8 +95,21 @@ export type WorkbenchEnvEntry = {
   enabled?: boolean;
 };
 
-/** Array of KV rows (incl. disabled) or legacy string map. */
-export type WorkbenchEnvValue = WorkbenchEnvEntry[];
+export interface WorkbenchNamedEnv {
+  id: string;
+  name: string;
+  variables: WorkbenchEnvEntry[];
+}
+
+export interface WorkbenchMultiEnvDoc {
+  version: 2;
+  active_env_id?: string | null;
+  global: WorkbenchEnvEntry[];
+  environments: WorkbenchNamedEnv[];
+}
+
+/** Legacy array of KV rows (incl. disabled) or multi-environment document. */
+export type WorkbenchEnvValue = WorkbenchEnvEntry[] | WorkbenchMultiEnvDoc;
 
 export interface ConnectorDraft {
   id: string;
@@ -103,6 +134,7 @@ export type DraftGateReason =
   | "not_run"
   | "spec_changed"
   | "unresolved_vars"
+  | "spec_invalid"
   | "skipped"
   | "";
 
@@ -130,6 +162,7 @@ export interface ConnectorRun {
   spec_fingerprint?: string | null;
   /** bypass_mgmt_probe = 经 bypass 管理探针；可作 require_gate。缺省/其它不作门控。 */
   probe_path?: string | null;
+  gate?: DraftGateItem[];
   response_preview?: {
     status?: number;
     body_preview?: string;
@@ -137,6 +170,11 @@ export interface ConnectorRun {
     headers?: Record<string, string>;
     adapter?: string;
     probe_path?: string;
+    request_id?: string;
+    upstream_request_id?: string | null;
+    trace_id?: string | null;
+    captured?: Record<string, string>;
+    biz_error?: unknown;
   };
 }
 
@@ -153,6 +191,8 @@ export interface AssertionResult {
   name: string;
   ok: boolean;
   message?: string | null;
+  expected?: unknown;
+  actual?: unknown;
 }
 
 export interface PublishRequest {
@@ -221,6 +261,15 @@ export function listDrafts(params?: {
   });
 }
 
+export interface DraftSnapshotPayload {
+  name?: string;
+  upstream_type?: string;
+  upstream_url: string;
+  config?: Record<string, unknown>;
+  endpoints?: ConnectorEndpoint[];
+  workbench_env?: WorkbenchEnvValue;
+}
+
 export function createDraft(
   data: {
     draft_code: string;
@@ -232,6 +281,7 @@ export function createDraft(
     endpoints?: ConnectorEndpoint[];
     workbench_env?: WorkbenchEnvValue;
     source?: string;
+    claim_run_ids?: string[];
   },
   opts?: ConnectorRequestOpts,
 ) {
@@ -293,16 +343,20 @@ export function deleteDraft(id: string) {
 }
 
 export function runDraft(
-  id: string,
+  id: string | null | undefined,
   data: {
     mode?: string;
     endpoint_id?: string;
     assertions?: AssertionSpec[];
+    env_id?: string | null;
+    captures?: Record<string, string>;
+    draft_snapshot?: DraftSnapshotPayload;
   },
   opts?: ConnectorRequestOpts,
 ) {
+  const target = (id || "").trim();
   return request.post<ConnectorRun>({
-    url: `${BASE}/drafts/${id}/runs`,
+    url: target ? `${BASE}/drafts/${target}/runs` : `${BASE}/runs`,
     data,
     ...withConnectorOpts(opts),
   });
@@ -321,14 +375,20 @@ export function getRun(runId: string) {
 }
 
 export function transformPreview(
-  id: string,
+  id: string | null | undefined,
   data: {
     endpoint_id?: string;
+    env_id?: string | null;
+    captures?: Record<string, string>;
+    draft_snapshot?: DraftSnapshotPayload;
   },
   opts?: ConnectorRequestOpts,
 ) {
+  const target = (id || "").trim();
   return request.post<{ ok: boolean; stages: StageResult[] }>({
-    url: `${BASE}/drafts/${id}/transform-preview`,
+    url: target
+      ? `${BASE}/drafts/${target}/transform-preview`
+      : `${BASE}/transform-preview`,
     data,
     ...withConnectorOpts(opts),
   });
@@ -341,7 +401,11 @@ export function publishDraft(id: string, data: PublishRequest) {
   });
 }
 
-export function importCurl(data: { curl: string; draft_code?: string; name?: string }) {
+export function importCurl(data: {
+  curl: string;
+  draft_code?: string;
+  name?: string;
+}) {
   return request.post<ConnectorDraft>({
     url: `${BASE}/import/curl`,
     data,

@@ -2,7 +2,7 @@ use crate::audit::extract_client_ip;
 use crate::error::ApiError;
 use crate::handlers::AppState;
 use crate::handlers::types::ListParams;
-use crate::middleware::auth::{AdminClaims, extract_user_id, is_business_admin};
+use crate::middleware::auth::{AdminClaims, extract_user_id, is_admin, is_business_admin};
 use crate::response::ApiResponse;
 use crate::services::supplier as svc;
 use axum::{
@@ -40,9 +40,12 @@ pub async fn create_supplier(
         &state.db,
         &state.audit,
         &payload,
-        user_id,
-        &claims.sub,
-        client_ip,
+        svc::SupplierActorCtx {
+            user_id,
+            username: &claims.sub,
+            is_super_admin: is_admin(&claims),
+            client_ip,
+        },
     )
     .await?;
     Ok(crate::response::created(data))
@@ -78,9 +81,12 @@ pub async fn update_supplier(
         &state.audit,
         &id,
         &payload,
-        user_id,
-        &claims.sub,
-        client_ip,
+        svc::SupplierActorCtx {
+            user_id,
+            username: &claims.sub,
+            is_super_admin: is_admin(&claims),
+            client_ip,
+        },
     )
     .await?;
     Ok(ApiResponse::ok(data))

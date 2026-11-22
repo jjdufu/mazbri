@@ -382,6 +382,7 @@ pub const RULES: &[RouteRule] = &[
     rule("POST", "/upstream-connectors/import/curl", Roles(BIZ)),
     rule("POST", "/upstream-connectors/import/openapi", Roles(BIZ)),
     rule("POST", "/upstream-connectors/import/postman", Roles(BIZ)),
+    rule("POST", "/upstream-connectors/runs", Roles(BIZ)),
     rule("GET", "/upstream-connectors/runs/{run_id}", AnyRole),
     rule(
         "POST",
@@ -402,6 +403,11 @@ pub const RULES: &[RouteRule] = &[
         "GET",
         "/upstream-connectors/suppliers/{supplier_id}/versions/{vid}/diff",
         AnyRole,
+    ),
+    rule(
+        "POST",
+        "/upstream-connectors/transform-preview",
+        Roles(BIZ),
     ),
     rule("POST", "/upstreams/onboarding", Roles(BIZ)),
     rule("POST", "/upstreams/onboarding/dry-run", Roles(BIZ)),

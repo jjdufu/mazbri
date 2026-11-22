@@ -348,6 +348,13 @@ pub static ROUTES: &[RouteAudit] = &[
         R::Connector,
         ID,
     ),
+    write(
+        "POST",
+        "/upstream-connectors/transform-preview",
+        A::ConnectorTransformPreview,
+        R::Connector,
+        None,
+    ),
     read("/upstream-connectors/drafts/{id}/runs", R::Connector),
     write(
         "POST",
@@ -355,6 +362,13 @@ pub static ROUTES: &[RouteAudit] = &[
         A::ConnectorRun,
         R::Connector,
         ID,
+    ),
+    write(
+        "POST",
+        "/upstream-connectors/runs",
+        A::ConnectorRun,
+        R::Connector,
+        None,
     ),
     read("/upstream-connectors/runs/{run_id}", R::Connector),
     write(

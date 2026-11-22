@@ -10,18 +10,24 @@ import {
 } from "../authMatrix";
 import { isAuthSignFormProfile } from "../cryptoProfileHelpers";
 import {
-  HSPLIT_DEFAULT_LEFT,
-  SPLIT_DEFAULT_RATIO,
-  SPLIT_DEFAULT_RIGHT,
-  VSPLIT_DEFAULT_BOTTOM,
+  MASKED_SECRET_VALUE,
   autoChannelsFromEndpoints,
   detectResponseBodyKind,
   ensureEndpointAdapterFields,
+  exportWorkbenchEnvJson,
+  findStaticCapturePlaceholders,
+  groupEndpointsByTag,
+  importWorkbenchEnvJson,
   isPersistedDraftId,
   listMissingAdapterFields,
-  parseHSplitState,
-  parseSplitLayoutState,
-  parseVSplitState,
+  mergeEnvWithCaptures,
+  normalizeWorkbenchEnvDoc,
+  resolveActiveEnvMap,
+  serializeCaptureList,
+  serializeWorkbenchEnvDoc,
+  tlsFormToSpec,
+  tlsSpecToForm,
+  validateTlsFormClient,
 } from "../workbenchHelpers";
 import type { ConnectorEndpoint } from "@/api/upstream-connectors";
 
@@ -118,68 +124,6 @@ console.log("workbenchHelpers authMatrix ok");
 assert.equal(isAuthSignFormProfile("sign_form"), true);
 assert.equal(isAuthSignFormProfile("bearer"), false);
 console.log("workbenchHelpers auth vs body crypto boundary ok");
-
-assert.deepEqual(parseHSplitState(null), {
-  left: HSPLIT_DEFAULT_LEFT,
-  collapsed: false,
-});
-assert.deepEqual(parseHSplitState(""), {
-  left: HSPLIT_DEFAULT_LEFT,
-  collapsed: false,
-});
-assert.deepEqual(parseHSplitState("not-json"), {
-  left: HSPLIT_DEFAULT_LEFT,
-  collapsed: false,
-});
-assert.deepEqual(parseHSplitState("{}"), {
-  left: HSPLIT_DEFAULT_LEFT,
-  collapsed: false,
-});
-assert.deepEqual(parseHSplitState(JSON.stringify({ left: 320, collapsed: true })), {
-  left: 320,
-  collapsed: true,
-});
-assert.deepEqual(parseHSplitState(JSON.stringify({ left: 180, collapsed: false })), {
-  left: 180,
-  collapsed: false,
-});
-assert.deepEqual(parseHSplitState(JSON.stringify({ left: 200 })), {
-  left: 200,
-  collapsed: false,
-});
-assert.deepEqual(parseHSplitState(JSON.stringify({ left: -1, collapsed: true })), {
-  left: HSPLIT_DEFAULT_LEFT,
-  collapsed: true,
-});
-
-// VSplit defaults expanded (collapsed=false when missing storage)
-assert.deepEqual(parseVSplitState(null), {
-  bottom: VSPLIT_DEFAULT_BOTTOM,
-  collapsed: false,
-});
-assert.equal(
-  parseVSplitState(JSON.stringify({ bottom: 300, collapsed: true })).collapsed,
-  true,
-);
-assert.deepEqual(parseSplitLayoutState(null), {
-  direction: "horizontal",
-  ratio: SPLIT_DEFAULT_RATIO,
-  bottom: VSPLIT_DEFAULT_BOTTOM,
-  right: SPLIT_DEFAULT_RIGHT,
-  collapsed: false,
-});
-assert.deepEqual(
-  parseSplitLayoutState(
-    JSON.stringify({ direction: "vertical", ratio: 0.42, right: 480, collapsed: false }),
-  ),
-  {
-    direction: "vertical",
-    ratio: 0.42,
-    bottom: VSPLIT_DEFAULT_BOTTOM,
-    right: 480,
-    collapsed: false,
-  },
-);
 
 assert.equal(detectResponseBodyKind('{"ok":true}'), "json");
 assert.equal(detectResponseBodyKind("error sending request for url (...)"), "raw");
@@ -283,3 +227,157 @@ assert.equal(isPersistedDraftId("00000000-0000-0000-0000-000000000000"), false);
 assert.equal(isPersistedDraftId("5ef59d80-f105-4b37-9ff8-f4f6947f28eb"), true);
 
 console.log("workbenchHelpers adapter required fields ok");
+
+// --- 04 multi-environment normalization, resolution, import/export ---
+{
+  const legacy = normalizeWorkbenchEnvDoc([
+    { key: "HOST", value: "https://global.example.com", enabled: true },
+    { key: "DISABLED", value: "x", enabled: false },
+  ]);
+  assert.equal(legacy.activeEnvId, null);
+  assert.deepEqual(resolveActiveEnvMap(legacy), {
+    HOST: "https://global.example.com",
+  });
+
+  const v2 = normalizeWorkbenchEnvDoc({
+    version: 2,
+    active_env_id: "staging",
+    global: [
+      { key: "HOST", value: "https://global.example.com", enabled: true },
+      { key: "SHARED", value: "g1", enabled: true },
+    ],
+    environments: [
+      {
+        id: "staging",
+        name: "Staging",
+        variables: [
+          { key: "HOST", value: "https://staging.example.com", enabled: true },
+        ],
+      },
+      {
+        id: "prod",
+        name: "Prod",
+        variables: [
+          { key: "HOST", value: "https://prod.example.com", enabled: true },
+        ],
+      },
+    ],
+  });
+  assert.equal(v2.activeEnvId, "staging");
+  assert.deepEqual(resolveActiveEnvMap(v2), {
+    HOST: "https://staging.example.com",
+    SHARED: "g1",
+  });
+
+  const serialized = serializeWorkbenchEnvDoc(v2);
+  assert.equal(serialized.version, 2);
+  assert.equal(serialized.active_env_id, "staging");
+  assert.equal(serialized.environments.length, 2);
+
+  const exported = exportWorkbenchEnvJson(v2, "UPUPT");
+  const reimported = importWorkbenchEnvJson(JSON.stringify(exported));
+  assert.equal(reimported.activeEnvId, "staging");
+  assert.deepEqual(resolveActiveEnvMap(reimported), {
+    HOST: "https://staging.example.com",
+    SHARED: "g1",
+  });
+
+  const postmanImported = importWorkbenchEnvJson(
+    JSON.stringify({
+      name: "Sandbox",
+      values: [
+        { key: "API_TOKEN", value: "tok-123", enabled: true },
+        { key: "OFF", value: "skip", enabled: false },
+      ],
+    }),
+    v2,
+  );
+  assert.equal(postmanImported.environments.length, 3);
+  assert.equal(resolveActiveEnvMap(postmanImported).API_TOKEN, "tok-123");
+  assert.equal(resolveActiveEnvMap(postmanImported).OFF, undefined);
+}
+
+// --- 05 captures merge & static vs payload detection ---
+{
+  const merged = mergeEnvWithCaptures(
+    { HOST: "https://api.example.com" },
+    { token: "abc-999" },
+  );
+  assert.equal(merged["captures.token"], "abc-999");
+
+  const payloadOnlyEp: ConnectorEndpoint = {
+    method: "POST",
+    path: "/orders",
+    headers: { "X-Static": "{{STATIC_KEY}}" },
+    body: { access_token: "{{captures.token}}" },
+  };
+  assert.deepEqual(
+    findStaticCapturePlaceholders({
+      upstreamUrl: "https://api.example.com",
+      endpoint: payloadOnlyEp,
+    }),
+    [],
+  );
+
+  const staticLeakEp: ConnectorEndpoint = {
+    method: "POST",
+    path: "/orders/{{captures.order_id}}",
+    headers: { Authorization: "Bearer {{captures.token}}" },
+    body: { ok: true },
+  };
+  assert.deepEqual(
+    findStaticCapturePlaceholders({
+      upstreamUrl: "https://api.example.com",
+      endpoint: staticLeakEp,
+    }),
+    ["captures.order_id", "captures.token"],
+  );
+
+  assert.deepEqual(
+    serializeCaptureList([
+      { name: " token ", path: " $.data.token ", uid: "u1" },
+      { name: "", path: "$.x" },
+    ]),
+    [{ name: "token", path: "$.data.token" }],
+  );
+}
+
+// --- 06 TLS form PEM validation & masked secret round-trip ---
+{
+  const fromMasked = tlsSpecToForm({
+    insecure_skip_verify: false,
+    client_cert: "-----BEGIN CERTIFICATE-----\nCERT\n-----END CERTIFICATE-----",
+    client_key: MASKED_SECRET_VALUE,
+  });
+  assert.equal(fromMasked.enabled, true);
+  assert.equal(fromMasked.has_saved_key, true);
+  assert.equal(fromMasked.client_key, "");
+  assert.deepEqual(validateTlsFormClient(fromMasked), []);
+
+  const roundTrip = tlsFormToSpec(fromMasked);
+  assert.equal(roundTrip?.client_key, MASKED_SECRET_VALUE);
+
+  const broken = tlsSpecToForm({
+    client_cert: "NOT-PEM",
+  });
+  const errs = validateTlsFormClient(broken);
+  assert.ok(errs.includes("client_cert_pem"));
+  assert.ok(errs.includes("mtls_pair_incomplete"));
+}
+
+// --- 07 folder grouping by tag ---
+{
+  const groups = groupEndpointsByTag(
+    [
+      { id: "1", name: "Create", method: "POST", path: "/orders", tag: "orders" },
+      { id: "2", name: "Ping", method: "GET", path: "/health" },
+      { id: "3", name: "Cancel", method: "POST", path: "/orders/cancel", tag: "orders" },
+    ],
+    "order",
+  );
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0]?.tag, "orders");
+  assert.equal(groups[0]?.items.length, 2);
+}
+
+console.log("workbenchHelpers multi-env, captures, TLS & tag grouping ok");

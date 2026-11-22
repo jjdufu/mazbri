@@ -40,8 +40,10 @@ pub use channel_egress::{
     AUTH_SIGN_FORM, AUTH_SKIP, AdapterKind, AuthAwsSpec, AuthDigestSpec, AuthHawkSpec,
     AuthInjectSpec, AuthInvalidationSpec, AuthJwtSpec, AuthProfile, AuthSpec, BodyEncoding,
     BodyMatchRule, ChannelEgressError, ChannelEgressSpec, EgressRequestSpec, EgressResponseSpec,
-    WRAP_METHOD_BIZ_CONTENT, hash_egress_spec, hash_egress_spec_json, parse_and_validate_egress,
-    parse_channel_config_egress, profile_is_undeclared, sanitize_auth_spec, sanitize_egress_auth,
+    UpstreamTlsSpec, WRAP_METHOD_BIZ_CONTENT, hash_egress_spec, hash_egress_spec_json,
+    mask_channel_config_secrets, mask_tls_in_json, merge_channel_config_secrets,
+    merge_tls_secret_in_json, parse_and_validate_egress, parse_channel_config_egress,
+    profile_is_undeclared, sanitize_auth_spec, sanitize_egress_auth,
     upsert_egress_in_channel_config, validate_channel_config_if_egress, validate_egress_spec,
     validate_invalidation_rules,
 };

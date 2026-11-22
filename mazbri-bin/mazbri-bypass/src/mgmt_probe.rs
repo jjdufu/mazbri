@@ -1,7 +1,7 @@
 //! 隔离管理探针口：仅供 mgmt 工作台 business/live 试调。
 //!
 //! - 明文 HTTP（docker 内网），`Authorization: Bearer <mgmt_probe_token>`
-//! - 只暴露 [`MGMT_PROBE_INVOKE_PATH`]，复用与 gRPC Execute 同一 `execute_invoke`
+//! - 只暴露 [`MGMT_PROBE_INVOKE_PATH`]，复用与 gRPC Execute 同源内核的 `execute_probe_invoke`
 //! - 请求/响应 JSON 只用 `mazbri_upstream_contracts::mgmt_probe` 共享类型
 //! - 不改配置、不发证、不碰租户 8888 mTLS 数据面
 
@@ -15,7 +15,6 @@ use axum::{Json, Router};
 use mazbri_upstream_contracts::mgmt_probe::{
     MGMT_PROBE_INVOKE_PATH, ProbeInvokeRequest, ProbeInvokeResponse,
 };
-use mazbri_upstream_contracts::shared::{InvokeRequest, InvokeResponse};
 use std::future::Future;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -24,12 +23,18 @@ use tracing::info;
 
 /// 探针 handler 背后的 invoke 执行面；生产实现为 [`MazbriBypassServiceImpl`]。
 pub trait ProbeExecutor: Clone + Send + Sync + 'static {
-    fn execute_invoke(&self, req: InvokeRequest) -> impl Future<Output = InvokeResponse> + Send;
+    fn execute_probe_invoke(
+        &self,
+        req: ProbeInvokeRequest,
+    ) -> impl Future<Output = ProbeInvokeResponse> + Send;
 }
 
 impl ProbeExecutor for MazbriBypassServiceImpl {
-    fn execute_invoke(&self, req: InvokeRequest) -> impl Future<Output = InvokeResponse> + Send {
-        MazbriBypassServiceImpl::execute_invoke(self, req)
+    fn execute_probe_invoke(
+        &self,
+        req: ProbeInvokeRequest,
+    ) -> impl Future<Output = ProbeInvokeResponse> + Send {
+        MazbriBypassServiceImpl::execute_probe_invoke(self, req)
     }
 }
 
@@ -79,8 +84,8 @@ async fn invoke_handler<E: ProbeExecutor>(
         )
             .into_response();
     }
-    let response = state.executor.execute_invoke(body.into()).await;
-    (StatusCode::OK, Json(ProbeInvokeResponse::from(response))).into_response()
+    let response = state.executor.execute_probe_invoke(body).await;
+    (StatusCode::OK, Json(response)).into_response()
 }
 
 /// 探针路由（token 鉴权 + 单一 invoke 路径）。
@@ -118,8 +123,10 @@ mod tests {
     use super::*;
     use axum::body::{Body, to_bytes};
     use axum::http::Request;
-    use mazbri_upstream_contracts::mgmt_probe::{ProbeInvokeRequest, ProbeTrace};
-    use mazbri_upstream_contracts::shared::InvokeUpstreamMeta;
+    use mazbri_upstream_contracts::mgmt_probe::{
+        ProbeInvokeRequest, ProbeTrace, ProbeUpstreamMeta,
+    };
+    use std::collections::BTreeMap;
     use tower::ServiceExt;
 
     const TEST_TOKEN: &str = "unit-test-probe-token";
@@ -128,27 +135,32 @@ mod tests {
     struct FakeExecutor;
 
     impl ProbeExecutor for FakeExecutor {
-        fn execute_invoke(
+        fn execute_probe_invoke(
             &self,
-            req: InvokeRequest,
-        ) -> impl Future<Output = InvokeResponse> + Send {
-            std::future::ready(InvokeResponse {
+            req: ProbeInvokeRequest,
+        ) -> impl Future<Output = ProbeInvokeResponse> + Send {
+            let mut response_headers = BTreeMap::new();
+            response_headers.insert("x-upstream-trace".into(), "ut-1".into());
+            std::future::ready(ProbeInvokeResponse {
                 success: true,
                 error: String::new(),
                 biz_error: None,
                 payload_json: format!("{{\"channel\":\"{}\"}}", req.channel_id),
-                upstream_meta: Some(InvokeUpstreamMeta {
+                upstream_meta: Some(ProbeUpstreamMeta {
                     status: 200,
                     url: "http://upstream.invalid/x".into(),
                     adapter: "http_json".into(),
                     upstream_wire_ms: 42,
-                    upstream_request_id: String::new(),
+                    upstream_request_id: "up-req-1".into(),
                     method: "POST".into(),
                     path: "/x".into(),
                     protocol: "HTTP/1.1".into(),
                 }),
                 internal_retries: 0,
                 retry_reasons: Vec::new(),
+                response_headers,
+                stages_json: "[{\"name\":\"http_call\",\"ok\":true,\"latency_ms\":42}]".into(),
+                trace_id: "0123456789abcdef0123456789abcdef".into(),
             })
         }
     }

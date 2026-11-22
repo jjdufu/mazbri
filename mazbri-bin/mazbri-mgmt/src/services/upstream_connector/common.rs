@@ -1,9 +1,158 @@
 use mazbri_core::{
-    AuthInjectSpec, AuthProfile, ChannelEgressSpec, SupplierConfig, profile_is_undeclared,
+    AuthInjectSpec, AuthProfile, ChannelEgressSpec, SupplierConfig, UpstreamTlsSpec,
+    mask_tls_in_json, merge_tls_secret_in_json, profile_is_undeclared, supplier_secrets_key,
     upsert_egress_in_channel_config,
 };
 
 use super::{ApiError, Arc, Duration, RuntimeEngine, SsrfChecker};
+
+/// 脱敏端点数组中的 `tls.client_key`（用于 `DraftDto` 及版本快照响应）。
+#[must_use]
+pub(crate) fn mask_endpoints_secrets(mut endpoints: serde_json::Value) -> serde_json::Value {
+    if let Some(arr) = endpoints.as_array_mut() {
+        for ep in arr {
+            if let Some(tls) = ep
+                .as_object_mut()
+                .and_then(|o| o.get_mut("tls"))
+            {
+                mask_tls_in_json(tls);
+            }
+        }
+    }
+    endpoints
+}
+
+fn find_existing_endpoint_tls<'a>(
+    existing: Option<&'a serde_json::Value>,
+    ep_id: Option<&str>,
+    idx: usize,
+) -> Option<&'a serde_json::Value> {
+    let arr = existing?.as_array()?;
+    if let Some(id) = ep_id.filter(|s| !s.is_empty())
+        && let Some(found) = arr
+            .iter()
+            .find(|e| e.get("id").and_then(serde_json::Value::as_str) == Some(id))
+    {
+        return found.get("tls");
+    }
+    arr.get(idx).and_then(|e| e.get("tls"))
+}
+
+/// 校验、合并掩码并加密草稿端点列表中的 `tls.client_key`，同时守卫 `insecure_skip_verify` 超管权限。
+pub(crate) fn sanitize_and_encrypt_endpoints_tls(
+    raw: &serde_json::Value,
+    existing: Option<&serde_json::Value>,
+    is_super_admin: bool,
+) -> Result<serde_json::Value, ApiError> {
+    let mut out = raw.clone();
+    let Some(arr) = out.as_array_mut() else {
+        return Ok(out);
+    };
+    for (idx, ep) in arr.iter_mut().enumerate() {
+        let Some(ep_obj) = ep.as_object_mut() else {
+            continue;
+        };
+        let ep_id = ep_obj
+            .get("id")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string);
+        let Some(tls_val) = ep_obj.get_mut("tls") else {
+            continue;
+        };
+        if tls_val.is_null() {
+            ep_obj.remove("tls");
+            continue;
+        }
+        let old_tls = find_existing_endpoint_tls(existing, ep_id.as_deref(), idx);
+        merge_tls_secret_in_json(tls_val, old_tls);
+        let tls: UpstreamTlsSpec = serde_json::from_value(tls_val.clone()).map_err(|e| {
+            ApiError::validation(format!("CONFIG_INVALID: endpoints[{idx}].tls: {e}"))
+        })?;
+        let old_insecure = old_tls
+            .and_then(|t| t.get("insecure_skip_verify"))
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
+        if tls.insecure_skip_verify && !old_insecure && !is_super_admin {
+            return Err(ApiError::Forbidden);
+        }
+        if let Some(mut norm) = tls.normalized() {
+            norm.validate(&format!("endpoints[{idx}].tls"))
+                .map_err(|e| ApiError::validation(format!("CONFIG_INVALID: {e}")))?;
+            let key = supplier_secrets_key()
+                .map_err(|e| ApiError::internal(format!("load supplier secrets key: {e}")))?;
+            norm.encrypt_for_storage(key)
+                .map_err(|e| ApiError::internal(format!("encrypt endpoint tls key: {e}")))?;
+            let encoded = serde_json::to_value(norm)
+                .map_err(|e| ApiError::internal(format!("serialize endpoint tls: {e}")))?;
+            ep_obj.insert("tls".into(), encoded);
+        } else {
+            ep_obj.remove("tls");
+        }
+    }
+    Ok(out)
+}
+
+/// 守卫供应商 `config.tls.insecure_skip_verify`：仅超级管理员可新开启跳过证书校验。
+///
+/// # Errors
+///
+/// 非超级管理员尝试新开启 `insecure_skip_verify` 时返回 `ApiError::Forbidden`。
+pub fn guard_supplier_tls_privilege(
+    new_cfg: &serde_json::Value,
+    existing_cfg: Option<&serde_json::Value>,
+    is_super_admin: bool,
+) -> Result<(), ApiError> {
+    let new_insecure = new_cfg
+        .get("tls")
+        .and_then(|t| t.get("insecure_skip_verify"))
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    if !new_insecure || is_super_admin {
+        return Ok(());
+    }
+    let old_insecure = existing_cfg
+        .and_then(|c| c.get("tls"))
+        .and_then(|t| t.get("insecure_skip_verify"))
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    if old_insecure {
+        Ok(())
+    } else {
+        Err(ApiError::Forbidden)
+    }
+}
+
+/// 守卫通道 `config.egress.tls.insecure_skip_verify`：仅超级管理员可新开启跳过证书校验。
+///
+/// # Errors
+///
+/// 非超级管理员尝试新开启 `insecure_skip_verify` 时返回 `ApiError::Forbidden`。
+pub fn guard_channel_tls_privilege(
+    new_cfg: &serde_json::Value,
+    existing_cfg: Option<&serde_json::Value>,
+    is_super_admin: bool,
+) -> Result<(), ApiError> {
+    let new_insecure = new_cfg
+        .get("egress")
+        .and_then(|e| e.get("tls"))
+        .and_then(|t| t.get("insecure_skip_verify"))
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    if !new_insecure || is_super_admin {
+        return Ok(());
+    }
+    let old_insecure = existing_cfg
+        .and_then(|c| c.get("egress"))
+        .and_then(|e| e.get("tls"))
+        .and_then(|t| t.get("insecure_skip_verify"))
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    if old_insecure {
+        Ok(())
+    } else {
+        Err(ApiError::Forbidden)
+    }
+}
 
 pub(crate) fn endpoint_by_id<'a>(
     endpoints: &'a serde_json::Value,

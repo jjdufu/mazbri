@@ -1,4 +1,7 @@
-use super::{Deserialize, Serialize, Uuid, mask_config_credentials, repo};
+use super::{
+    Deserialize, HashMap, Serialize, Uuid, decode_workbench_env_from_db, mask_config_credentials,
+    mask_endpoints_secrets, repo,
+};
 
 // ---------- API types ----------
 
@@ -36,6 +39,7 @@ pub struct DraftGateItem {
 
 pub(super) fn draft_to_dto(row: repo::DraftRow) -> DraftDto {
     let config = mask_config_credentials(row.config);
+    let endpoints = mask_endpoints_secrets(row.endpoints);
     DraftDto {
         id: row.id,
         draft_code: row.draft_code,
@@ -44,8 +48,8 @@ pub(super) fn draft_to_dto(row: repo::DraftRow) -> DraftDto {
         upstream_type: row.upstream_type,
         upstream_url: row.upstream_url,
         config,
-        endpoints: row.endpoints,
-        workbench_env: row.workbench_env,
+        endpoints,
+        workbench_env: decode_workbench_env_from_db(row.workbench_env),
         status: row.status,
         source: row.source,
         linked_supplier_id: row.linked_supplier_id,
@@ -75,6 +79,9 @@ pub struct CreateDraftRequest {
     pub workbench_env: Option<serde_json::Value>,
     #[serde(default)]
     pub source: Option<String>,
+    /// 首次显式保存草稿时认领此前未落库会话产生的试调记录 ID，保留准入门禁证据。
+    #[serde(default)]
+    pub claim_run_ids: Vec<Uuid>,
 }
 
 pub(super) fn default_transparent() -> String {
@@ -102,6 +109,24 @@ pub struct UpdateDraftRequest {
     pub status: Option<String>,
 }
 
+/// 工作台未保存内存态快照：试调与预览时仅在内存中合成配置并合并已有密文，不改写 `upstream_connector_drafts`。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DraftSnapshot {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default = "default_transparent")]
+    pub upstream_type: String,
+    #[serde(default)]
+    pub upstream_url: String,
+    #[serde(default)]
+    pub config: Option<serde_json::Value>,
+    #[serde(default)]
+    pub endpoints: Option<serde_json::Value>,
+    #[serde(default)]
+    pub workbench_env: Option<serde_json::Value>,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RunRequest {
@@ -113,6 +138,15 @@ pub struct RunRequest {
     pub testcase_id: Option<Uuid>,
     #[serde(default)]
     pub assertions: Option<Vec<serde_json::Value>>,
+    /// 试调时指定激活的命名环境 ID（省略时使用 `workbench_env.active_env_id`）。
+    #[serde(default)]
+    pub env_id: Option<String>,
+    /// 前端会话当前已提取的跨接口变量表（展开 `{{captures.<name>}}`）。
+    #[serde(default)]
+    pub captures: Option<HashMap<String, String>>,
+    /// 未保存的工作台快照；提供时试调按此内存快照构建规格，不落库覆盖原草稿。
+    #[serde(default)]
+    pub draft_snapshot: Option<DraftSnapshot>,
 }
 
 pub(super) fn default_business() -> String {
@@ -151,6 +185,9 @@ pub struct RunDto {
     /// 试跑拓扑：`bypass_mgmt_probe` 可作 `require_gate`；`NULL`/其它不作门控。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub probe_path: Option<String>,
+    /// 基于本次试调生效快照实时评估的准入门禁列表。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub gate: Vec<DraftGateItem>,
 }
 
 #[derive(Debug, Deserialize)]

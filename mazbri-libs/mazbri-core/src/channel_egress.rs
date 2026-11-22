@@ -5,6 +5,10 @@
 //! execute it through `mazbri-upstream-runtime`. Protocol work does **not**
 //! live in the gateway.
 
+use crate::crypto::supplier_secrets::{
+    SupplierSecretsError, decrypt_secret, encrypt_secret, is_encrypted_secret,
+    supplier_secrets_key,
+};
 use mazbri_crypto::profile::UpstreamCryptoProfile;
 use mazbri_crypto::registry::AlgorithmRegistry;
 use serde::{Deserialize, Serialize};
@@ -725,6 +729,228 @@ pub struct SoapSpec {
     pub number_fields: Option<Vec<String>>,
 }
 
+/// 上游 TLS / 双向 mTLS 配置（供应商默认 + 渠道覆盖）。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(deny_unknown_fields)]
+pub struct UpstreamTlsSpec {
+    /// 跳过服务端证书校验（仅超级管理员允许开启）。
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub insecure_skip_verify: bool,
+    /// 自定义根证书或中间证书链 PEM。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ca_cert: Option<String>,
+    /// 双向 mTLS 客户端证书 PEM。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_cert: Option<String>,
+    /// 双向 mTLS 客户端私钥 PEM；落库加密为 `enc:v2:<alg>:…`，管理面响应脱敏为 `••••••••`。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_key: Option<String>,
+}
+
+impl UpstreamTlsSpec {
+    /// 判断是否未配置任何自定义 TLS 选项。
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        !self.insecure_skip_verify
+            && self.ca_cert.as_deref().is_none_or(|s| s.trim().is_empty())
+            && self
+                .client_cert
+                .as_deref()
+                .is_none_or(|s| s.trim().is_empty())
+            && self
+                .client_key
+                .as_deref()
+                .is_none_or(|s| s.trim().is_empty())
+    }
+
+    /// 裁剪空白字符串；若全部为空则收敛为 `None`，保持无自定义 TLS 时序列化指纹零变化。
+    #[must_use]
+    pub fn normalized(mut self) -> Option<Self> {
+        self.ca_cert = self
+            .ca_cert
+            .take()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+        self.client_cert = self
+            .client_cert
+            .take()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+        self.client_key = self
+            .client_key
+            .take()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+        if self.is_empty() { None } else { Some(self) }
+    }
+
+    /// 校验 PEM 结构与双向 mTLS 证书/私钥成对完整性。
+    ///
+    /// # Errors
+    ///
+    /// PEM 格式缺失标准边界或客户端证书与私钥未成对提供时返回错误描述。
+    pub fn validate(&self, prefix: &str) -> Result<(), String> {
+        if let Some(ca) = self.ca_cert.as_deref().map(str::trim).filter(|s| !s.is_empty())
+            && !ca.contains("-----BEGIN CERTIFICATE-----")
+        {
+            return Err(format!("{prefix}.ca_cert 必须是合法的 PEM 证书（含 -----BEGIN CERTIFICATE-----）"));
+        }
+        let cert = self
+            .client_cert
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty());
+        let key = self
+            .client_key
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty());
+        if cert.is_some() != key.is_some() {
+            return Err(format!(
+                "{prefix}: mTLS 客户端证书（client_cert）与客户端私钥（client_key）必须同时提供"
+            ));
+        }
+        if let Some(c) = cert
+            && !c.contains("-----BEGIN CERTIFICATE-----")
+        {
+            return Err(format!(
+                "{prefix}.client_cert 必须是合法的 PEM 证书（含 -----BEGIN CERTIFICATE-----）"
+            ));
+        }
+        if let Some(k) = key
+            && !is_encrypted_secret(k)
+            && k != "••••••••"
+            && k != "********"
+            && !(k.contains("-----BEGIN ") && k.contains("PRIVATE KEY-----"))
+        {
+            return Err(format!(
+                "{prefix}.client_key 必须是合法的 PEM 私钥（含 -----BEGIN ... PRIVATE KEY-----）"
+            ));
+        }
+        Ok(())
+    }
+
+    /// 写入存储前加密 `client_key`（幂等，已加密密文保持不变）。
+    ///
+    /// # Errors
+    ///
+    /// AEAD 加密失败时返回错误。
+    pub fn encrypt_for_storage(&mut self, key: &[u8; 32]) -> Result<(), SupplierSecretsError> {
+        if let Some(ref mut ck) = self.client_key {
+            let trimmed = ck.trim();
+            if !trimmed.is_empty() && !is_encrypted_secret(trimmed) {
+                *ck = encrypt_secret(trimmed, key)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// 数据面出站前解密 `client_key`。
+    ///
+    /// # Errors
+    ///
+    /// 密文格式非法或解密失败时返回错误。
+    pub fn decrypt_for_runtime(&mut self, key: &[u8; 32]) -> Result<(), SupplierSecretsError> {
+        if let Some(ref mut ck) = self.client_key {
+            let trimmed = ck.trim();
+            if !trimmed.is_empty() {
+                *ck = decrypt_secret(trimmed, key)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// 计算运行时连接池缓存指纹（SHA-256）。
+    #[must_use]
+    pub fn fingerprint_bytes(&self) -> [u8; 32] {
+        let mut hasher = Sha256::new();
+        hasher.update([u8::from(self.insecure_skip_verify)]);
+        hasher.update(b"\0");
+        if let Some(ref ca) = self.ca_cert {
+            hasher.update(ca.trim().as_bytes());
+        }
+        hasher.update(b"\0");
+        if let Some(ref cert) = self.client_cert {
+            hasher.update(cert.trim().as_bytes());
+        }
+        hasher.update(b"\0");
+        if let Some(ref key) = self.client_key {
+            hasher.update(key.trim().as_bytes());
+        }
+        let digest = hasher.finalize();
+        let mut out = [0u8; 32];
+        out.copy_from_slice(&digest);
+        out
+    }
+}
+
+/// 脱敏任意 JSON `tls` 对象中的 `client_key`。
+pub fn mask_tls_in_json(tls_val: &mut serde_json::Value) {
+    if let Some(obj) = tls_val.as_object_mut()
+        && let Some(ck) = obj.get_mut("client_key")
+        && ck.as_str().is_some_and(|s| !s.trim().is_empty())
+    {
+        *ck = serde_json::Value::String("••••••••".to_string());
+    }
+}
+
+/// 当新提交的 `tls.client_key` 为脱敏占位符时，回填旧 `tls.client_key` 密文。
+pub fn merge_tls_secret_in_json(
+    new_tls: &mut serde_json::Value,
+    old_tls: Option<&serde_json::Value>,
+) {
+    let Some(new_obj) = new_tls.as_object_mut() else {
+        return;
+    };
+    let Some(ck_val) = new_obj.get_mut("client_key") else {
+        return;
+    };
+    let is_masked = ck_val
+        .as_str()
+        .is_some_and(|s| s == "••••••••" || s == "********");
+    if is_masked
+        && let Some(old_ck) = old_tls
+            .and_then(serde_json::Value::as_object)
+            .and_then(|o| o.get("client_key"))
+            .and_then(serde_json::Value::as_str)
+            .filter(|s| !s.is_empty())
+    {
+        *ck_val = serde_json::Value::String(old_ck.to_string());
+    }
+}
+
+/// 脱敏渠道 `config.egress.tls.client_key`（用于列表/详情/审计返回）。
+#[must_use]
+pub fn mask_channel_config_secrets(mut config: serde_json::Value) -> serde_json::Value {
+    if let Some(egress) = config
+        .as_object_mut()
+        .and_then(|o| o.get_mut("egress"))
+        .and_then(serde_json::Value::as_object_mut)
+        && let Some(tls) = egress.get_mut("tls")
+    {
+        mask_tls_in_json(tls);
+    }
+    config
+}
+
+/// 合并渠道 `config.egress.tls.client_key` 掩码占位符。
+pub fn merge_channel_config_secrets(
+    new_config: &mut serde_json::Value,
+    old_config: &serde_json::Value,
+) {
+    let old_tls = old_config
+        .get("egress")
+        .and_then(|e| e.get("tls"));
+    if let Some(new_tls) = new_config
+        .as_object_mut()
+        .and_then(|o| o.get_mut("egress"))
+        .and_then(serde_json::Value::as_object_mut)
+        .and_then(|e| e.get_mut("tls"))
+    {
+        merge_tls_secret_in_json(new_tls, old_tls);
+    }
+}
+
 /// Parsed `channels.config.egress` object.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(deny_unknown_fields)]
@@ -755,6 +981,9 @@ pub struct ChannelEgressSpec {
     /// 上游业务体加解密 / 签名 Profile；`None`（或 JSON 无 `crypto` 键）表示不做业务密文，仅原有 JSON wrap/auth。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub crypto: Option<UpstreamCryptoProfile>,
+    /// 渠道级上游 TLS / 双向 mTLS 覆盖配置；未设置时继承供应商 `config.tls`。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tls: Option<UpstreamTlsSpec>,
 }
 
 impl ChannelEgressSpec {
@@ -783,6 +1012,35 @@ impl ChannelEgressSpec {
             .as_deref()
             .filter(|s| !s.is_empty())
             .unwrap_or(WRAP_METHOD_BIZ_CONTENT)
+    }
+
+    /// 写入存储前加密 `tls.client_key`。
+    ///
+    /// # Errors
+    ///
+    /// 密钥加载或 AEAD 加密失败时返回错误。
+    pub fn encrypt_secrets_for_storage(mut self) -> Result<Self, ChannelEgressError> {
+        self.tls = self.tls.take().and_then(UpstreamTlsSpec::normalized);
+        if let Some(ref mut tls) = self.tls {
+            let key = supplier_secrets_key().map_err(|e| ChannelEgressError::new(e.to_string()))?;
+            tls.encrypt_for_storage(key)
+                .map_err(|e| ChannelEgressError::new(e.to_string()))?;
+        }
+        Ok(self)
+    }
+
+    /// 数据面出站前解密 `tls.client_key`。
+    ///
+    /// # Errors
+    ///
+    /// 密钥加载或密文解密失败时返回错误。
+    pub fn decrypt_secrets_for_runtime(mut self) -> Result<Self, ChannelEgressError> {
+        if let Some(ref mut tls) = self.tls {
+            let key = supplier_secrets_key().map_err(|e| ChannelEgressError::new(e.to_string()))?;
+            tls.decrypt_for_runtime(key)
+                .map_err(|e| ChannelEgressError::new(e.to_string()))?;
+        }
+        Ok(self)
     }
 }
 
@@ -1152,6 +1410,10 @@ pub fn validate_egress_spec(spec: &ChannelEgressSpec) -> Result<(), ChannelEgres
     }
 
     validate_egress_crypto(spec.crypto.as_ref())?;
+    if let Some(ref tls) = spec.tls {
+        tls.validate("egress.tls")
+            .map_err(ChannelEgressError::new)?;
+    }
     validate_adapter_options(spec, adapter)
 }
 
@@ -1930,6 +2192,54 @@ mod tests {
         assert!(validate_auth_invalidation(&inv, AuthProfile::Skip, AdapterKind::HttpJson).is_ok());
         assert!(
             validate_auth_invalidation(&inv, AuthProfile::None, AdapterKind::HttpJson).is_err()
+        );
+    }
+
+    #[test]
+    fn egress_tls_validation_and_secret_roundtrip() {
+        let missing_key = serde_json::json!({
+            "adapter": "http_json",
+            "base_url": "https://up.example",
+            "request": {"method": "GET", "path": "/health", "body_encoding": "none"},
+            "tls": {"client_cert": "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----"}
+        });
+        let err = parse_and_validate_egress(&missing_key).unwrap_err().to_string();
+        assert!(err.contains("必须同时提供"), "{err}");
+
+        let valid = serde_json::json!({
+            "adapter": "http_json",
+            "base_url": "https://up.example",
+            "request": {"method": "GET", "path": "/health", "body_encoding": "none"},
+            "tls": {
+                "insecure_skip_verify": true,
+                "ca_cert": "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----",
+                "client_cert": "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----",
+                "client_key": "-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----"
+            }
+        });
+        let spec = parse_and_validate_egress(&valid).unwrap();
+        let encrypted = spec.encrypt_secrets_for_storage().unwrap();
+        let stored_key = encrypted
+            .tls
+            .as_ref()
+            .unwrap()
+            .client_key
+            .as_deref()
+            .unwrap();
+        assert!(stored_key.starts_with("enc:v2:"));
+
+        let chan_cfg = serde_json::json!({ "egress": &encrypted });
+        let masked = mask_channel_config_secrets(chan_cfg.clone());
+        assert_eq!(masked["egress"]["tls"]["client_key"], "••••••••");
+
+        let mut merged = masked;
+        merge_channel_config_secrets(&mut merged, &chan_cfg);
+        assert_eq!(merged["egress"]["tls"]["client_key"], stored_key);
+
+        let decrypted = encrypted.decrypt_secrets_for_runtime().unwrap();
+        assert_eq!(
+            decrypted.tls.unwrap().client_key.as_deref(),
+            Some("-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----")
         );
     }
 }

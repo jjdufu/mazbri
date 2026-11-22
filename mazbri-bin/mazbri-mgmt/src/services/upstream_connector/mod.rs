@@ -31,7 +31,9 @@ mod versions;
 mod workbench_spec;
 
 pub use artifacts::*;
-pub use common::build_connector_runtime;
+pub use common::{
+    build_connector_runtime, guard_channel_tls_privilege, guard_supplier_tls_privilege,
+};
 pub(crate) use common::*;
 pub use draft::*;
 pub use import::*;

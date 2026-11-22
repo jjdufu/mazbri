@@ -4,7 +4,9 @@ use crate::audit::extract_client_ip;
 use crate::error::ApiError;
 use crate::handlers::AppState;
 use crate::handlers::mfa_guard::require_category;
-use crate::middleware::auth::{AdminClaims, can_write_upstream_connector, extract_user_id};
+use crate::middleware::auth::{
+    AdminClaims, can_write_upstream_connector, extract_user_id, is_admin,
+};
 use crate::response::ApiResponse;
 use crate::services::mfa::Category;
 use crate::services::upstream_connector as svc;
@@ -43,7 +45,7 @@ pub async fn create_draft(
     Json(payload): Json<svc::CreateDraftRequest>,
 ) -> Result<Response, ApiError> {
     require_connector_writer(&claims)?;
-    let data = svc::create_draft(&state.db, payload, &claims.sub).await?;
+    let data = svc::create_draft(&state.db, payload, &claims.sub, is_admin(&claims)).await?;
     Ok(crate::response::created(data))
 }
 
@@ -90,7 +92,7 @@ pub async fn update_draft(
     Json(payload): Json<svc::UpdateDraftRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
     require_connector_writer(&claims)?;
-    let data = svc::update_draft(&state.db, id, payload).await?;
+    let data = svc::update_draft(&state.db, id, payload, is_admin(&claims)).await?;
     Ok(ApiResponse::ok(data))
 }
 
@@ -133,8 +135,29 @@ pub async fn transform_preview(
     let data = Box::pin(svc::transform_preview(
         &state.db,
         &state.connector_runtime,
-        id,
+        Some(id),
         payload,
+        is_admin(&claims),
+    ))
+    .await?;
+    Ok(ApiResponse::ok(data))
+}
+
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+pub async fn ephemeral_transform_preview(
+    State(state): State<AppState>,
+    Extension(claims): Extension<AdminClaims>,
+    Json(payload): Json<svc::RunRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    require_connector_writer(&claims)?;
+    let data = Box::pin(svc::transform_preview(
+        &state.db,
+        &state.connector_runtime,
+        None,
+        payload,
+        is_admin(&claims),
     ))
     .await?;
     Ok(ApiResponse::ok(data))
@@ -164,10 +187,48 @@ pub async fn create_run(
             audit: &state.audit,
             engine: &state.connector_runtime,
             bypass: &state.bypass_probe,
-            id,
+            id: Some(id),
             req: payload,
             actor: &claims.sub,
             user_id: extract_user_id(&claims)?,
+            is_super_admin: is_admin(&claims),
+            client_ip: extract_client_ip(&headers, Some(addr)),
+            default_timeout_ms: state.config.connector_probe.default_timeout_ms,
+            max_body_bytes: state.config.connector_probe.max_body_bytes,
+        },
+    ))
+    .await?;
+    Ok(ApiResponse::ok(data))
+}
+
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+pub async fn create_ephemeral_run(
+    State(state): State<AppState>,
+    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
+    Extension(claims): Extension<AdminClaims>,
+    headers: HeaderMap,
+    Json(payload): Json<svc::RunRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    require_connector_writer(&claims)?;
+    if let Err(wait) = state.connector_run_limiter.try_acquire() {
+        return Err(ApiError::validation(format!(
+            "RATE_LIMITED: connector probe 过于频繁，请 {} 秒后重试",
+            wait.as_secs().max(1)
+        )));
+    }
+    let data = Box::pin(svc::run_draft(
+        &state.db,
+        svc::RunDraftParams {
+            audit: &state.audit,
+            engine: &state.connector_runtime,
+            bypass: &state.bypass_probe,
+            id: None,
+            req: payload,
+            actor: &claims.sub,
+            user_id: extract_user_id(&claims)?,
+            is_super_admin: is_admin(&claims),
             client_ip: extract_client_ip(&headers, Some(addr)),
             default_timeout_ms: state.config.connector_probe.default_timeout_ms,
             max_body_bytes: state.config.connector_probe.max_body_bytes,
@@ -231,6 +292,7 @@ pub async fn publish_draft(
             actor: &claims.sub,
             user_id: extract_user_id(&claims)?,
             can_force_publish: can_write_upstream_connector(&claims),
+            is_super_admin: is_admin(&claims),
             client_ip: extract_client_ip(&headers, Some(addr)),
         },
     )

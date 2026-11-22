@@ -2,7 +2,7 @@ use crate::audit::extract_client_ip;
 use crate::error::ApiError;
 use crate::handlers::AppState;
 use crate::handlers::types::ListParams;
-use crate::middleware::auth::{AdminClaims, extract_user_id, is_business_admin};
+use crate::middleware::auth::{AdminClaims, extract_user_id, is_admin, is_business_admin};
 use crate::response::ApiResponse;
 use crate::services::route_management as svc;
 use axum::{
@@ -68,6 +68,7 @@ pub async fn create_channel(
         &state.audit,
         &payload,
         extract_user_id(&claims)?,
+        is_admin(&claims),
         extract_client_ip(&headers, Some(addr)),
     )
     .await?;
@@ -103,6 +104,7 @@ pub async fn update_channel(
         &id,
         &payload,
         extract_user_id(&claims)?,
+        is_admin(&claims),
         extract_client_ip(&headers, Some(addr)),
     )
     .await?;
