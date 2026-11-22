@@ -51,7 +51,11 @@ async fn main() -> Result<()> {
             runtime.service_name.as_str().to_owned(),
             db,
         )
-        .with_user_agent(&runtime.ctx.config.upstream.user_agent)
+        .with_http_client_defaults(
+            &runtime.ctx.config.upstream.user_agent,
+            runtime.ctx.config.upstream.connect_timeout(),
+            runtime.ctx.config.upstream.timeout(),
+        )
         .with_options(mazbri_upstream_runtime::RuntimeOptions::from(
             &runtime.ctx.config.upstream,
         ));

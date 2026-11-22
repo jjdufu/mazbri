@@ -1,4 +1,4 @@
-use super::{Deserialize, Serialize, Uuid, mask_config_credentials, repo};
+use super::{Deserialize, HashMap, Serialize, Uuid, mask_config_credentials, mask_endpoints_secrets, repo};
 
 // ---------- API types ----------
 
@@ -36,6 +36,7 @@ pub struct DraftGateItem {
 
 pub(super) fn draft_to_dto(row: repo::DraftRow) -> DraftDto {
     let config = mask_config_credentials(row.config);
+    let endpoints = mask_endpoints_secrets(row.endpoints);
     DraftDto {
         id: row.id,
         draft_code: row.draft_code,
@@ -44,7 +45,7 @@ pub(super) fn draft_to_dto(row: repo::DraftRow) -> DraftDto {
         upstream_type: row.upstream_type,
         upstream_url: row.upstream_url,
         config,
-        endpoints: row.endpoints,
+        endpoints,
         workbench_env: row.workbench_env,
         status: row.status,
         source: row.source,
@@ -113,6 +114,12 @@ pub struct RunRequest {
     pub testcase_id: Option<Uuid>,
     #[serde(default)]
     pub assertions: Option<Vec<serde_json::Value>>,
+    /// 试调时指定激活的命名环境 ID（省略时使用 `workbench_env.active_env_id`）。
+    #[serde(default)]
+    pub env_id: Option<String>,
+    /// 前端会话当前已提取的跨接口变量表（展开 `{{captures.<name>}}`）。
+    #[serde(default)]
+    pub captures: Option<HashMap<String, String>>,
 }
 
 pub(super) fn default_business() -> String {

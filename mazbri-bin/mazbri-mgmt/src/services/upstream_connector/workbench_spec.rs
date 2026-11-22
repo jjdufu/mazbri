@@ -29,8 +29,18 @@ pub fn build_workbench_spec(
     supplier_cfg: Option<&SupplierConfig>,
     upstream_url: &str,
 ) -> Result<BuiltWorkbenchSpec, ApiError> {
-    let expanded_ep = expand_endpoint(endpoint, env)?;
-    let expanded_url = apply_env_str(upstream_url, env);
+    build_workbench_spec_with_captures(endpoint, env, None, supplier_cfg, upstream_url)
+}
+
+pub fn build_workbench_spec_with_captures(
+    endpoint: &Value,
+    env: &HashMap<String, String>,
+    captures: Option<&HashMap<String, String>>,
+    supplier_cfg: Option<&SupplierConfig>,
+    upstream_url: &str,
+) -> Result<BuiltWorkbenchSpec, ApiError> {
+    let expanded_ep_env = expand_endpoint(endpoint, env)?;
+    let expanded_url_env = apply_env_str(upstream_url, env);
 
     let mut cfg_owned = supplier_cfg.cloned();
     if let Some(ref mut cfg) = cfg_owned {
@@ -38,12 +48,51 @@ pub fn build_workbench_spec(
     }
     let cfg_ref = cfg_owned.as_ref();
 
-    let spec = assemble_spec(&expanded_ep, &expanded_url, cfg_ref)?;
-    let payload = payload_from_endpoint(&expanded_ep);
+    let pre_spec = assemble_spec(&expanded_ep_env, &expanded_url_env, cfg_ref)?;
+    let pre_payload = payload_from_endpoint(&expanded_ep_env);
+    let cred_keys = cred_keys_of(supplier_cfg);
+    let fingerprint =
+        fingerprint_workbench(&expanded_url_env, &pre_spec, &pre_payload, &cred_keys)?;
+
+    if let Some(caps) = captures {
+        let capture_vars: HashMap<String, String> = caps
+            .iter()
+            .map(|(k, v)| (format!("captures.{k}"), v.clone()))
+            .collect();
+        let expanded_ep = expand_endpoint(&expanded_ep_env, &capture_vars)?;
+        let expanded_url = apply_env_str(&expanded_url_env, &capture_vars);
+        let spec = assemble_spec(&expanded_ep, &expanded_url, cfg_ref)?;
+        let payload = payload_from_endpoint(&expanded_ep);
+        if FAIL_ON_UNRESOLVED_VARS {
+            let leftover = unresolved_idents_in(&leftover_scan_json(
+                &expanded_url,
+                cfg_ref,
+                &spec,
+                &payload,
+            ));
+            if !leftover.is_empty() {
+                return Err(ApiError::validation(format!(
+                    "UNRESOLVED_VARS: {}",
+                    leftover.join(", ")
+                )));
+            }
+        }
+        return Ok(BuiltWorkbenchSpec {
+            spec,
+            payload,
+            fingerprint,
+        });
+    }
 
     if FAIL_ON_UNRESOLVED_VARS {
-        let leftover =
-            unresolved_idents_in(&leftover_scan_json(&expanded_url, cfg_ref, &spec, &payload));
+        let static_scan =
+            leftover_scan_json(&expanded_url_env, cfg_ref, &pre_spec, &Value::Null);
+        let mut leftover = unresolved_idents_in(&static_scan);
+        for ident in unresolved_idents_in(&pre_payload) {
+            if !ident.starts_with("captures.") && !leftover.contains(&ident) {
+                leftover.push(ident);
+            }
+        }
         if !leftover.is_empty() {
             return Err(ApiError::validation(format!(
                 "UNRESOLVED_VARS: {}",
@@ -52,12 +101,9 @@ pub fn build_workbench_spec(
         }
     }
 
-    let cred_keys = cred_keys_of(supplier_cfg);
-    let fingerprint = fingerprint_workbench(&expanded_url, &spec, &payload, &cred_keys)?;
-
     Ok(BuiltWorkbenchSpec {
-        spec,
-        payload,
+        spec: pre_spec,
+        payload: pre_payload,
         fingerprint,
     })
 }
@@ -71,13 +117,7 @@ fn env_value_to_string(v: &Value) -> Option<String> {
     }
 }
 
-/// Parses a `KvRow` array (`[{ key, value, desc, enabled }, …]`).
-/// Disabled / blank keys are omitted.
-pub(crate) fn parse_workbench_env(value: &Value) -> HashMap<String, String> {
-    let mut out = HashMap::new();
-    let Some(items) = value.as_array() else {
-        return out;
-    };
+fn append_kv_rows(items: &[Value], out: &mut HashMap<String, String>) {
     for obj in items.iter().filter_map(Value::as_object) {
         if obj.get("enabled").and_then(Value::as_bool) == Some(false) {
             continue;
@@ -92,18 +132,113 @@ pub(crate) fn parse_workbench_env(value: &Value) -> HashMap<String, String> {
             .unwrap_or_default();
         out.insert(key.to_string(), val);
     }
+}
+
+/// Parses either legacy `KvRow[]` or structured multi-environment JSON (`{ global, environments, active_env_id }`).
+pub(crate) fn parse_workbench_env(value: &Value) -> HashMap<String, String> {
+    parse_workbench_env_with_id(value, None)
+}
+
+pub(crate) fn parse_workbench_env_with_id(
+    value: &Value,
+    env_id: Option<&str>,
+) -> HashMap<String, String> {
+    let mut out = HashMap::new();
+    if let Some(items) = value.as_array() {
+        append_kv_rows(items, &mut out);
+        return out;
+    }
+    let Some(obj) = value.as_object() else {
+        return out;
+    };
+    if !obj.contains_key("global") && !obj.contains_key("environments") {
+        return out;
+    }
+    if let Some(global_items) = obj.get("global").and_then(Value::as_array) {
+        append_kv_rows(global_items, &mut out);
+    }
+    let active_id = env_id
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            obj.get("active_env_id")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+        });
+    if let (Some(target_id), Some(envs)) = (
+        active_id,
+        obj.get("environments").and_then(Value::as_array),
+    ) && let Some(matched) = envs.iter().filter_map(Value::as_object).find(|e| {
+        e.get("id").and_then(Value::as_str) == Some(target_id)
+            || e.get("name").and_then(Value::as_str) == Some(target_id)
+    }) && let Some(vars) = matched.get("variables").and_then(Value::as_array)
+    {
+        append_kv_rows(vars, &mut out);
+    }
     out
 }
 
-/// `workbench_env` 写入校验：必须为 `KvRow` 数组。
+/// `workbench_env` 写入校验：支持旧版 `KvRow` 数组或新版多命名环境对象。
 pub(crate) fn validate_workbench_env(value: &Value) -> Result<(), ApiError> {
+    const ALLOWED_KEYS: [&str; 4] = ["version", "active_env_id", "global", "environments"];
     if value.is_array() {
-        Ok(())
-    } else {
-        Err(ApiError::validation(
-            "workbench_env 必须是 [{key,value,desc,enabled}] 数组",
-        ))
+        return Ok(());
     }
+    let Some(obj) = value.as_object() else {
+        return Err(ApiError::validation(
+            "workbench_env 必须是 [{key,value,desc,enabled}] 数组或多环境对象",
+        ));
+    };
+    if (!obj.contains_key("global") && !obj.contains_key("environments"))
+        || obj.keys().any(|k| !ALLOWED_KEYS.contains(&k.as_str()))
+    {
+        return Err(ApiError::validation(
+            "workbench_env 对象仅支持 {version, active_env_id, global, environments} 结构",
+        ));
+    }
+    if let Some(active) = obj.get("active_env_id")
+        && !active.is_null()
+        && !active.is_string()
+    {
+        return Err(ApiError::validation(
+            "workbench_env.active_env_id 必须是字符串或 null",
+        ));
+    }
+    if let Some(global) = obj.get("global")
+        && !global.is_array()
+    {
+        return Err(ApiError::validation("workbench_env.global 必须是数组"));
+    }
+    if let Some(envs) = obj.get("environments") {
+        let Some(arr) = envs.as_array() else {
+            return Err(ApiError::validation(
+                "workbench_env.environments 必须是数组",
+            ));
+        };
+        for (i, item) in arr.iter().enumerate() {
+            let Some(env_obj) = item.as_object() else {
+                return Err(ApiError::validation(format!(
+                    "workbench_env.environments[{i}] 必须是对象"
+                )));
+            };
+            let id_ok = env_obj
+                .get("id")
+                .and_then(Value::as_str)
+                .is_some_and(|s| !s.trim().is_empty());
+            let name_ok = env_obj
+                .get("name")
+                .and_then(Value::as_str)
+                .is_some_and(|s| !s.trim().is_empty());
+            let vars_ok = env_obj.get("variables").is_some_and(Value::is_array);
+            if !id_ok || !name_ok || !vars_ok {
+                return Err(ApiError::validation(format!(
+                    "workbench_env.environments[{i}] 必须包含非空 id、name 与 variables 数组"
+                )));
+            }
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn strip_workbench_env_from_config(config: &mut Value) {
@@ -447,12 +582,53 @@ fn spec_json_from_endpoint(ep: &Value, upstream_url: &str) -> Result<Value, ApiE
             obj.insert(key.into(), Value::String(v.into()));
         }
     }
-    if let Some(unwrap) = non_empty_str(ep, "unwrap") {
-        obj.insert("response".into(), serde_json::json!({ "unwrap": unwrap }));
+    let mut resp_map = serde_json::Map::new();
+    if let Some(resp_obj) = ep.get("response").and_then(Value::as_object) {
+        if let Some(u) = resp_obj
+            .get("unwrap")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+        {
+            resp_map.insert("unwrap".into(), Value::String(u.into()));
+        }
+        if let Some(ok_val) = resp_obj.get("ok").filter(|v| !v.is_null()) {
+            resp_map.insert("ok".into(), ok_val.clone());
+        }
+        if let Some(rid) = resp_obj
+            .get("request_id_header")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            resp_map.insert("request_id_header".into(), Value::String(rid.into()));
+        }
     }
-    for key in ["graphql", "job_poll", "sign_form", "soap", "ws", "auth", "crypto"] {
+    if let Some(unwrap) = non_empty_str(ep, "unwrap") {
+        resp_map.insert("unwrap".into(), Value::String(unwrap.into()));
+    }
+    if let Some(rid) = ep
+        .get("request_id_header")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        resp_map.insert("request_id_header".into(), Value::String(rid.into()));
+    }
+    if !resp_map.is_empty() {
+        obj.insert("response".into(), Value::Object(resp_map));
+    }
+    for key in [
+        "graphql",
+        "job_poll",
+        "sign_form",
+        "soap",
+        "ws",
+        "auth",
+        "crypto",
+        "tls",
+    ] {
         if let Some(v) = ep.get(key) {
-            if key == "crypto" && v.is_null() {
+            if (key == "crypto" || key == "tls") && v.is_null() {
                 continue;
             }
             obj.insert(key.into(), v.clone());
@@ -472,6 +648,7 @@ fn assemble_spec(
     let spec = spec_json_from_endpoint(ep, upstream_url)?;
     let mut spec: ChannelEgressSpec = serde_json::from_value(spec)
         .map_err(|e| ApiError::validation(format!("CONFIG_INVALID: {e}")))?;
+    spec.tls = spec.tls.take().and_then(mazbri_core::UpstreamTlsSpec::normalized);
     if let Some(cfg) = supplier {
         merge_auth_from_supplier(&mut spec, cfg);
     }
@@ -1424,5 +1601,143 @@ mod tests {
                 .map(String::as_str),
             Some("CustomScheme tok-123")
         );
+    }
+
+    #[test]
+    fn multi_env_workbench_object_validates_and_resolves_by_env_id() {
+        let multi = serde_json::json!({
+            "version": 2,
+            "active_env_id": "staging",
+            "global": [
+                { "key": "app_id", "value": "global-app", "enabled": true },
+                { "key": "region", "value": "cn-hz", "enabled": true }
+            ],
+            "environments": [
+                {
+                    "id": "dev",
+                    "name": "联调",
+                    "variables": [
+                        { "key": "app_id", "value": "dev-app", "enabled": true }
+                    ]
+                },
+                {
+                    "id": "staging",
+                    "name": "预发",
+                    "variables": [
+                        { "key": "app_id", "value": "staging-app", "enabled": true }
+                    ]
+                }
+            ]
+        });
+        assert!(validate_workbench_env(&multi).is_ok());
+        let default_resolved = parse_workbench_env(&multi);
+        assert_eq!(
+            default_resolved.get("app_id").map(String::as_str),
+            Some("staging-app")
+        );
+        assert_eq!(
+            default_resolved.get("region").map(String::as_str),
+            Some("cn-hz")
+        );
+        let dev_resolved = parse_workbench_env_with_id(&multi, Some("dev"));
+        assert_eq!(
+            dev_resolved.get("app_id").map(String::as_str),
+            Some("dev-app")
+        );
+    }
+
+    #[test]
+    fn captures_expand_in_run_and_block_static_spec_on_gate_while_allowing_payload() {
+        let ep_payload_capture = serde_json::json!({
+            "id": "ep-query",
+            "method": "POST",
+            "path": "/orders/query",
+            "body_encoding": "json",
+            "body": { "orderNo": "{{captures.order_no}}" },
+            "gate": true
+        });
+        let mut caps = HashMap::new();
+        caps.insert("order_no".into(), "ORD-999".into());
+
+        let run_built = build_workbench_spec_with_captures(
+            &ep_payload_capture,
+            &empty_env(),
+            Some(&caps),
+            None,
+            "https://up.example",
+        )
+        .expect("run with captures succeeds");
+        assert_eq!(run_built.payload["orderNo"], "ORD-999");
+
+        // Gate evaluation (captures = None) allows {{captures.*}} in test body and keeps matching fingerprint.
+        let gate_built = build_workbench_spec(&ep_payload_capture, &empty_env(), None, "https://up.example")
+            .expect("static gate allows test body capture placeholder");
+        assert_eq!(gate_built.fingerprint, run_built.fingerprint);
+
+        // Missing capture during run fails fast with UNRESOLVED_VARS.
+        let missing_run = build_workbench_spec_with_captures(
+            &ep_payload_capture,
+            &empty_env(),
+            Some(&HashMap::new()),
+            None,
+            "https://up.example",
+        )
+        .expect_err("missing capture during run must fail");
+        err_contains_unresolved(&missing_run, "captures.order_no");
+
+        // Static spec field (path / header) containing {{captures.*}} is blocked by static gate!
+        let ep_static_capture = serde_json::json!({
+            "id": "ep-bad",
+            "method": "GET",
+            "path": "/orders/{{captures.order_no}}",
+            "body_encoding": "none",
+            "gate": true
+        });
+        let eval = evaluate_endpoint_gates(
+            &serde_json::json!([ep_static_capture]),
+            &empty_env(),
+            None,
+            "https://up.example",
+            &[],
+        );
+        assert_eq!(eval.items[0].reason, GATE_REASON_UNRESOLVED);
+        assert!(eval.leftover.contains(&"captures.order_no".to_string()));
+    }
+
+    #[test]
+    fn endpoint_tls_and_request_id_header_enter_assembled_spec() {
+        let ep = serde_json::json!({
+            "method": "POST",
+            "path": "/mtls",
+            "body_encoding": "json",
+            "request_id_header": "X-Ca-Request-Id",
+            "tls": {
+                "insecure_skip_verify": true,
+                "ca_cert": "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----"
+            }
+        });
+        let built =
+            build_workbench_spec(&ep, &empty_env(), None, "https://up.example").expect("build");
+        assert_eq!(built.spec.upstream_request_id_header(), "X-Ca-Request-Id");
+        let tls = built.spec.tls.expect("tls present");
+        assert!(tls.insecure_skip_verify);
+        assert!(tls.ca_cert.is_some());
+    }
+
+    #[test]
+    fn non_super_admin_cannot_enable_insecure_skip_verify() {
+        let cfg = serde_json::json!({
+            "tls": { "insecure_skip_verify": true }
+        });
+        assert!(super::super::guard_supplier_tls_privilege(&cfg, None, false).is_err());
+        assert!(super::super::guard_supplier_tls_privilege(&cfg, None, true).is_ok());
+        assert!(super::super::guard_supplier_tls_privilege(&cfg, Some(&cfg), false).is_ok());
+
+        let eps = serde_json::json!([{
+            "id": "ep-1",
+            "tls": { "insecure_skip_verify": true }
+        }]);
+        assert!(super::super::sanitize_and_encrypt_endpoints_tls(&eps, None, false).is_err());
+        assert!(super::super::sanitize_and_encrypt_endpoints_tls(&eps, None, true).is_ok());
     }
 }

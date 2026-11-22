@@ -1,7 +1,8 @@
 use super::{
     ApiError, CreateDraftRequest, DraftDto, GATE_TTL_HOURS, PgPool, RecentGateRun, SupplierConfig,
-    UpdateDraftRequest, Uuid, draft_to_dto, evaluate_endpoint_gates, parse_workbench_env, repo,
-    strip_workbench_env_from_config, validate_workbench_env,
+    UpdateDraftRequest, Uuid, draft_to_dto, evaluate_endpoint_gates, guard_supplier_tls_privilege,
+    parse_workbench_env, repo, sanitize_and_encrypt_endpoints_tls, strip_workbench_env_from_config,
+    validate_workbench_env,
 };
 
 // ---------- Draft CRUD ----------
@@ -13,6 +14,7 @@ pub async fn create_draft(
     pool: &PgPool,
     req: CreateDraftRequest,
     actor: &str,
+    is_super_admin: bool,
 ) -> Result<DraftDto, ApiError> {
     let code = req.draft_code.trim();
     if code.is_empty() || code.len() > 100 {
@@ -25,7 +27,9 @@ pub async fn create_draft(
 
     let mut config = req.config.unwrap_or_else(|| serde_json::json!({}));
     strip_workbench_env_from_config(&mut config);
-    let endpoints = req.endpoints.unwrap_or_else(|| serde_json::json!([]));
+    guard_supplier_tls_privilege(&config, None, is_super_admin)?;
+    let raw_endpoints = req.endpoints.unwrap_or_else(|| serde_json::json!([]));
+    let endpoints = sanitize_and_encrypt_endpoints_tls(&raw_endpoints, None, is_super_admin)?;
     let workbench_env = req.workbench_env.unwrap_or_else(|| serde_json::json!([]));
     validate_workbench_env(&workbench_env)?;
     let upstream_url = req.upstream_url.clone();
@@ -123,6 +127,7 @@ pub async fn update_draft(
     pool: &PgPool,
     id: Uuid,
     req: UpdateDraftRequest,
+    is_super_admin: bool,
 ) -> Result<DraftDto, ApiError> {
     let existing = repo::get_draft(pool, id)
         .await
@@ -136,8 +141,17 @@ pub async fn update_draft(
     if let Some(ref raw) = req.config {
         let mut raw = raw.clone();
         strip_workbench_env_from_config(&mut raw);
+        guard_supplier_tls_privilege(&raw, Some(&existing.config), is_super_admin)?;
         config_opt = Some(config_json_for_draft(&raw, Some(&existing.config))?);
     }
+    let endpoints_opt = match req.endpoints.as_ref() {
+        Some(raw_eps) => Some(sanitize_and_encrypt_endpoints_tls(
+            raw_eps,
+            Some(&existing.endpoints),
+            is_super_admin,
+        )?),
+        None => None,
+    };
 
     let row = repo::update_draft(
         pool,
@@ -148,7 +162,7 @@ pub async fn update_draft(
             upstream_type: req.upstream_type.as_deref(),
             upstream_url: req.upstream_url.as_deref(),
             config: config_opt.as_ref(),
-            endpoints: req.endpoints.as_ref(),
+            endpoints: endpoints_opt.as_ref(),
             workbench_env: req.workbench_env.as_ref(),
             status: req.status.as_deref(),
         },
@@ -165,7 +179,11 @@ pub(super) fn config_json_for_draft(
     raw: &serde_json::Value,
     existing: Option<&serde_json::Value>,
 ) -> Result<serde_json::Value, ApiError> {
-    let mut cfg = SupplierConfig::parse_for_draft_write(raw)
+    let mut raw_merged = raw.clone();
+    if let Some(old) = existing {
+        mazbri_core::merge_auth_credentials(&mut raw_merged, old);
+    }
+    let mut cfg = SupplierConfig::parse_for_draft_write(&raw_merged)
         .map_err(|e| ApiError::validation(format!("CONFIG_INVALID: {e}")))?;
     cfg = cfg.normalize_disabled_sections();
     if let (Some(new_auth), Some(old_auth)) = (

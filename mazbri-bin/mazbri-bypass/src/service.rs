@@ -10,15 +10,16 @@ use mazbri_core::{
     classify_outcome, request_id_or_new,
 };
 use mazbri_upstream_contracts::UPSTREAM_AUTH_REJECTED_PREFIX;
+use mazbri_upstream_contracts::mgmt_probe::{ProbeInvokeRequest, ProbeInvokeResponse};
 use mazbri_upstream_contracts::shared as upstream_proto;
 use mazbri_upstream_runtime::{
-    pipeline_keys_from_credentials, ExecuteMode, ExecuteOptions, InvokeInput, RuntimeEngine,
-    RuntimeOptions, SsrfChecker, StageTiming,
+    ExecuteMode, ExecuteOptions, InvokeInput, RuntimeEngine, RuntimeOptions, SsrfChecker,
+    StageResult, StageTiming, pipeline_keys_from_credentials,
 };
 use moka::sync::Cache;
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tonic::{Request, Response};
@@ -91,8 +92,16 @@ impl MazbriBypassServiceImpl {
     }
 
     #[must_use]
-    pub fn with_user_agent(mut self, user_agent: &str) -> Self {
+    pub fn with_http_client_defaults(
+        mut self,
+        user_agent: &str,
+        connect_timeout: Duration,
+        timeout: Duration,
+    ) -> Self {
         self.user_agent = Arc::from(user_agent);
+        self.engine = self
+            .engine
+            .with_http_client_defaults(user_agent, connect_timeout, timeout);
         self
     }
 
@@ -181,9 +190,13 @@ impl MazbriBypassServiceImpl {
             UpstreamMetricsRecorder::record_config_cache("egress", "invalid");
             format!("invalid egress_spec JSON: {e}")
         })?;
-        let spec = parse_and_validate_egress(&value).map_err(|e| {
+        let mut spec = parse_and_validate_egress(&value).map_err(|e| {
             UpstreamMetricsRecorder::record_config_cache("egress", "invalid");
             e.to_string()
+        })?;
+        spec = spec.decrypt_secrets_for_runtime().map_err(|e| {
+            UpstreamMetricsRecorder::record_config_cache("egress", "invalid");
+            format!("decrypt egress secrets failed: {e}")
         })?;
         UpstreamMetricsRecorder::record_config_cache("egress", "miss");
         let h = if hash.is_empty() {
@@ -230,6 +243,13 @@ impl MazbriBypassServiceImpl {
     }
 }
 
+struct OnceOutcome {
+    response: upstream_proto::InvokeResponse,
+    stage_timings: Vec<StageTiming>,
+    trace_stages: Vec<StageResult>,
+    response_headers: BTreeMap<String, String>,
+}
+
 impl MazbriBypassServiceImpl {
     /// `BypassHttpProxyService/Execute`（gRPC 入口）。
     pub async fn execute(
@@ -239,11 +259,51 @@ impl MazbriBypassServiceImpl {
         Response::new(self.execute_invoke(request.into_inner()).await)
     }
 
-    /// 与 gRPC Execute / mgmt HTTP 探针共用的 invoke 执行面。
+    /// 生产 gRPC 数据面 invoke 执行面（不采集报文快照与脱敏流水线，保持零额外开销）。
     pub async fn execute_invoke(
         &self,
         req: upstream_proto::InvokeRequest,
     ) -> upstream_proto::InvokeResponse {
+        let options = ExecuteOptions {
+            follow_redirects: false,
+            max_body_capture_bytes: 0,
+            mask_secrets: false,
+            collect_trace: false,
+        };
+        let (outcome, _) = self
+            .run_traced_invoke(&req, ExecuteMode::Production, options)
+            .await;
+        outcome.response
+    }
+
+    /// 管理探针 HTTP 执行面：复用同一连接池与适配器内核，同时回传脱敏流水线阶段、响应头与 `trace_id`。
+    pub async fn execute_probe_invoke(&self, probe_req: ProbeInvokeRequest) -> ProbeInvokeResponse {
+        let req: upstream_proto::InvokeRequest = probe_req.into();
+        let options = ExecuteOptions {
+            follow_redirects: false,
+            max_body_capture_bytes: 64 * 1024,
+            mask_secrets: true,
+            collect_trace: true,
+        };
+        let (outcome, trace_id) = self
+            .run_traced_invoke(&req, ExecuteMode::Business, options)
+            .await;
+        let mut probe_resp = ProbeInvokeResponse::from(outcome.response);
+        probe_resp.response_headers = outcome.response_headers;
+        if !outcome.trace_stages.is_empty() {
+            probe_resp.stages_json =
+                serde_json::to_string(&outcome.trace_stages).unwrap_or_default();
+        }
+        probe_resp.trace_id = trace_id;
+        probe_resp
+    }
+
+    async fn run_traced_invoke(
+        &self,
+        req: &upstream_proto::InvokeRequest,
+        mode: ExecuteMode,
+        options: ExecuteOptions,
+    ) -> (OnceOutcome, String) {
         let start_time = Instant::now();
         let span = tracing::info_span!(
             "BypassHttpProxyService.Execute",
@@ -251,35 +311,34 @@ impl MazbriBypassServiceImpl {
             request_id = %req.request_id,
             channel_id = %req.channel_id
         );
-        let trace_context = bypass_trace_context(&req, &span);
-        let (response, spec, stages) = async {
+        let trace_context = bypass_trace_context(req, &span);
+        let (outcome, spec) = async {
             match self.resolve_egress_spec(&req.egress_spec_hash, &req.egress_spec_json) {
                 Ok(spec) => {
-                    let (response, stages) = self.execute_once(&req, &spec).await;
-                    (response, Some(spec), stages)
+                    let out = self.execute_once(req, &spec, mode, options).await;
+                    (out, Some(spec))
                 }
-                Err(error) => (invoke_error(error), None, Vec::new()),
+                Err(error) => (OnceOutcome::error(error), None),
             }
         }
         .instrument(span)
         .await;
-        if response.error.starts_with(CONFIG_CACHE_MISS_PREFIX) {
-            // 控制面配置未命中：上游没被调用，网关会带全量配置重发并在自己的访问行里计一次重试。
-            // 只记内部事件，不写 502 访问行（对标 Envoy xDS 未命中不产生 access log）。
-            emit_config_cache_miss(&req, &trace_context, &response.error);
-            return response;
+        let trace_id = trace_context.trace_id.to_string();
+        if outcome.response.error.starts_with(CONFIG_CACHE_MISS_PREFIX) {
+            emit_config_cache_miss(req, &trace_context, &outcome.response.error);
+            return (outcome, trace_id);
         }
         let ctx = AccessCtx {
             service_name: self.service_name.as_ref(),
             user_agent: self.user_agent.as_ref(),
-            req: &req,
+            req,
             trace_context: &trace_context,
             spec: spec.as_ref(),
             start_time,
         };
-        emit_bypass_access(&ctx, &response);
-        emit_bypass_stages(&ctx, &response, &stages);
-        response
+        emit_bypass_access(&ctx, &outcome.response);
+        emit_bypass_stages(&ctx, &outcome.response, &outcome.stage_timings);
+        (outcome, trace_id)
     }
 
     /// `BypassHttpProxyService/Health`.
@@ -297,73 +356,29 @@ impl MazbriBypassServiceImpl {
         &self,
         req: &upstream_proto::InvokeRequest,
         spec: &ChannelEgressSpec,
-    ) -> (upstream_proto::InvokeResponse, Vec<StageTiming>) {
+        mode: ExecuteMode,
+        options: ExecuteOptions,
+    ) -> OnceOutcome {
         let start_time = Instant::now();
         let config = match self
             .resolve_supplier_config(&req.supplier_config_hash, &req.supplier_config_json)
         {
             Ok(cfg) => cfg,
-            Err(error) => return (invoke_error(error), Vec::new()),
+            Err(error) => return OnceOutcome::error(error),
         };
-
         let payload = match parse_payload(&req.payload_json) {
             Ok(v) => v,
-            Err(error) => return (invoke_error(error), Vec::new()),
+            Err(error) => return OnceOutcome::error(error),
         };
-
-        let timeout = if req.timeout_ms > 0 {
-            Duration::from_millis(req.timeout_ms)
-        } else {
-            mazbri_upstream_runtime::resolve_timeout(
-                0,
-                spec.timeout_ms.or_else(|| {
-                    config
-                        .as_ref()
-                        .and_then(|c| c.timeouts.as_ref())
-                        .and_then(|t| t.total_ms)
-                }),
-            )
-        };
-
-        let mut credentials = HashMap::new();
-        if let Some(ref cfg) = config
-            && let Some(ref auth) = cfg.auth_flow
-        {
-            credentials = auth.credentials.clone();
-        }
-
         let artifact_bytes = match spec.artifact_id.as_deref().map(str::trim) {
             Some(id) if !id.is_empty() => match self.load_artifact_bytes(id).await {
                 Ok(bytes) => bytes,
-                Err(error) => return (invoke_error(error), Vec::new()),
+                Err(error) => return OnceOutcome::error(error),
             },
             _ => None,
         };
-
-        // 密钥仅经 PipelineKeys / KeyRef 注入 runtime；禁止明文日志。
-        let pipeline_keys = Some(pipeline_keys_from_credentials(&credentials));
-        let input = InvokeInput {
-            supplier_id: req.supplier_id.clone(),
-            supplier_code: req.supplier_code.clone(),
-            channel_id: req.channel_id.clone(),
-            request_id: req.request_id.clone(),
-            payload,
-            spec: spec.clone(),
-            config,
-            timeout,
-            mode: ExecuteMode::Production,
-            options: ExecuteOptions {
-                follow_redirects: false,
-                max_body_capture_bytes: 0,
-                mask_secrets: false,
-                collect_trace: false,
-            },
-            credentials,
-            pipeline_keys,
-            artifact_bytes,
-            cache_key: None,
-        };
-
+        let collect_probe_meta = options.collect_trace;
+        let input = build_invoke_input(req, spec, config, payload, artifact_bytes, mode, options);
         let mut result = {
             let span = tracing::info_span!(
                 "upstream.http",
@@ -373,33 +388,116 @@ impl MazbriBypassServiceImpl {
             self.engine.invoke(input).instrument(span).await
         };
         let duration = start_time.elapsed().as_secs_f64();
-        let adapter = spec.adapter.as_str();
         let retries = InternalRetries::of(&result);
-        let mut stages = std::mem::take(&mut result.stage_timings);
-        let decode_start = Instant::now();
-
-        let response = if let Some(ref code) = result.error_code {
-            let err_msg = result
-                .error_message
-                .clone()
-                .unwrap_or_else(|| "upstream invoke failed".into());
-            let mut failed = invoke_failure(code, err_msg, adapter, duration);
-            // 上游确实回了响应（如鉴权被拒）时保留真实状态与流水号；没发出去则不带 meta。
-            failed.upstream_meta = result
-                .upstream_meta
-                .clone()
-                .filter(|m| m.status > 0)
-                .map(proto_upstream_meta);
-            failed
+        let mut stage_timings = std::mem::take(&mut result.stage_timings);
+        let trace_stages = if collect_probe_meta {
+            std::mem::take(&mut result.stages)
         } else {
-            invoke_success(result, &spec.adapter, duration)
+            Vec::new()
         };
-        stages.push(StageTiming {
+        let response_headers = if collect_probe_meta {
+            result.response.as_ref().map_or_default(|r| {
+                r.headers
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect()
+            })
+        } else {
+            BTreeMap::new()
+        };
+        let decode_start = Instant::now();
+        let response = finalize_invoke_response(result, &spec.adapter, duration);
+        stage_timings.push(StageTiming {
             name: "response_decode".into(),
             ms: mazbri_core::num::millis_u64(decode_start.elapsed()),
             ok: response.success,
         });
-        (retries.attach(response), stages)
+        OnceOutcome {
+            response: retries.attach(response),
+            stage_timings,
+            trace_stages,
+            response_headers,
+        }
+    }
+}
+
+impl OnceOutcome {
+    fn error(error: String) -> Self {
+        Self {
+            response: invoke_error(error),
+            stage_timings: Vec::new(),
+            trace_stages: Vec::new(),
+            response_headers: BTreeMap::new(),
+        }
+    }
+}
+
+fn build_invoke_input(
+    req: &upstream_proto::InvokeRequest,
+    spec: &ChannelEgressSpec,
+    config: Option<Arc<SupplierConfig>>,
+    payload: serde_json::Value,
+    artifact_bytes: Option<Vec<u8>>,
+    mode: ExecuteMode,
+    options: ExecuteOptions,
+) -> InvokeInput {
+    let timeout = if req.timeout_ms > 0 {
+        Duration::from_millis(req.timeout_ms)
+    } else {
+        mazbri_upstream_runtime::resolve_timeout(
+            0,
+            spec.timeout_ms.or_else(|| {
+                config
+                    .as_ref()
+                    .and_then(|c| c.timeouts.as_ref())
+                    .and_then(|t| t.total_ms)
+            }),
+        )
+    };
+    let mut credentials = HashMap::new();
+    if let Some(ref cfg) = config
+        && let Some(ref auth) = cfg.auth_flow
+    {
+        credentials.clone_from(&auth.credentials);
+    }
+    let pipeline_keys = Some(pipeline_keys_from_credentials(&credentials));
+    InvokeInput {
+        supplier_id: req.supplier_id.clone(),
+        supplier_code: req.supplier_code.clone(),
+        channel_id: req.channel_id.clone(),
+        request_id: req.request_id.clone(),
+        payload,
+        spec: spec.clone(),
+        config,
+        timeout,
+        mode,
+        options,
+        credentials,
+        pipeline_keys,
+        artifact_bytes,
+        cache_key: None,
+    }
+}
+
+fn finalize_invoke_response(
+    result: mazbri_upstream_runtime::InvokeResult,
+    adapter: &str,
+    duration: f64,
+) -> upstream_proto::InvokeResponse {
+    if let Some(ref code) = result.error_code {
+        let err_msg = result
+            .error_message
+            .clone()
+            .unwrap_or_else(|| "upstream invoke failed".into());
+        let mut failed = invoke_failure(code, err_msg, adapter, duration);
+        failed.upstream_meta = result
+            .upstream_meta
+            .clone()
+            .filter(|m| m.status > 0)
+            .map(proto_upstream_meta);
+        failed
+    } else {
+        invoke_success(result, adapter, duration)
     }
 }
 

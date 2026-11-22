@@ -4,7 +4,9 @@ use crate::audit::extract_client_ip;
 use crate::error::ApiError;
 use crate::handlers::AppState;
 use crate::handlers::mfa_guard::require_category;
-use crate::middleware::auth::{AdminClaims, can_write_upstream_connector, extract_user_id};
+use crate::middleware::auth::{
+    AdminClaims, can_write_upstream_connector, extract_user_id, is_admin,
+};
 use crate::response::ApiResponse;
 use crate::services::mfa::Category;
 use crate::services::upstream_connector as svc;
@@ -43,7 +45,7 @@ pub async fn create_draft(
     Json(payload): Json<svc::CreateDraftRequest>,
 ) -> Result<Response, ApiError> {
     require_connector_writer(&claims)?;
-    let data = svc::create_draft(&state.db, payload, &claims.sub).await?;
+    let data = svc::create_draft(&state.db, payload, &claims.sub, is_admin(&claims)).await?;
     Ok(crate::response::created(data))
 }
 
@@ -90,7 +92,7 @@ pub async fn update_draft(
     Json(payload): Json<svc::UpdateDraftRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
     require_connector_writer(&claims)?;
-    let data = svc::update_draft(&state.db, id, payload).await?;
+    let data = svc::update_draft(&state.db, id, payload, is_admin(&claims)).await?;
     Ok(ApiResponse::ok(data))
 }
 
@@ -231,6 +233,7 @@ pub async fn publish_draft(
             actor: &claims.sub,
             user_id: extract_user_id(&claims)?,
             can_force_publish: can_write_upstream_connector(&claims),
+            is_super_admin: is_admin(&claims),
             client_ip: extract_client_ip(&headers, Some(addr)),
         },
     )

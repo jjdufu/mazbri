@@ -1,8 +1,9 @@
 use crate::audit::extract_client_ip;
 use crate::error::ApiError;
 use crate::handlers::AppState;
-use crate::middleware::auth::{AdminClaims, extract_user_id, is_business_admin};
+use crate::middleware::auth::{AdminClaims, extract_user_id, is_admin, is_business_admin};
 use crate::response::ApiResponse;
+use crate::services::upstream_connector::guard_supplier_tls_privilege;
 use crate::services::upstream_onboarding as svc;
 use axum::response::Response;
 use axum::{
@@ -27,6 +28,9 @@ pub async fn onboard_upstream(
 ) -> Result<Response, ApiError> {
     if !is_business_admin(&claims) {
         return Err(ApiError::Forbidden);
+    }
+    if let Some(ref cfg) = payload.supplier.config {
+        guard_supplier_tls_privilege(cfg, None, is_admin(&claims))?;
     }
     let data = svc::onboard(
         &state.db,
@@ -57,6 +61,9 @@ pub async fn onboard_upstream_dry_run(
     if !is_business_admin(&claims) {
         return Err(ApiError::Forbidden);
     }
+    if let Some(ref cfg) = payload.supplier.config {
+        guard_supplier_tls_privilege(cfg, None, is_admin(&claims))?;
+    }
     let data = svc::dry_run(&state.db, state.connector_runtime.ssrf(), &payload).await?;
     Ok(ApiResponse::ok(data))
 }
@@ -82,6 +89,7 @@ pub async fn validate_supplier_config(
     if !is_business_admin(&claims) {
         return Err(ApiError::Forbidden);
     }
+    guard_supplier_tls_privilege(&body.config, None, is_admin(&claims))?;
     let _supplier_id = uuid::Uuid::parse_str(&id)
         .map_err(|e| ApiError::validation(format!("供应商 ID 无效: {e}")))?;
     let validated = svc::validate_config_payload(

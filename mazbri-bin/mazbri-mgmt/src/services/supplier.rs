@@ -2,9 +2,17 @@ use crate::audit::{AuditAction, AuditLogRequest, AuditResourceType, AuditService
 use crate::error::ApiError;
 use crate::handlers::types::ListParams;
 use crate::repositories::supplier as repo;
+use crate::services::upstream_connector::guard_supplier_tls_privilege;
 use mazbri_core::{SupplierConfig, mask_config_credentials, merge_auth_credentials};
 use sqlx::PgPool;
 use tracing::info;
+
+pub struct SupplierActorCtx<'a> {
+    pub user_id: uuid::Uuid,
+    pub username: &'a str,
+    pub is_super_admin: bool,
+    pub client_ip: Option<String>,
+}
 
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -206,15 +214,16 @@ pub async fn create_supplier(
     pool: &PgPool,
     audit: &AuditService,
     payload: &CreateSupplierRequest,
-    user_id: uuid::Uuid,
-    username: &str,
-    client_ip: Option<String>,
+    actor: SupplierActorCtx<'_>,
 ) -> Result<serde_json::Value, ApiError> {
     info!(
         "Creating supplier: {} ({}) (by {})",
-        payload.name, payload.supplier_code, username
+        payload.name, payload.supplier_code, actor.username
     );
     payload.validate()?;
+    if let Some(ref raw_cfg) = payload.config {
+        guard_supplier_tls_privilege(raw_cfg, None, actor.is_super_admin)?;
+    }
 
     let parsed = payload.parse_config()?;
     let config_val = parsed
@@ -236,13 +245,13 @@ pub async fn create_supplier(
         new_value["config"] = mask_config_credentials(cfg);
     }
     audit.log(change_audit_log(
-        user_id,
+        actor.user_id,
         AuditAction::SupplierCreate,
         AuditResourceType::Supplier,
         row.id.to_string(),
         None,
         Some(new_value),
-        client_ip,
+        actor.client_ip,
     ));
     info!("Created supplier: {} ({})", row.name, row.id);
 
@@ -293,11 +302,9 @@ pub async fn update_supplier(
     audit: &AuditService,
     id: &str,
     payload: &UpdateSupplierRequest,
-    user_id: uuid::Uuid,
-    username: &str,
-    client_ip: Option<String>,
+    actor: SupplierActorCtx<'_>,
 ) -> Result<serde_json::Value, ApiError> {
-    info!("Updating supplier: {} (by {})", id, username);
+    info!("Updating supplier: {} (by {})", id, actor.username);
     let supplier_id = uuid::Uuid::parse_str(id)
         .map_err(|e| ApiError::validation(format!("供应商 ID 格式无效: {e}")))?;
     payload.validate()?;
@@ -316,6 +323,7 @@ pub async fn update_supplier(
     if let Some(new_cfg) = payload.config.clone() {
         let mut merged = new_cfg;
         merge_auth_credentials(&mut merged, &old.config);
+        guard_supplier_tls_privilege(&merged, Some(&old.config), actor.is_super_admin)?;
         let parsed = parse_and_validate_supplier_config(&merged, effective_upstream_url)?;
         let config_val = parsed
             .to_json_value()
@@ -354,13 +362,13 @@ pub async fn update_supplier(
         new_value["config"] = mask_config_credentials(cfg);
     }
     audit.log(change_audit_log(
-        user_id,
+        actor.user_id,
         AuditAction::SupplierUpdate,
         AuditResourceType::Supplier,
         row.id.to_string(),
         Some(old_value),
         Some(new_value),
-        client_ip,
+        actor.client_ip,
     ));
 
     Ok(serde_json::json!(

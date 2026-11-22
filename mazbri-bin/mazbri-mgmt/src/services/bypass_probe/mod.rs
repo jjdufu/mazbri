@@ -218,6 +218,9 @@ pub struct ProbeOutcome {
     pub adapter: Option<String>,
     pub biz_error: Option<serde_json::Value>,
     pub stages: serde_json::Value,
+    pub headers: std::collections::HashMap<String, String>,
+    pub upstream_request_id: Option<String>,
+    pub trace_id: Option<String>,
 }
 
 impl ProbeOutcome {
@@ -241,6 +244,9 @@ impl ProbeOutcome {
                 "response_summary": {"probe_path": PROBE_PATH_BYPASS_MGMT_PROBE},
                 "error": err.code(),
             }]),
+            headers: std::collections::HashMap::new(),
+            upstream_request_id: None,
+            trace_id: None,
         }
     }
 }
@@ -255,6 +261,15 @@ pub fn outcome_from_invoke_response(response: &ProbeInvokeResponse) -> ProbeOutc
         .filter(|s| *s > 0);
     let url = meta.map(|m| m.url.clone());
     let adapter = meta.map(|m| m.adapter.clone());
+    let upstream_request_id = meta
+        .map(|m| m.upstream_request_id.trim().to_owned())
+        .filter(|s| !s.is_empty());
+    let trace_id = Some(response.trace_id.trim().to_owned()).filter(|s| !s.is_empty());
+    let headers: std::collections::HashMap<String, String> = response
+        .response_headers
+        .iter()
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
 
     let biz_error = response.biz_error.as_ref().map(|b| {
         serde_json::json!({
@@ -296,8 +311,7 @@ pub fn outcome_from_invoke_response(response: &ProbeInvokeResponse) -> ProbeOutc
         )
     };
 
-    // 阶段结构沿用工作台通用 StageResult（`latency_ms`）；探针阶段的取值即纯上游耗时。
-    let stages = serde_json::json!([{
+    let probe_stage = serde_json::json!({
         "name": PROBE_PATH_BYPASS_MGMT_PROBE,
         "ok": ok,
         "latency_ms": upstream_wire_ms,
@@ -310,7 +324,14 @@ pub fn outcome_from_invoke_response(response: &ProbeInvokeResponse) -> ProbeOutc
             "retry_reasons": response.retry_reasons,
         },
         "error": error_message.clone(),
-    }]);
+    });
+    let mut stage_items: Vec<serde_json::Value> = if response.stages_json.trim().is_empty() {
+        Vec::new()
+    } else {
+        serde_json::from_str(&response.stages_json).unwrap_or_default()
+    };
+    stage_items.push(probe_stage);
+    let stages = serde_json::Value::Array(stage_items);
 
     ProbeOutcome {
         ok,
@@ -323,6 +344,9 @@ pub fn outcome_from_invoke_response(response: &ProbeInvokeResponse) -> ProbeOutc
         adapter,
         biz_error,
         stages,
+        headers,
+        upstream_request_id,
+        trace_id,
     }
 }
 

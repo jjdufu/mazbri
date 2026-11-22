@@ -1,13 +1,14 @@
 use super::{
     ApiError, AuditAction, AuditLogRequest, AuditResourceType, AuditService, LiveRunRequest, PgPool,
     RollbackRequest, Row, RunDto, SupplierConfig, Uuid, connector_metrics, info, load_artifact_bytes,
-    mask_config_credentials, repo,
+    mask_config_credentials, mask_endpoints_secrets, repo,
 };
 use crate::services::bypass_probe::{
     self, BypassProbeClient, PROBE_PATH_BYPASS_MGMT_PROBE, ProbeInvokeParams, ProbeOutcome,
 };
 use mazbri_core::hash_egress_spec_json;
 use mazbri_core::num::SaturatingFrom;
+use mazbri_upstream_runtime::mask_headers;
 
 // ---------- Versions / Rollback / Live ----------
 
@@ -30,7 +31,7 @@ pub async fn list_versions(
                 "version_no": v.version_no,
                 "config_snapshot": mask_config_credentials(v.config_snapshot),
                 "channels_snapshot": v.channels_snapshot,
-                "endpoints_snapshot": v.endpoints_snapshot,
+                "endpoints_snapshot": mask_endpoints_secrets(v.endpoints_snapshot),
                 "comment": v.comment,
                 "published_by": v.published_by,
                 "created_at": v.created_at,
@@ -73,7 +74,7 @@ pub async fn version_diff(
         "version_config": mask_config_credentials(ver.config_snapshot),
         "current_config": current_cfg,
         "channels_snapshot": ver.channels_snapshot,
-        "endpoints_snapshot": ver.endpoints_snapshot,
+        "endpoints_snapshot": mask_endpoints_secrets(ver.endpoints_snapshot),
     }))
 }
 
@@ -249,9 +250,13 @@ pub async fn live_run(pool: &PgPool, params: LiveRunParams<'_>) -> Result<RunDto
     let response_preview = outcome.payload.as_ref().map(|p| {
         serde_json::json!({
             "status": outcome.status.unwrap_or(if outcome.ok { 200 } else { 400 }),
+            "headers": mask_headers(&outcome.headers, true),
             "body_preview": p.to_string().chars().take(4096).collect::<String>(),
             "url": outcome.url.clone().unwrap_or_default(),
             "adapter": outcome.adapter,
+            "request_id": prepared.request_id,
+            "upstream_request_id": outcome.upstream_request_id,
+            "trace_id": outcome.trace_id,
             "probe_path": PROBE_PATH_BYPASS_MGMT_PROBE,
         })
     });

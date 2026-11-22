@@ -1,9 +1,9 @@
 use super::{
     ApiError, Arc, CreateDraftRequest, CurlImportRequest, Decimal, DraftDto, Duration, ExecuteMode,
     ExecuteOptions, HashMap, InvokeInput, OpenApiImportRequest, PgPool, PostmanImportRequest, Row,
-    RunRequest, RuntimeEngine, SupplierConfig, Uuid, build_workbench_spec, config_json_for_draft,
-    create_draft, endpoint_by_id, get_draft, mask_config_credentials, parse_workbench_env, repo,
-    with_gate, workbench_endpoint_key,
+    RunRequest, RuntimeEngine, SupplierConfig, Uuid, build_workbench_spec_with_captures,
+    config_json_for_draft, create_draft, endpoint_by_id, get_draft, mask_config_credentials,
+    mask_endpoints_secrets, parse_workbench_env_with_id, repo, with_gate, workbench_endpoint_key,
 };
 use mazbri_core::{
     ADAPTER_HTTP_JSON, BodyEncoding, ChannelEgressSpec, parse_channel_config_egress,
@@ -50,6 +50,7 @@ pub async fn import_curl(
             source: Some("curl".into()),
         },
         actor,
+        false,
     )
     .await
 }
@@ -222,6 +223,7 @@ pub async fn import_postman(
             source: Some("postman".into()),
         },
         actor,
+        false,
     )
     .await
 }
@@ -437,6 +439,7 @@ pub async fn import_openapi(
             source: Some("openapi".into()),
         },
         actor,
+        false,
     )
     .await
 }
@@ -659,12 +662,30 @@ fn apply_egress_spec_to_endpoint(
     {
         obj.insert("wrap".into(), serde_json::Value::String(wrap.clone()));
     }
+    apply_egress_extensions_to_endpoint(obj, spec);
+}
+
+fn apply_egress_extensions_to_endpoint(
+    obj: &mut serde_json::Map<String, serde_json::Value>,
+    spec: &ChannelEgressSpec,
+) {
     if let Some(unwrap) = spec.response.as_ref().and_then(|r| r.unwrap.as_deref())
         && !unwrap.trim().is_empty()
     {
         obj.insert(
             "unwrap".into(),
             serde_json::Value::String(unwrap.to_string()),
+        );
+    }
+    if let Some(req_id_hdr) = spec
+        .response
+        .as_ref()
+        .and_then(|r| r.request_id_header.as_deref())
+        && !req_id_hdr.trim().is_empty()
+    {
+        obj.insert(
+            "request_id_header".into(),
+            serde_json::Value::String(req_id_hdr.trim().to_string()),
         );
     }
     if let Some(ref op) = spec.operation
@@ -682,6 +703,7 @@ fn apply_egress_spec_to_endpoint(
     }
     insert_optional_serialized(obj, "auth", spec.auth.as_ref());
     insert_optional_serialized(obj, "crypto", spec.crypto.as_ref());
+    insert_optional_serialized(obj, "tls", spec.tls.as_ref());
     insert_optional_serialized(obj, "graphql", spec.graphql.as_ref());
     insert_optional_serialized(obj, "job_poll", spec.job_poll.as_ref());
     insert_optional_serialized(obj, "sign_form", spec.sign_form.as_ref());
@@ -736,6 +758,19 @@ fn overlay_snapshot_metadata(
         {
             ep_obj.insert("assertions".into(), assertions.clone());
         }
+        if let Some(captures) = snap_ep.get("captures")
+            && captures.is_array()
+        {
+            ep_obj.insert("captures".into(), captures.clone());
+        }
+        if let Some(tag) = snap_ep.get("tag").and_then(serde_json::Value::as_str)
+            && !tag.trim().is_empty()
+        {
+            ep_obj.insert(
+                "tag".into(),
+                serde_json::Value::String(tag.trim().to_string()),
+            );
+        }
         if let Some(gate) = snap_ep.get("gate").and_then(serde_json::Value::as_bool) {
             ep_obj.insert("gate".into(), serde_json::Value::Bool(gate));
         }
@@ -783,6 +818,7 @@ async fn load_supplier_channels(
 async fn build_supplier_endpoints_value(
     pool: &PgPool,
     supplier_id: Uuid,
+    supplier_upstream_url: &str,
 ) -> Result<serde_json::Value, ApiError> {
     let channels = load_supplier_channels(pool, supplier_id).await?;
     let latest_ver = repo::get_latest_version_for_supplier(pool, supplier_id)
@@ -791,7 +827,20 @@ async fn build_supplier_endpoints_value(
 
     let mut endpoints: Vec<serde_json::Value> = channels
         .iter()
-        .map(channel_row_to_workbench_endpoint)
+        .map(|ch| {
+            let mut ep = channel_row_to_workbench_endpoint(ch);
+            if let Ok(spec) = parse_channel_config_egress(&ch.config)
+                && !spec.base_url.trim().is_empty()
+                && spec.base_url.trim() != supplier_upstream_url.trim()
+                && let Some(obj) = ep.as_object_mut()
+            {
+                obj.insert(
+                    "base_url".into(),
+                    serde_json::Value::String(spec.base_url),
+                );
+            }
+            ep
+        })
         .collect();
     overlay_snapshot_metadata(
         &mut endpoints,
@@ -862,7 +911,9 @@ pub async fn preview_draft_from_supplier(
         .unwrap_or("transparent")
         .to_string();
     let config = mask_config_credentials(normalized);
-    let endpoints = build_supplier_endpoints_value(pool, supplier_id).await?;
+    let endpoints = mask_endpoints_secrets(
+        build_supplier_endpoints_value(pool, supplier_id, &upstream_url).await?,
+    );
 
     Ok(DraftDto {
         id: Uuid::nil(),
@@ -924,10 +975,12 @@ pub async fn draft_from_supplier(
         .and_then(|v| v.as_str())
         .unwrap_or("transparent")
         .to_string();
-    let endpoints_value = build_supplier_endpoints_value(pool, supplier_id).await?;
+    let endpoints_value = build_supplier_endpoints_value(pool, supplier_id, &upstream_url).await?;
 
     if let Some(existing) = existing_draft {
         let config_value = config_json_for_draft(&config, Some(&existing.config))?;
+        let endpoints_enc =
+            super::sanitize_and_encrypt_endpoints_tls(&endpoints_value, Some(&existing.endpoints), true)?;
         let updated = repo::update_draft(
             pool,
             repo::DraftUpdate {
@@ -937,7 +990,7 @@ pub async fn draft_from_supplier(
                 upstream_type: Some(&upstream_type),
                 upstream_url: Some(&upstream_url),
                 config: Some(&config_value),
-                endpoints: Some(&endpoints_value),
+                endpoints: Some(&endpoints_enc),
                 workbench_env: None,
                 status: Some("draft"),
             },
@@ -963,6 +1016,7 @@ pub async fn draft_from_supplier(
             source: Some("supplier".into()),
         },
         actor,
+        true,
     )
     .await?;
 
@@ -1181,13 +1235,24 @@ pub async fn transform_preview(
         .decrypt_credentials_for_runtime()
         .map_err(|e| ApiError::internal(format!("decrypt: {e}")))?;
 
-    let env = parse_workbench_env(&row.workbench_env);
+    let env = parse_workbench_env_with_id(&row.workbench_env, req.env_id.as_deref());
     let ep = endpoint_by_id(&row.endpoints, req.endpoint_id.as_deref());
     let empty_ep = serde_json::json!({});
-    let built = build_workbench_spec(ep.unwrap_or(&empty_ep), &env, Some(&cfg), &row.upstream_url)?;
+    let empty_caps = HashMap::new();
+    let caps_ref = req.captures.as_ref().unwrap_or(&empty_caps);
+    let built = build_workbench_spec_with_captures(
+        ep.unwrap_or(&empty_ep),
+        &env,
+        Some(caps_ref),
+        Some(&cfg),
+        &row.upstream_url,
+    )?;
     let payload = built.payload.clone();
     let endpoint_key = ep.and_then(|e| workbench_endpoint_key(e, req.endpoint_id.as_deref()));
-    let spec = built.spec.clone();
+    let spec = built
+        .spec
+        .decrypt_secrets_for_runtime()
+        .map_err(|e| ApiError::internal(format!("decrypt egress: {e}")))?;
 
     let mut credentials = HashMap::new();
     if let Some(ref auth) = cfg.auth_flow {
@@ -1318,7 +1383,7 @@ mod tests {
         );
 
         let parsed_cfg = SupplierConfig::parse_and_validate(&normalized_cfg).expect("valid config");
-        let rebuilt = build_workbench_spec(
+        let rebuilt = super::super::build_workbench_spec(
             ep,
             &HashMap::new(),
             Some(&parsed_cfg),

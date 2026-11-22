@@ -3,6 +3,11 @@ use crate::error::ApiError;
 use crate::handlers::types::ListParams;
 use crate::repositories::route_management as repo;
 use crate::repositories::supplier as supplier_repo;
+use crate::services::upstream_connector::guard_channel_tls_privilege;
+use mazbri_core::{
+    mask_channel_config_secrets, merge_channel_config_secrets, upsert_egress_in_channel_config,
+    validate_channel_config_if_egress,
+};
 use rust_decimal::Decimal;
 use sqlx::PgPool;
 const MAX_PAGE_SIZE: u32 = 100;
@@ -362,6 +367,29 @@ impl EmergencySwitchRequest {
         Ok(())
     }
 }
+fn encrypt_channel_config_if_egress(
+    raw: &serde_json::Value,
+) -> Result<serde_json::Value, ApiError> {
+    if let Some(spec) =
+        validate_channel_config_if_egress(raw).map_err(|e| ApiError::validation(e.to_string()))?
+    {
+        let encrypted = spec
+            .encrypt_secrets_for_storage()
+            .map_err(|e| ApiError::internal(format!("加密通道 TLS 私钥失败: {e}")))?;
+        upsert_egress_in_channel_config(raw, &encrypted)
+            .map_err(|e| ApiError::validation(e.to_string()))
+    } else {
+        Ok(raw.clone())
+    }
+}
+
+fn mask_channel_json_value(mut value: serde_json::Value) -> serde_json::Value {
+    if let Some(cfg) = value.get("config").cloned() {
+        value["config"] = mask_channel_config_secrets(cfg);
+    }
+    value
+}
+
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
@@ -390,7 +418,7 @@ pub async fn list_channels(
     )
     .await
     .map_err(|e| ApiError::internal(format!("统计通道失败: {e}")))?;
-    let channels = repo::list_channels(
+    let mut channels = repo::list_channels(
         pool,
         params.status.as_deref(),
         search_pattern.as_deref(),
@@ -400,6 +428,9 @@ pub async fn list_channels(
     )
     .await
     .map_err(|e| ApiError::internal(format!("获取通道列表失败: {e}")))?;
+    for ch in &mut channels {
+        ch.config = mask_channel_config_secrets(std::mem::take(&mut ch.config));
+    }
     Ok(serde_json::json!(
         { "channels" : channels, "pagination" : pagination(params.page, page_size,
         total), }
@@ -413,9 +444,12 @@ pub async fn create_channel(
     audit: &AuditService,
     payload: &CreateChannelRequest,
     user_id: uuid::Uuid,
+    is_super_admin: bool,
     client_ip: Option<String>,
 ) -> Result<serde_json::Value, ApiError> {
     payload.validate()?;
+    guard_channel_tls_privilege(&payload.config, None, is_super_admin)?;
+    let stored_config = encrypt_channel_config_if_egress(&payload.config)?;
     ensure_supplier_active(pool, payload.supplier_id).await?;
     let row = repo::insert_channel(
         pool,
@@ -426,12 +460,12 @@ pub async fn create_channel(
             path_prefix: &payload.path_prefix,
             cost_price: payload.cost_price,
             qps_limit: payload.qps_limit,
-            config: &payload.config,
+            config: &stored_config,
         },
     )
     .await
     .map_err(|e| map_channel_write_db_error("创建通道失败", &e))?;
-    let value = serde_json::to_value(&row).unwrap_or_default();
+    let value = mask_channel_json_value(serde_json::to_value(&row).unwrap_or_default());
     audit.log(change_audit_log(
         user_id,
         AuditAction::ChannelCreate,
@@ -455,7 +489,7 @@ pub async fn get_channel(pool: &PgPool, id: &str) -> Result<serde_json::Value, A
     let routes = repo::list_routes_for_channel(pool, id)
         .await
         .map_err(|e| ApiError::internal(format!("获取通道关联路由失败: {e}")))?;
-    let mut value = serde_json::to_value(row).unwrap_or_default();
+    let mut value = mask_channel_json_value(serde_json::to_value(row).unwrap_or_default());
     if let Some(obj) = value.as_object_mut() {
         obj.insert(
             "routes".to_string(),
@@ -473,36 +507,55 @@ pub async fn update_channel(
     id: &str,
     payload: &UpdateChannelRequest,
     user_id: uuid::Uuid,
+    is_super_admin: bool,
     client_ip: Option<String>,
 ) -> Result<serde_json::Value, ApiError> {
-    payload.validate()?;
-    let id = parse_uuid(id, "channel")?;
-    let old = repo::find_channel_by_id(pool, id)
+    let id_uuid = parse_uuid(id, "channel")?;
+    let old = repo::find_channel_by_id(pool, id_uuid)
         .await
         .map_err(|e| ApiError::internal(format!("获取通道失败: {e}")))?
-        .ok_or_else(|| ApiError::not_found("channel".to_string(), id.to_string()))?;
-    if let Some(supplier_id) = payload.supplier_id {
+        .ok_or_else(|| ApiError::not_found("channel".to_string(), id_uuid.to_string()))?;
+    let mut patched = UpdateChannelRequest {
+        supplier_id: payload.supplier_id,
+        channel_code: payload.channel_code.clone(),
+        name: payload.name.clone(),
+        path_prefix: payload.path_prefix.clone(),
+        cost_price: payload.cost_price,
+        qps_limit: payload.qps_limit,
+        status: payload.status.clone(),
+        config: payload.config.clone(),
+    };
+    if let Some(ref mut new_cfg) = patched.config {
+        merge_channel_config_secrets(new_cfg, &old.config);
+        guard_channel_tls_privilege(new_cfg, Some(&old.config), is_super_admin)?;
+    }
+    patched.validate()?;
+    let stored_config = match patched.config.as_ref() {
+        Some(cfg) => Some(encrypt_channel_config_if_egress(cfg)?),
+        None => None,
+    };
+    if let Some(supplier_id) = patched.supplier_id {
         ensure_supplier_active(pool, supplier_id).await?;
     }
     let row = repo::update_channel(
         pool,
-        id,
+        id_uuid,
         repo::ChannelUpdate {
-            supplier_id: payload.supplier_id,
-            channel_code: payload.channel_code.as_deref(),
-            name: payload.name.as_deref(),
-            path_prefix: payload.path_prefix.as_deref(),
-            cost_price: payload.cost_price,
-            qps_limit: payload.qps_limit,
-            status: payload.status.as_deref(),
-            config: payload.config.as_ref(),
+            supplier_id: patched.supplier_id,
+            channel_code: patched.channel_code.as_deref(),
+            name: patched.name.as_deref(),
+            path_prefix: patched.path_prefix.as_deref(),
+            cost_price: patched.cost_price,
+            qps_limit: patched.qps_limit,
+            status: patched.status.as_deref(),
+            config: stored_config.as_ref(),
         },
     )
     .await
     .map_err(|e| map_channel_write_db_error("更新通道失败", &e))?
-    .ok_or_else(|| ApiError::not_found("channel".to_string(), id.to_string()))?;
-    let old_value = serde_json::to_value(old).unwrap_or_default();
-    let new_value = serde_json::to_value(&row).unwrap_or_default();
+    .ok_or_else(|| ApiError::not_found("channel".to_string(), id_uuid.to_string()))?;
+    let old_value = mask_channel_json_value(serde_json::to_value(old).unwrap_or_default());
+    let new_value = mask_channel_json_value(serde_json::to_value(&row).unwrap_or_default());
     audit.log(change_audit_log(
         user_id,
         AuditAction::ChannelUpdate,
@@ -540,7 +593,7 @@ pub async fn delete_channel(
     repo::delete_channel(pool, id)
         .await
         .map_err(|e| ApiError::internal(format!("删除通道失败: {e}")))?;
-    let old_value = serde_json::to_value(&old).unwrap_or_default();
+    let old_value = mask_channel_json_value(serde_json::to_value(&old).unwrap_or_default());
     audit.log(change_audit_log(
         user_id,
         AuditAction::ChannelDelete,
