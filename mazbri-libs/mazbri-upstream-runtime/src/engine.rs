@@ -224,8 +224,9 @@ impl RuntimeEngine {
                 .timeout(self.http_defaults.timeout)
                 .connect_timeout(self.http_defaults.connect_timeout)
                 .user_agent(&self.http_defaults.user_agent)
-                .pool_max_idle_per_host(32)
+                .pool_max_idle_per_host(512)
                 .pool_idle_timeout(Duration::from_secs(90))
+                .tcp_nodelay(true)
                 .tcp_keepalive(Duration::from_secs(30))
                 .redirect(reqwest::redirect::Policy::none())
                 .danger_accept_invalid_certs(spec.insecure_skip_verify),

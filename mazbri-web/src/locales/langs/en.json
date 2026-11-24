@@ -4904,7 +4904,7 @@
       },
       "fallback": {
         "title": "Trace not found",
-        "description": "The trace may have expired or was not sampled; the stage waterfall below is built from call logs."
+        "description": "The trace may have expired or was not sampled; related call logs are shown below."
       },
       "sampleTitle": "Error samples",
       "sampleHint": "Click an error code above to load samples, click a trace_id to open it",

@@ -346,13 +346,6 @@
             />
           </ElTable>
         </ElTabPane>
-        <ElTabPane :label="t('ops.traces.detail.stages')" name="stages">
-          <StageBreakdown
-            :stages="stages"
-            :calls="calls"
-            :total-duration-ms="detail?.duration_ms"
-          />
-        </ElTabPane>
         <ElTabPane :label="t('ops.traces.detail.billing')" name="billing">
           <div v-if="billingError" class="ops-trace__muted">
             {{ billingError }}
@@ -453,14 +446,10 @@ import type {
   TraceSpanEvent,
   TraceSpanLink,
 } from "@/types/api/traces";
-import type {
-  CallStageAccessRow,
-  CallStageEntry,
-} from "@/types/api/call-monitor";
+import type { CallStageAccessRow } from "@/types/api/call-monitor";
 import { HttpError } from "@/utils/http/error";
 import { buildCallsRoute, buildTraceRoute } from "@/utils/ops/opsRoutes";
 import { logger } from "@/utils/sys";
-import StageBreakdown from "../traffic/modules/StageBreakdown.vue";
 import {
   resolveWaterfallDurPlacement,
   type WaterfallDurPlacement,
@@ -523,7 +512,6 @@ const panelTab = ref("attributes");
 const bottomTab = ref("logs");
 
 const calls = ref<CallStageAccessRow[]>([]);
-const stages = ref<CallStageEntry[]>([]);
 const callsLoading = ref(false);
 const billing = ref<TraceBillingRow[]>([]);
 const billingLoading = ref(false);
@@ -753,7 +741,6 @@ async function loadCalls(id: string) {
       res = await fetchCallStages({ request_id: fallbackRequest });
     }
     calls.value = res.calls;
-    stages.value = res.stages;
     const ids = [
       ...new Set(res.calls.map((c) => c.request_id).filter(Boolean)),
     ];
@@ -761,7 +748,6 @@ async function loadCalls(id: string) {
   } catch (error) {
     logger.error("Failed to load trace calls:", error);
     calls.value = [];
-    stages.value = [];
   } finally {
     callsLoading.value = false;
   }
@@ -789,7 +775,6 @@ async function load() {
     if (mine !== seq) return;
     if (error instanceof HttpError && error.code === 404) {
       missing.value = true;
-      bottomTab.value = "stages";
     } else {
       logger.error("Failed to load trace:", error);
       ElMessage.error(t("ops.traces.loadFailed"));

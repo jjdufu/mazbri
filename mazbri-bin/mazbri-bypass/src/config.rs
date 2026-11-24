@@ -98,6 +98,9 @@ pub struct UpstreamConfig {
     pub connect_timeout_secs: u64,
     #[serde(default = "default_user_agent")]
     pub user_agent: String,
+    /// 出站 HTTP 连接池每 Host 最大空闲连接数（默认 512，支持高并发复用）。
+    #[serde(default = "default_http_pool_max_idle_per_host")]
+    pub http_pool_max_idle_per_host: usize,
     #[serde(default = "default_ws_handshake_timeout_secs")]
     pub ws_handshake_timeout_secs: u64,
     /// 全局 `ws_unary` 并发上限；超限失败快（无排队、无短连回退）。
@@ -154,20 +157,24 @@ fn default_user_agent() -> String {
     "reqwest".to_string()
 }
 
+fn default_http_pool_max_idle_per_host() -> usize {
+    512
+}
+
 fn default_ws_handshake_timeout_secs() -> u64 {
     10
 }
 
 fn default_ws_max_concurrent() -> u32 {
-    32
+    512
 }
 
 fn default_ws_max_concurrent_per_key() -> u32 {
-    8
+    128
 }
 
 fn default_ws_pool_max_idle_per_key() -> u32 {
-    4
+    64
 }
 
 fn default_ws_pool_idle_ttl_secs() -> u64 {
@@ -175,7 +182,7 @@ fn default_ws_pool_idle_ttl_secs() -> u64 {
 }
 
 fn default_grpc_max_concurrency() -> u32 {
-    64
+    512
 }
 
 fn default_token_default_ttl_secs() -> u64 {

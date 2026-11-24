@@ -230,9 +230,11 @@ fn build_invoke_request(
     let spec = &egress.spec;
     headers.insert("x-mazbri-upstream-mode".to_string(), spec.adapter.clone());
 
-    let payload = match req.body.as_ref() {
-        Some(GatewayRequestBody::Json(v)) if v.is_object() => v.clone(),
-        None | Some(GatewayRequestBody::Empty) => serde_json::json!({}),
+    let payload_json = match req.body.as_ref() {
+        Some(GatewayRequestBody::Json(v)) if v.is_object() => {
+            serde_json::to_string(v).unwrap_or_else(|_| "{}".into())
+        }
+        None | Some(GatewayRequestBody::Empty) => "{}".to_string(),
         _ => {
             return Err(
                 "transparent 免代码路径只接受 JSON 对象 body（XML/form/protobuf 由 bypass 组包）"
@@ -240,7 +242,6 @@ fn build_invoke_request(
             );
         }
     };
-    let payload_json = serde_json::to_string(&payload).unwrap_or_else(|_| "{}".into());
     let supplier = cached_supplier(&channel.supplier_code, config);
     let egress_hash = egress.hash.clone();
     let config_hash = supplier.hash.clone();

@@ -11,7 +11,7 @@ use super::serializer::{SerializedProxyResponse, serialize_proxy_response};
 use super::stage_log::{StageCtx, stage_log};
 use super::validation::{GatewayRequest, GatewayRequestPayload, sanitize_input};
 use crate::auth::claims::MazbriClaims;
-use crate::crypto::{TenantCryptoProfile, TenantCryptoTiming};
+use crate::crypto::{EnvelopeNoncePrechecked, TenantCryptoProfile, TenantCryptoTiming};
 use crate::ratelimit::TransferRecord;
 use crate::router::AppState;
 use axum::{
@@ -32,7 +32,7 @@ use mazbri_core::{
 use mazbri_product::service::TenantProductDetail;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tracing::{error, warn};
 use uuid::Uuid;
 const TENANT_ACCESS_DENIED: &str = "无法访问请求的资源";
@@ -52,6 +52,7 @@ type GatewayHandlerExtensions = (
     Extension<GatewayRequestPayload>,
     Extension<GatewayHttpPath>,
     Option<Extension<TenantProductDetail>>,
+    Option<Extension<EnvelopeNoncePrechecked>>,
 );
 
 /// 处理函数各阶段共享的只读上下文。
@@ -79,6 +80,8 @@ struct FetchedResponse {
     cache_lookup_ms: u64,
     /// Wall time of the whole `fetch_response` upstream path (cache miss → bypass hop).
     fetch_wall_ms: u64,
+    /// Full-precision wall duration of `fetch_response` for `OTel` upstream span.
+    fetch_wall_duration: Duration,
 }
 
 /// 响应完成后用于后置任务、指标与访问日志的输入。
@@ -110,6 +113,7 @@ pub async fn unified_gateway_handler(
         Extension(body_payload),
         Extension(http_path),
         tenant_product_detail,
+        envelope_nonce_prechecked,
     ): GatewayHandlerExtensions,
     ConnectInfo(peer_addr): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
@@ -123,18 +127,25 @@ pub async fn unified_gateway_handler(
     let tenant_id_validation_started_at = Instant::now();
     let tenant_uuid = validate_claims_tenant(&claims, &request_id)?;
     let tenant_id_validation_ms = mazbri_core::num::millis_u64(tenant_id_validation_started_at.elapsed());
+    let transport_started_at = Instant::now();
     let (req, crypto_profile, request_was_encrypted, crypto_timing) = state
         .proxy_state
         .crypto_state
-        .decrypt_request_value(tenant_uuid, body_payload, &http_path.0)
+        .decrypt_request_value_with_precheck(
+            tenant_uuid,
+            body_payload,
+            &http_path.0,
+            envelope_nonce_prechecked.is_some(),
+        )
         .await?;
+    let transport_elapsed = transport_started_at.elapsed();
     let ctx = HandlerCtx {
         state: &state,
         claims: &claims,
         req: &req,
         request_id: &request_id,
     };
-    log_transport_stage(&ctx, request_was_encrypted, &crypto_timing);
+    log_transport_stage(&ctx, request_was_encrypted, &crypto_timing, transport_elapsed);
     let request_validate_started_at = Instant::now();
     req.validate()?;
     let request_validate_ms = mazbri_core::num::millis_u64(request_validate_started_at.elapsed());
@@ -142,8 +153,8 @@ pub async fn unified_gateway_handler(
         IdempotencyStage::Replay(response) => return Ok(response),
         IdempotencyStage::Proceed { ms, acquired } => (ms, acquired),
     };
-    timing.tenant_validation_ms =
-        mazbri_core::num::millis_u64(tenant_validation_started_at.elapsed());
+    let tenant_validation_elapsed = tenant_validation_started_at.elapsed();
+    timing.tenant_validation_ms = mazbri_core::num::millis_u64(tenant_validation_elapsed);
     log_request_prepare(
         &ctx,
         request_was_encrypted,
@@ -153,6 +164,7 @@ pub async fn unified_gateway_handler(
             idempotency_ms,
             timing.tenant_validation_ms,
         ],
+        tenant_validation_elapsed,
     );
     let tenant_product_detail =
         resolve_product_detail(&ctx, tenant_uuid, tenant_product_detail, &mut timing).await?;
@@ -162,18 +174,7 @@ pub async fn unified_gateway_handler(
     let fetched =
         fetch_response(&ctx, fallback_enabled, cache_enabled, &trace_context, timing.started_at)
             .await?;
-    timing.cache_lookup_ms = fetched.cache_lookup_ms;
-    // New definition: upstream_ms is pure wire time from bypass (0 on cache/CBPro).
-    timing.upstream_ms = if fetched.from_cache || fetched.from_cbpro_fallback {
-        0
-    } else {
-        fetched.response.upstream_wire_ms
-    };
-    timing.bypass_hop_ms = fetched.fetch_wall_ms
-        .saturating_sub(timing.cache_lookup_ms)
-        .saturating_sub(timing.upstream_ms);
-    log_upstream_stage(&ctx, timing.upstream_ms, &fetched);
-    spawn_cache_populate(&ctx, &fetched, cache_enabled);
+    record_fetched_timing_and_cache(&ctx, &fetched, cache_enabled, &mut timing);
     let status = fetched.response.status;
     let http_status = StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
     let response_error = (!(200..300).contains(&status)).then(|| fetched.response.error.clone());
@@ -214,7 +215,33 @@ pub async fn unified_gateway_handler(
     Ok(response)
 }
 
-fn log_request_prepare(ctx: &HandlerCtx<'_>, request_was_encrypted: bool, stage_ms: [u64; 4]) {
+fn record_fetched_timing_and_cache(
+    ctx: &HandlerCtx<'_>,
+    fetched: &FetchedResponse,
+    cache_enabled: bool,
+    timing: &mut GatewayRequestTiming,
+) {
+    timing.cache_lookup_ms = fetched.cache_lookup_ms;
+    // New definition: upstream_ms is pure wire time from bypass (0 on cache/CBPro).
+    timing.upstream_ms = if fetched.from_cache || fetched.from_cbpro_fallback {
+        0
+    } else {
+        fetched.response.upstream_wire_ms
+    };
+    timing.bypass_hop_ms = fetched
+        .fetch_wall_ms
+        .saturating_sub(timing.cache_lookup_ms)
+        .saturating_sub(timing.upstream_ms);
+    log_upstream_stage(ctx, timing.upstream_ms, fetched);
+    spawn_cache_populate(ctx, fetched, cache_enabled);
+}
+
+fn log_request_prepare(
+    ctx: &HandlerCtx<'_>,
+    request_was_encrypted: bool,
+    stage_ms: [u64; 4],
+    elapsed: Duration,
+) {
     let (request_id, claims, req) = (ctx.request_id, ctx.claims, ctx.req);
     let [
         tenant_id_validation_ms,
@@ -222,7 +249,7 @@ fn log_request_prepare(ctx: &HandlerCtx<'_>, request_was_encrypted: bool, stage_
         idempotency_ms,
         tenant_validation_ms,
     ] = stage_ms;
-    let stage_ids = super::stage_log::stage_span("request_prepare", tenant_validation_ms)
+    let stage_ids = super::stage_log::stage_span("request_prepare", elapsed)
         .product(&req.product_id)
         .tenant(&claims.tenant_code)
         .record();
@@ -248,10 +275,11 @@ fn log_upstream_stage(ctx: &HandlerCtx<'_>, upstream_ms: u64, fetched: &FetchedR
     } else {
         "live"
     };
-    let mut stage = super::stage_log::stage_span("upstream", upstream_ms)
+    let mut stage = super::stage_log::stage_span("upstream", fetched.fetch_wall_duration)
         .product(&req.product_id)
         .tenant(&claims.tenant_code)
-        .mode(route.map_or("", |r| r.upstream_mode.as_str()));
+        .mode(route.map_or("", |r| r.upstream_mode.as_str()))
+        .upstream_wire_ms(upstream_ms);
     if !(200..300).contains(&status) {
         stage = stage.failed();
     }
@@ -300,9 +328,10 @@ fn log_transport_stage(
     ctx: &HandlerCtx<'_>,
     request_was_encrypted: bool,
     crypto_timing: &TenantCryptoTiming,
+    elapsed: Duration,
 ) {
     let (request_id, claims, req) = (ctx.request_id, ctx.claims, ctx.req);
-    let stage_ids = super::stage_log::stage_span("transport", crypto_timing.transport_total)
+    let stage_ids = super::stage_log::stage_span("transport", elapsed)
         .product(&req.product_id)
         .tenant(&claims.tenant_code)
         .record();
@@ -380,8 +409,9 @@ async fn idempotency_stage(ctx: &HandlerCtx<'_>) -> Result<IdempotencyStage, Pro
             )));
         }
         Ok(crate::crypto::IdempotencyOutcome::Completed(record)) => {
-            let idempotency_ms = mazbri_core::num::millis_u64(idempotency_started_at.elapsed());
-            let stage_ids = super::stage_log::stage_span("idempotency", idempotency_ms)
+            let idempotency_elapsed = idempotency_started_at.elapsed();
+            let idempotency_ms = mazbri_core::num::millis_u64(idempotency_elapsed);
+            let stage_ids = super::stage_log::stage_span("idempotency", idempotency_elapsed)
                 .product(&req.product_id)
                 .tenant(&claims.tenant_code)
                 .record();
@@ -401,8 +431,9 @@ async fn idempotency_stage(ctx: &HandlerCtx<'_>) -> Result<IdempotencyStage, Pro
             return Err(error);
         }
     };
-    let idempotency_ms = mazbri_core::num::millis_u64(idempotency_started_at.elapsed());
-    let stage_ids = super::stage_log::stage_span("idempotency", idempotency_ms)
+    let idempotency_elapsed = idempotency_started_at.elapsed();
+    let idempotency_ms = mazbri_core::num::millis_u64(idempotency_elapsed);
+    let stage_ids = super::stage_log::stage_span("idempotency", idempotency_elapsed)
         .product(&req.product_id)
         .tenant(&claims.tenant_code)
         .record();
@@ -439,10 +470,10 @@ async fn resolve_product_detail(
                 ProxyError::InternalError(format!("查找租户产品配置失败: {e}"))
             })?,
     };
-    timing.product_detail_lookup_ms =
-        mazbri_core::num::millis_u64(product_detail_lookup_started_at.elapsed());
+    let product_detail_lookup_elapsed = product_detail_lookup_started_at.elapsed();
+    timing.product_detail_lookup_ms = mazbri_core::num::millis_u64(product_detail_lookup_elapsed);
     let mut stage =
-        super::stage_log::stage_span("product_detail_lookup", timing.product_detail_lookup_ms)
+        super::stage_log::stage_span("product_detail_lookup", product_detail_lookup_elapsed)
             .product(&req.product_id)
             .tenant(&claims.tenant_code);
     if tenant_product_detail.is_none() {
@@ -489,16 +520,17 @@ async fn fetch_response(
         cache_enabled,
     )
     .await;
-    let cache_lookup_ms = if cache_enabled {
-        mazbri_core::num::millis_u64(cache_lookup_started.elapsed())
+    let cache_lookup_elapsed = if cache_enabled {
+        cache_lookup_started.elapsed()
     } else {
-        0
+        Duration::ZERO
     };
+    let cache_lookup_ms = mazbri_core::num::millis_u64(cache_lookup_elapsed);
     if let Some(cached) = cache_hit {
         // Attach matched product route so customer-calls shows CB: + channel, not "-".
         let matched_route =
             super::execution::match_primary_route_metadata(&state.proxy_state, claims, req);
-        let stage_ids = super::stage_log::stage_span("response_cache", cache_lookup_ms)
+        let stage_ids = super::stage_log::stage_span("response_cache", cache_lookup_elapsed)
             .product(&req.product_id)
             .tenant(&claims.tenant_code)
             .record();
@@ -508,6 +540,7 @@ async fn fetch_response(
             &stage_ids, "response_cache", cache_lookup_ms,
             path = %req.path, cache_key = %cache_key, message = "Gateway response cache hit",
         );
+        let fetch_wall_duration = fetch_started.elapsed();
         return Ok(FetchedResponse {
             response: cached.into_upstream(),
             interaction_event_id: Uuid::now_v7(),
@@ -516,7 +549,8 @@ async fn fetch_response(
             from_cbpro_fallback: false,
             cache_key,
             cache_lookup_ms,
-            fetch_wall_ms: mazbri_core::num::millis_u64(fetch_started.elapsed()),
+            fetch_wall_ms: mazbri_core::num::millis_u64(fetch_wall_duration),
+            fetch_wall_duration,
         });
     }
     match execute_gateway_request_with_event(
@@ -529,16 +563,20 @@ async fn fetch_response(
     )
     .await
     {
-        Ok(resp) => Ok(FetchedResponse {
-            response: resp.response,
-            interaction_event_id: resp.interaction_event_id,
-            upstream_route: resp.upstream_route,
-            from_cache: false,
-            from_cbpro_fallback: resp.from_cbpro_fallback,
-            cache_key,
-            cache_lookup_ms,
-            fetch_wall_ms: mazbri_core::num::millis_u64(fetch_started.elapsed()),
-        }),
+        Ok(resp) => {
+            let fetch_wall_duration = fetch_started.elapsed();
+            Ok(FetchedResponse {
+                response: resp.response,
+                interaction_event_id: resp.interaction_event_id,
+                upstream_route: resp.upstream_route,
+                from_cache: false,
+                from_cbpro_fallback: resp.from_cbpro_fallback,
+                cache_key,
+                cache_lookup_ms,
+                fetch_wall_ms: mazbri_core::num::millis_u64(fetch_wall_duration),
+                fetch_wall_duration,
+            })
+        }
         Err(e) => {
             API_PROXY_DURATION_SECONDS
                 .with_label_values(&[&req.product_id, &req.method, "unknown"])
@@ -587,9 +625,9 @@ fn serialize_stage(
         response_error,
         response.content_type.as_deref(),
     )?;
-    let response_serialize_ms =
-        mazbri_core::num::millis_u64(response_serialize_started_at.elapsed());
-    let stage_ids = super::stage_log::stage_span("response_serialize", response_serialize_ms)
+    let response_serialize_elapsed = response_serialize_started_at.elapsed();
+    let response_serialize_ms = mazbri_core::num::millis_u64(response_serialize_elapsed);
+    let stage_ids = super::stage_log::stage_span("response_serialize", response_serialize_elapsed)
         .product(&req.product_id)
         .tenant(&claims.tenant_code)
         .record();
@@ -659,8 +697,9 @@ async fn encrypt_stage(
         .crypto_state
         .encrypt_response_bytes(tenant_uuid, crypto_profile, &serialized.bytes, http_path)
         .await?;
-    let response_encrypt_ms = mazbri_core::num::millis_u64(response_encrypt_started_at.elapsed());
-    let stage_ids = super::stage_log::stage_span("response_encrypt", response_encrypt_ms)
+    let response_encrypt_elapsed = response_encrypt_started_at.elapsed();
+    let response_encrypt_ms = mazbri_core::num::millis_u64(response_encrypt_elapsed);
+    let stage_ids = super::stage_log::stage_span("response_encrypt", response_encrypt_elapsed)
         .product(&req.product_id)
         .tenant(&claims.tenant_code)
         .record();
@@ -755,7 +794,7 @@ fn finish_request(ctx: &HandlerCtx<'_>, done: &mut CompletedRequest<'_>) {
     GATEWAY_UPSTREAM_WAIT_SECONDS
         .with_label_values(&[&req.product_id, upstream_mode])
         .observe(mazbri_core::num::u64_to_f64(timing.upstream_ms) / 1000.0);
-    let stage_ids = super::stage_log::stage_span("platform_summary", customer_total_ms)
+    let stage_ids = super::stage_log::stage_span("platform_summary", elapsed)
         .product(&req.product_id)
         .tenant(&ctx.claims.tenant_code)
         .mode(upstream_mode)

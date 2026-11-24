@@ -312,7 +312,7 @@ impl MazbriBypassServiceImpl {
             channel_id = %req.channel_id
         );
         let trace_context = bypass_trace_context(req, &span);
-        let (outcome, spec) = async {
+        let (mut outcome, spec) = async {
             match self.resolve_egress_spec(&req.egress_spec_hash, &req.egress_spec_json) {
                 Ok(spec) => {
                     let out = self.execute_once(req, &spec, mode, options).await;
@@ -328,16 +328,24 @@ impl MazbriBypassServiceImpl {
             emit_config_cache_miss(req, &trace_context, &outcome.response.error);
             return (outcome, trace_id);
         }
-        let ctx = AccessCtx {
-            service_name: self.service_name.as_ref(),
-            user_agent: self.user_agent.as_ref(),
-            req,
-            trace_context: &trace_context,
-            spec: spec.as_ref(),
-            start_time,
-        };
-        emit_bypass_access(&ctx, &outcome.response);
-        emit_bypass_stages(&ctx, &outcome.response, &outcome.stage_timings);
+        let duration_ms = mazbri_core::num::millis_u64(start_time.elapsed());
+        let service_name = Arc::clone(&self.service_name);
+        let user_agent = Arc::clone(&self.user_agent);
+        let req_owned = req.clone();
+        let response_owned = outcome.response.clone();
+        let stage_timings = std::mem::take(&mut outcome.stage_timings);
+        tokio::spawn(async move {
+            let ctx = AccessCtx {
+                service_name: service_name.as_ref(),
+                user_agent: user_agent.as_ref(),
+                req: &req_owned,
+                trace_context: &trace_context,
+                spec: spec.as_ref(),
+                duration_ms,
+            };
+            emit_bypass_access(&ctx, &response_owned);
+            emit_bypass_stages(&ctx, &response_owned, &stage_timings);
+        });
         (outcome, trace_id)
     }
 
@@ -689,7 +697,7 @@ struct AccessCtx<'a> {
     req: &'a upstream_proto::InvokeRequest,
     trace_context: &'a TraceContext,
     spec: Option<&'a ChannelEgressSpec>,
-    start_time: Instant,
+    duration_ms: u64,
 }
 
 fn non_empty(value: &str) -> Option<String> {
@@ -757,7 +765,7 @@ fn emit_bypass_stages(
 
 fn emit_bypass_access(ctx: &AccessCtx<'_>, response: &upstream_proto::InvokeResponse) {
     let req = ctx.req;
-    let duration_ms = mazbri_core::num::millis_u64(ctx.start_time.elapsed());
+    let duration_ms = ctx.duration_ms;
     let route_template = ctx.spec.map_or_default(|s| s.request.path.clone());
     let meta = response.upstream_meta.as_ref();
     let adapter = meta

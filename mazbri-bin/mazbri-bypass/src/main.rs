@@ -40,8 +40,16 @@ async fn main() -> Result<()> {
                     .timeout(runtime.ctx.config.upstream.timeout())
                     .connect_timeout(runtime.ctx.config.upstream.connect_timeout())
                     .user_agent(&runtime.ctx.config.upstream.user_agent)
-                    .pool_max_idle_per_host(32)
+                    .pool_max_idle_per_host(
+                        runtime
+                            .ctx
+                            .config
+                            .upstream
+                            .http_pool_max_idle_per_host
+                            .clamp(1, 4096),
+                    )
                     .pool_idle_timeout(std::time::Duration::from_secs(90))
+                    .tcp_nodelay(true)
                     .tcp_keepalive(std::time::Duration::from_secs(30)),
             )
             .build()?;

@@ -31,7 +31,8 @@ pub struct StageSpanIds {
     pub span_id: String,
 }
 
-/// 网关阶段 span：名称即 `stage_name`，耗时与阶段日志的 `stage_ms` 同源。
+/// 网关阶段 span：名称即 `stage_name`，保留真实墙钟 `Duration`（微秒/纳秒精度），
+/// 不再截断为整数毫秒。
 ///
 /// 阶段日志有采样，span 不采样：每个请求的每个阶段都补记一个已结束的 span。
 #[must_use]
@@ -41,9 +42,9 @@ pub struct StageSpan {
     failed: bool,
 }
 
-pub fn stage_span(stage: &'static str, stage_ms: u64) -> StageSpan {
+pub fn stage_span(stage: &'static str, duration: std::time::Duration) -> StageSpan {
     StageSpan {
-        span: mazbri_core::trace_spans::CompletedSpan::from_millis(stage, stage_ms),
+        span: mazbri_core::trace_spans::CompletedSpan::new(stage, duration),
         stage,
         failed: false,
     }
@@ -62,6 +63,13 @@ impl StageSpan {
 
     pub fn mode(mut self, mode: &str) -> Self {
         self.span = self.span.attr("mode", mode.to_string());
+        self
+    }
+
+    pub fn upstream_wire_ms(mut self, ms: u64) -> Self {
+        self.span = self
+            .span
+            .attr("upstream_wire_ms", i64::try_from(ms).unwrap_or(i64::MAX));
         self
     }
 

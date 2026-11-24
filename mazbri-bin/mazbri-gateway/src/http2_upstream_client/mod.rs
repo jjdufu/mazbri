@@ -21,9 +21,9 @@ use mazbri_upstream_contracts::shared::{
 
 const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// HTTP/2 connections per upstream endpoint; requests are spread round-robin so one
+/// Default HTTP/2 connections per upstream endpoint; requests are spread round-robin so one
 /// connection's head-of-line / single-task scheduling no longer bounds the hop tail.
-pub const CHANNELS_PER_ENDPOINT: usize = 4;
+pub const CHANNELS_PER_ENDPOINT: usize = 16;
 /// Refresh starts this fraction (1/N) of the TTL before expiry, in the background.
 const REFRESH_LEAD_DIVISOR: u64 = 10;
 
@@ -61,6 +61,7 @@ fn needs_refresh(age_secs: u64, ttl_secs: u64) -> bool {
 pub struct UpstreamHttp2ClientPool {
     clients: Arc<DashMap<String, Arc<ChannelSet>>>,
     client_ttl_secs: u64,
+    channels_per_endpoint: usize,
     client_cert: ManagedCertificate,
 }
 
@@ -70,8 +71,15 @@ impl UpstreamHttp2ClientPool {
         Self {
             clients: Arc::new(DashMap::new()),
             client_ttl_secs,
+            channels_per_endpoint: CHANNELS_PER_ENDPOINT,
             client_cert: client_cert.clone(),
         }
+    }
+
+    #[must_use]
+    pub fn with_channels_per_endpoint(mut self, channels: usize) -> Self {
+        self.channels_per_endpoint = channels.clamp(1, 128);
+        self
     }
 
     /// Hot path: never rebuilds synchronously once a set exists. Near/after TTL the old
@@ -115,8 +123,9 @@ impl UpstreamHttp2ClientPool {
         endpoint: &str,
         reason: &str,
     ) -> Result<ChannelSet, CoreError> {
-        let mut channels = Vec::with_capacity(CHANNELS_PER_ENDPOINT);
-        for _ in 0..CHANNELS_PER_ENDPOINT {
+        let count = self.channels_per_endpoint.max(1);
+        let mut channels = Vec::with_capacity(count);
+        for _ in 0..count {
             let started = Instant::now();
             let result = self.connect_one(contract_id, endpoint).await;
             let label = if result.is_ok() { "ok" } else { "error" };
@@ -159,6 +168,10 @@ impl UpstreamHttp2ClientPool {
         let endpoint_obj = Endpoint::from_shared(endpoint_uri.clone())
             .map_err(|error| CoreError::Config(error.to_string()))?
             .connect_timeout(DEFAULT_CONNECT_TIMEOUT)
+            .tcp_nodelay(true)
+            .http2_adaptive_window(true)
+            .initial_connection_window_size(Some(4 * 1024 * 1024))
+            .initial_stream_window_size(Some(1024 * 1024))
             .http2_keep_alive_interval(Duration::from_secs(20))
             .keep_alive_timeout(Duration::from_secs(10))
             .keep_alive_while_idle(true)

@@ -235,6 +235,12 @@ pub struct TenantCryptoTiming {
     pub transport_total: u64,
 }
 
+/// Marker inserted by `jwt_auth_middleware` when the encrypted envelope's nonce was
+/// already verified and consumed together with the request-binding nonce in a single
+/// Redis pipeline RTT.
+#[derive(Debug, Clone, Copy)]
+pub struct EnvelopeNoncePrechecked;
+
 #[derive(Clone)]
 pub struct TenantCryptoState {
     db: Arc<PgPool>,
@@ -655,11 +661,12 @@ impl TenantCryptoState {
     /// # Errors
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-    pub async fn decrypt_request_value(
+    pub async fn decrypt_request_value_with_precheck(
         &self,
         tenant_id: Uuid,
         body: GatewayRequestPayload,
         http_path: &str,
+        envelope_nonce_prechecked: bool,
     ) -> Result<
         (
             GatewayRequest,
@@ -695,8 +702,10 @@ impl TenantCryptoState {
                 let preflight_started_at = Instant::now();
                 validate_timestamp(&envelope, profile.clock_skew_seconds)?;
                 timing.preflight = mazbri_core::num::millis_u64(preflight_started_at.elapsed());
-                self.check_nonce(tenant_id, &envelope, profile.nonce_ttl_seconds, &mut timing)
-                    .await?;
+                if !envelope_nonce_prechecked {
+                    self.check_nonce(tenant_id, &envelope, profile.nonce_ttl_seconds, &mut timing)
+                        .await?;
+                }
                 let tenant_key = self
                     .tenant_key(tenant_id, &envelope.key_version, &mut timing)
                     .await?;
@@ -977,6 +986,33 @@ impl TenantCryptoState {
             .await
             .map_err(|error| {
                 ProxyError::InternalError(format!("binding nonce redis operation failed: {error}"))
+            })
+    }
+
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+    pub async fn consume_binding_and_envelope_nonces(
+        &self,
+        prefix: &str,
+        tenant_id: Uuid,
+        binding_nonce: &str,
+        key_version: &str,
+        envelope_nonce: &str,
+        ttl_seconds: i32,
+    ) -> Result<(bool, bool), ProxyError> {
+        self.redis
+            .set_binding_and_envelope_nonces_if_absent(
+                prefix,
+                tenant_id,
+                binding_nonce,
+                key_version,
+                envelope_nonce,
+                ttl_seconds,
+            )
+            .await
+            .map_err(|error| {
+                ProxyError::InternalError(format!("nonce pipeline redis operation failed: {error}"))
             })
     }
 

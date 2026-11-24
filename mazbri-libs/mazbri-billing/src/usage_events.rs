@@ -116,13 +116,13 @@ pub fn partition_for(key: &[u8], partitions: i32) -> i32 {
 }
 
 /// Bounded in-memory queue capacity for response-path enqueue.
-const USAGE_EVENT_QUEUE_CAPACITY: usize = 4096;
+const USAGE_EVENT_QUEUE_CAPACITY: usize = 32_768;
 /// Flush when this many events accumulate for a partition (or overall batch).
 const USAGE_EVENT_BATCH_MAX: usize = 64;
 /// Max time to wait for more events before flushing a non-empty batch.
 const USAGE_EVENT_LINGER: Duration = Duration::from_millis(2);
 /// Side channel for events that failed background produce (gateway drains → outbox).
-const USAGE_EVENT_FAILED_CAPACITY: usize = 4096;
+const USAGE_EVENT_FAILED_CAPACITY: usize = 16_384;
 
 #[derive(Clone)]
 pub struct UsageEventProducer {
