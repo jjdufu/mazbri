@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.3](https://github.com/jjdufu/mazbri/compare/v0.6.2...v0.6.3) (2026-11-24)
+
+
+### Bug Fixes
+
+* **gateway:** 优化网关与透明出站代理热路径吞吐、阶段计时精度及链路采样 ([#88](https://github.com/jjdufu/mazbri/issues/88)) ([0d892b5](https://github.com/jjdufu/mazbri/commit/0d892b5bf2383e645cfb403683688392f55d09ee))
+
 ## [0.6.2](https://github.com/jjdufu/mazbri/compare/v0.6.1...v0.6.2) (2026-11-22)
 
 
