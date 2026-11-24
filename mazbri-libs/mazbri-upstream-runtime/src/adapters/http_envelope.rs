@@ -2,11 +2,15 @@ use crate::http_call::{HttpCall, append_query, join_url};
 use crate::types::{BodyKind, ExecuteError};
 use mazbri_core::BodyEncoding;
 
-use super::crypto_wire::{apply_parts, ensure_profile_slots, maybe_open_json_body, seal_body};
-use super::{AdapterCtx, AdapterOutcome, apply_ok_and_unwrap, parse_json_body, wrap_by_name};
+use super::crypto_wire::{apply_parts, maybe_open_json_body, profile_with_slots, seal_body};
+use super::{
+    AdapterCtx, AdapterOutcome, apply_ok_and_unwrap, can_passthrough_raw_json, parse_json_body,
+    try_take_valid_raw_json, wrap_by_name,
+};
 
 pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError> {
-    let spec = &ctx.input.spec;
+    let spec = &*ctx.input.spec;
+    let skip_validate = ctx.input.spec_validated;
     let method = spec.request.method.as_str();
     let path = spec.request.path.as_str();
     let mut query = super::merge_request_query(ctx.auth, spec);
@@ -22,9 +26,15 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
             serde_json::to_vec(&wrapped)
                 .map_err(|e| ExecuteError::SpecInvalid(format!("wrap json: {e}")))?
         };
-        let mut profile = profile.clone();
-        ensure_profile_slots(&mut profile, false);
-        let sealed = seal_body(&raw, &profile, ctx.pipeline_keys, ctx.registry, &[])?;
+        let effective_profile = profile_with_slots(profile, false);
+        let sealed = seal_body(
+            &raw,
+            &effective_profile,
+            ctx.pipeline_keys,
+            ctx.registry,
+            &[],
+            skip_validate,
+        )?;
         let wire = apply_parts(&mut headers, &mut query, &sealed)?;
         if matches!(wire, Some(BodyKind::Form(_))) {
             super::force_urlencoded_content_type(&mut headers);
@@ -45,7 +55,7 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
     };
 
     let url = append_query(&join_url(ctx.base_url, path), &query);
-    let response = super::dispatch_http(
+    let mut response = super::dispatch_http(
         ctx,
         HttpCall {
             method,
@@ -60,23 +70,41 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
         return Ok(AdapterOutcome::raw(response));
     }
 
-    let body_for_parse = if let Some(profile) = spec.crypto.as_ref() {
-        maybe_open_json_body(
+    if spec.crypto.is_none()
+        && can_passthrough_raw_json(ctx, spec)
+        && let Some(raw_json) =
+            try_take_valid_raw_json(&mut response, ctx.needs_raw_body_for_invalidation())
+    {
+        return Ok(AdapterOutcome {
+            auth_rejection: None,
+            response,
+            payload: serde_json::Value::Null,
+            raw_payload_json: Some(raw_json),
+            biz_error: None,
+        });
+    }
+
+    let decrypted;
+    let body_slice: &[u8] = if let Some(profile) = spec.crypto.as_ref() {
+        decrypted = maybe_open_json_body(
             &response.body,
             profile,
             ctx.pipeline_keys,
             ctx.registry,
             &[],
-        )
+            skip_validate,
+        );
+        &decrypted
     } else {
-        response.body.clone()
+        &response.body
     };
-    let json = parse_json_body(&body_for_parse).or_else(|_| parse_json_body(&response.body))?;
+    let json = parse_json_body(body_slice).or_else(|_| parse_json_body(&response.body))?;
     let (payload, biz_error) = apply_ok_and_unwrap(&json, spec)?;
     Ok(AdapterOutcome {
         auth_rejection: None,
         response,
         payload,
+        raw_payload_json: None,
         biz_error,
     })
 }

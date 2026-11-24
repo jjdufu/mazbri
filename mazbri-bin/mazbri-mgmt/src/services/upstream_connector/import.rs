@@ -1267,7 +1267,8 @@ pub async fn transform_preview(
         channel_id: endpoint_key.unwrap_or_else(|| row.id.to_string()),
         request_id: Uuid::new_v4().to_string(),
         payload,
-        spec,
+        spec: Arc::new(spec),
+        spec_validated: true,
         config: Some(Arc::new(cfg)),
         timeout: Duration::from_secs(5),
         mode: ExecuteMode::TransformPreview,
@@ -1277,9 +1278,12 @@ pub async fn transform_preview(
             mask_secrets: true,
             collect_trace: true,
         },
-        pipeline_keys: Some(mazbri_upstream_runtime::pipeline_keys_from_credentials(&credentials)),
+        pipeline_keys: Some(Arc::new(
+            mazbri_upstream_runtime::pipeline_keys_from_credentials(&credentials),
+        )),
         credentials,
         artifact_bytes: None,
+        descriptor_pool: None,
         cache_key: None,
     };
     let result = engine.invoke(input).await;

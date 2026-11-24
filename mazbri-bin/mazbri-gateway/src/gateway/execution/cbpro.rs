@@ -88,7 +88,7 @@ pub(super) async fn try_cbpro_fallback(
         error: String::new(),
         content_type: Some("application/json; charset=utf-8".to_string()),
         body_bytes_len,
-        upstream_wire_ms: 0,
+        upstream_wire_duration: Duration::ZERO,
         upstream_request_id: String::new(),
     })
 }
@@ -247,9 +247,5 @@ pub(super) fn build_fallback_cache_key(req: &GatewayRequest) -> String {
     .to_string()
 }
 pub(super) fn request_body_as_json(body: Option<&GatewayRequestBody>) -> Option<serde_json::Value> {
-    match body {
-        Some(GatewayRequestBody::Json(value)) => Some(value.clone()),
-        Some(GatewayRequestBody::Raw(value)) => Some(serde_json::Value::String(value.clone())),
-        Some(GatewayRequestBody::Empty) | None => None,
-    }
+    body.and_then(|b| serde_json::from_str(b.as_raw_json_str()).ok())
 }

@@ -1423,8 +1423,7 @@ fn validate_egress_crypto(
     let Some(profile) = crypto else {
         return Ok(());
     };
-    let registry = AlgorithmRegistry::default_registry();
-    profile.validate(&registry).map_err(|e| {
+    profile.validate(AlgorithmRegistry::global()).map_err(|e| {
         ChannelEgressError::new(format!("egress.crypto 校验失败: {e}"))
     })
 }

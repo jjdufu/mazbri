@@ -24,8 +24,10 @@ fn outcome(status: u16, body: &[u8], biz_error: Option<BizError>) -> AdapterOutc
             method: "POST".into(),
             path: "/x".into(),
             protocol: "HTTP/1.1".into(),
+            wire_duration: Duration::ZERO,
         },
         payload: serde_json::Value::Null,
+        raw_payload_json: None,
         biz_error,
         auth_rejection: None,
     }
@@ -155,11 +157,12 @@ fn invoke_input(adapter: &str, base_url: &str) -> InvokeInput {
         channel_id: "c".into(),
         request_id: "rid-1".into(),
         payload: serde_json::json!({}),
-        spec: ChannelEgressSpec {
+        spec: Arc::new(ChannelEgressSpec {
             adapter: adapter.into(),
             base_url: base_url.into(),
             ..Default::default()
-        },
+        }),
+        spec_validated: false,
         config: None,
         timeout: Duration::from_secs(2),
         mode: ExecuteMode::Business,
@@ -167,6 +170,7 @@ fn invoke_input(adapter: &str, base_url: &str) -> InvokeInput {
         credentials: HashMap::new(),
         pipeline_keys: None,
         artifact_bytes: None,
+        descriptor_pool: None,
         cache_key: None,
     }
 }
@@ -207,7 +211,7 @@ fn effective_rules_prefer_channel_then_enabled_supplier() {
     );
 
     input.config = Some(supplier(true));
-    input.spec.auth = Some(
+    Arc::make_mut(&mut input.spec).auth = Some(
         serde_json::from_value(serde_json::json!({
             "profile": "oauth_cc",
             "invalidation": {"http_status": [419]}
@@ -241,9 +245,10 @@ async fn invoke_against(
 ) -> Result<AdapterOutcome, ExecuteError> {
     let kind = AdapterKind::parse(adapter).unwrap();
     let mut input = invoke_input(adapter, base);
-    input.spec.request.method = "POST".into();
-    input.spec.request.path = "/rpc".into();
-    input.spec.operation = Some("demo.op".into());
+    let spec_mut = Arc::make_mut(&mut input.spec);
+    spec_mut.request.method = "POST".into();
+    spec_mut.request.path = "/rpc".into();
+    spec_mut.operation = Some("demo.op".into());
     let client = reqwest::Client::builder().no_proxy().build().unwrap();
     let ssrf = SsrfChecker::with_allow_private(true);
     let auth = AppliedAuth {
@@ -253,10 +258,12 @@ async fn invoke_against(
         token: Some(TOKEN.into()),
     };
     let pipeline_keys = crate::crypto_pipeline::PipelineKeys::empty();
-    let registry = mazbri_crypto::AlgorithmRegistry::default_registry();
+    let registry = mazbri_crypto::AlgorithmRegistry::global();
     let ws_pool = crate::ws_pool::WsPool::new(crate::ws_pool::WsPoolConfig::default());
+    let wire_clock = crate::types::WireClock::new();
     let ctx = AdapterCtx {
         client: &client,
+        h2c_client: &client,
         ssrf: &ssrf,
         input: &input,
         base_url: base,
@@ -264,11 +271,12 @@ async fn invoke_against(
         timeout: Duration::from_secs(2),
         ws_pool: &ws_pool,
         pipeline_keys: &pipeline_keys,
-        registry: &registry,
+        registry,
         invalidation: rules,
         ws_stale_retry: None,
         observer: &crate::observe::NoopObserver,
         retry_log: &crate::observe::RetryLog::default(),
+        wire_clock: &wire_clock,
     };
     invoke_adapter(&ctx, kind).await
 }

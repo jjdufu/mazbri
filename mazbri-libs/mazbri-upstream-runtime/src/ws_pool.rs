@@ -36,6 +36,7 @@ use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::http::{HeaderName, HeaderValue};
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
+use crate::ssrf::SsrfChecker;
 use crate::types::ExecuteError;
 
 pub type WsStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
@@ -183,12 +184,13 @@ impl WsPool {
     ///
     /// # Errors
     ///
-    /// 全局或每键并发已满、锁中毒、握手超时或连接失败时返回 [`ExecuteError`]。
+    /// 全局或每键并发已满、锁中毒、SSRF 拦截、握手超时或连接失败时返回 [`ExecuteError`]。
     pub async fn checkout(
         &self,
         key: PoolKey,
         ws_url: &str,
         handshake_headers: &[(String, String)],
+        ssrf: &SsrfChecker,
     ) -> Result<WsConnGuard, ExecuteError> {
         let permits = self.acquire_permits(&key)?;
         let mut discarded = 0usize;
@@ -205,7 +207,7 @@ impl WsPool {
             guard.discarded = discarded;
             return Ok(guard);
         }
-        let stream = self.connect(ws_url, handshake_headers).await?;
+        let stream = self.connect(ws_url, handshake_headers, ssrf).await?;
         self.inner.handshakes.fetch_add(1, Ordering::SeqCst);
         let mut guard = self.guard(key, stream, permits, false);
         guard.discarded = discarded;
@@ -222,9 +224,10 @@ impl WsPool {
         key: PoolKey,
         ws_url: &str,
         handshake_headers: &[(String, String)],
+        ssrf: &SsrfChecker,
     ) -> Result<WsConnGuard, ExecuteError> {
         let permits = self.acquire_permits(&key)?;
-        let stream = self.connect(ws_url, handshake_headers).await?;
+        let stream = self.connect(ws_url, handshake_headers, ssrf).await?;
         self.inner.handshakes.fetch_add(1, Ordering::SeqCst);
         Ok(self.guard(key, stream, permits, false))
     }
@@ -304,7 +307,27 @@ impl WsPool {
         &self,
         ws_url: &str,
         handshake_headers: &[(String, String)],
+        ssrf: &SsrfChecker,
     ) -> Result<WsStream, ExecuteError> {
+        let parsed = url::Url::parse(ws_url)
+            .map_err(|e| ExecuteError::AdapterFailed(format!("ws url: {e}")))?;
+        let scheme = parsed.scheme();
+        if scheme != "ws" && scheme != "wss" {
+            return Err(ExecuteError::SsrfBlocked(format!(
+                "WS URL scheme must be ws/wss, got '{scheme}'"
+            )));
+        }
+        let host = parsed
+            .host_str()
+            .ok_or_else(|| ExecuteError::SsrfBlocked("Missing host string in WS URL".into()))?;
+        let port = parsed
+            .port()
+            .unwrap_or(if scheme == "wss" { 443 } else { 80 });
+        let checked_addrs = ssrf
+            .resolve_checked_socket_addrs(host, port)
+            .await
+            .map_err(ExecuteError::SsrfBlocked)?;
+
         let mut req = ws_url
             .into_client_request()
             .map_err(|e| ExecuteError::AdapterFailed(format!("ws request: {e}")))?;
@@ -316,12 +339,19 @@ impl WsPool {
                 req.headers_mut().insert(name, val);
             }
         }
-        let connect = tokio_tungstenite::connect_async(req);
-        let (ws, _resp) = tokio::time::timeout(self.inner.cfg.handshake_timeout, connect)
+        let handshake = async {
+            let tcp = TcpStream::connect(checked_addrs.as_slice())
+                .await
+                .map_err(|e| ExecuteError::UpstreamTransport(format!("ws connect: {e}")))?;
+            let _ = tcp.set_nodelay(true);
+            let (ws, _resp) = tokio_tungstenite::client_async_tls_with_config(req, tcp, None, None)
+                .await
+                .map_err(|e| ExecuteError::UpstreamTransport(format!("ws connect: {e}")))?;
+            Ok(ws)
+        };
+        tokio::time::timeout(self.inner.cfg.handshake_timeout, handshake)
             .await
             .map_err(|_| ExecuteError::UpstreamTransport("ws handshake timeout".into()))?
-            .map_err(|e| ExecuteError::UpstreamTransport(format!("ws connect: {e}")))?;
-        Ok(ws)
     }
 
     fn checkin(&self, key: PoolKey, stream: WsStream) {
@@ -446,5 +476,20 @@ mod fingerprint_tests {
             &[("a".into(), "1".into()), ("b".into(), "2".into())],
         );
         assert_ne!(a, c);
+    }
+
+    #[tokio::test]
+    async fn checkout_blocks_private_host_when_ssrf_disallows_private() {
+        let pool = WsPool::new(WsPoolConfig::default());
+        let ssrf = SsrfChecker::new();
+        let key = PoolKey {
+            base_url: "http://localhost:9999".into(),
+            path: "/ws".into(),
+            auth_fp: String::new(),
+        };
+        let res = pool
+            .checkout(key, "ws://localhost:9999/ws", &[], &ssrf)
+            .await;
+        assert!(matches!(res, Err(ExecuteError::SsrfBlocked(_))));
     }
 }

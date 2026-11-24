@@ -94,6 +94,7 @@ fn outcome_from_json(
         return AdapterOutcome {
             auth_rejection: None,
             payload: Value::Null,
+            raw_payload_json: None,
             biz_error: Some(BizError {
                 code: "UPSTREAM_BIZ".into(),
                 message,
@@ -119,6 +120,7 @@ fn outcome_from_json(
         auth_rejection: None,
         response,
         payload,
+        raw_payload_json: None,
         biz_error: None,
     }
 }
@@ -175,6 +177,7 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
         ctx.pipeline_keys,
         ctx.registry,
         &canon_fields,
+        ctx.input.spec_validated && profile.slots == spec.crypto.as_ref().map_or(&[][..], |p| p.slots.as_slice()),
     )?;
     let form = encode_merged_form(&meta, &sealed);
     let hdrs: Vec<_> = sealed.slots.headers.iter().map(|(k, v)| (k.clone(), v.clone())).collect();

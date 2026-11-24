@@ -14,19 +14,10 @@ pub enum ChannelRateLimitMode {
 
 impl ChannelRateLimitMode {
     #[must_use]
-    pub fn as_str(self) -> &'static str {
+    pub const fn as_str(self) -> &'static str {
         match self {
             Self::Reject => "reject",
             Self::Queue => "queue",
-        }
-    }
-
-    #[must_use]
-    pub fn parse(raw: &str) -> Option<Self> {
-        match raw.trim().to_ascii_lowercase().as_str() {
-            "reject" => Some(Self::Reject),
-            "queue" => Some(Self::Queue),
-            _ => None,
         }
     }
 }

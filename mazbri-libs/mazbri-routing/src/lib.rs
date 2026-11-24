@@ -1,2 +1,5 @@
 pub mod engine;
-pub use engine::{CandidateChannel, RouteEngine, RouteKey, RouteMatchContext, SwitchCondition};
+pub use engine::{
+    CandidateChannel, ChannelRateLimitOverrides, RouteEngine, RouteKey, RouteMatchContext,
+    RouteRateLimitMode, SwitchCondition,
+};

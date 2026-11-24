@@ -221,7 +221,7 @@ impl UpdateCryptoProfileRequest {
             })?,
         };
         profile
-            .validate(&AlgorithmRegistry::default_registry())
+            .validate(AlgorithmRegistry::global())
             .map_err(|error| map_crypto_validation(&error))?;
         Ok(profile)
     }
@@ -995,9 +995,8 @@ pub async fn create_request_key(
             }))
         }
         RequestKeySpec::Public { alg, public_key } => {
-            let registry = AlgorithmRegistry::default_registry();
             let digest = secret_key_digest(
-                &registry,
+                AlgorithmRegistry::global(),
                 &integrity_key,
                 &tenant,
                 &public_key_digest_scope(&kid),

@@ -16,7 +16,6 @@ pub mod route_reload;
 pub mod route_source;
 pub mod router;
 pub mod service_health_cache;
-pub mod supplier_config_cache;
 pub mod tarpc_client;
 pub mod upstream_contract;
 pub mod warmup;

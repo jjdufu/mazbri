@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 use thiserror::Error;
 
@@ -10,6 +11,31 @@ use crate::crypto_pipeline::PipelineKeys;
 
 /// Default max body bytes captured into stage summaries (64 KiB).
 pub const DEFAULT_MAX_BODY_CAPTURE: usize = 64 * 1024;
+
+/// 单次 `Invoke` 内全部真实对外部上游网络 I/O 耗时的纳秒级原子累加器。
+#[derive(Debug, Default)]
+pub struct WireClock {
+    nanos: AtomicU64,
+}
+
+impl WireClock {
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            nanos: AtomicU64::new(0),
+        }
+    }
+
+    pub fn add(&self, duration: Duration) {
+        let ns = u64::try_from(duration.as_nanos()).unwrap_or(u64::MAX);
+        self.nanos.fetch_add(ns, Ordering::Relaxed);
+    }
+
+    #[must_use]
+    pub fn total(&self) -> Duration {
+        Duration::from_nanos(self.nanos.load(Ordering::Relaxed))
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -39,10 +65,10 @@ pub struct ExecuteOptions {
     pub collect_trace: bool,
 }
 
-fn default_max_body() -> usize {
+const fn default_max_body() -> usize {
     DEFAULT_MAX_BODY_CAPTURE
 }
-fn default_true() -> bool {
+const fn default_true() -> bool {
     true
 }
 
@@ -113,6 +139,9 @@ pub struct OutboundResponse {
     pub path: String,
     /// 实际出站协议：`HTTP/1.1` / `HTTP/2` / `WebSocket`；未真正发出时为空。
     pub protocol: String,
+    /// 本次出站调用的真实网络收发耗时（含读取响应体完成）。
+    #[serde(skip, default)]
+    pub wire_duration: Duration,
 }
 
 /// Production / workbench invoke: tenant JSON object + channel egress spec.
@@ -123,17 +152,21 @@ pub struct InvokeInput {
     pub channel_id: String,
     pub request_id: String,
     pub payload: serde_json::Value,
-    pub spec: ChannelEgressSpec,
+    pub spec: Arc<ChannelEgressSpec>,
+    /// 为 true 时表示 `spec` 已通过 `parse_and_validate_egress` 校验（跳过每请求重复校验）。
+    pub spec_validated: bool,
     pub config: Option<Arc<SupplierConfig>>,
     pub timeout: Duration,
     pub mode: ExecuteMode,
     pub options: ExecuteOptions,
     /// Decrypted credential map (supplier `auth_flow.credentials`).
     pub credentials: HashMap<String, String>,
-    /// 显式注入的流水线密钥（bypass / 探针）；`None` 时引擎从 `credentials` 推导。
-    pub pipeline_keys: Option<PipelineKeys>,
+    /// 显式注入的共享流水线密钥（bypass 预生成缓存复用）；`None` 时引擎从 `credentials` 推导。
+    pub pipeline_keys: Option<Arc<PipelineKeys>>,
     /// gRPC `FileDescriptorSet` / optional WSDL bytes.
-    pub artifact_bytes: Option<Vec<u8>>,
+    pub artifact_bytes: Option<Arc<[u8]>>,
+    /// 预编译的 gRPC `DescriptorPool`（避免每请求重复解码 protobuf 描述集）。
+    pub descriptor_pool: Option<Arc<prost_reflect::DescriptorPool>>,
     pub cache_key: Option<String>,
 }
 
@@ -151,6 +184,9 @@ pub struct UpstreamMeta {
     pub url: String,
     pub adapter: String,
     pub latency_ms: u64,
+    /// 外部上游真实网络累计微秒耗时。
+    #[serde(default)]
+    pub latency_us: u64,
     /// 实际出站 method / path / 协议（访问日志记真实出站值，而不是 gRPC hop 的值）。
     pub method: String,
     pub path: String,
@@ -166,6 +202,9 @@ pub struct InvokeResult {
     pub stages: Vec<StageResult>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub payload: Option<serde_json::Value>,
+    /// 生产直通模式下已通过语法校验的原始 JSON 响应串（避免 `Value` 解析再序列化）。
+    #[serde(skip)]
+    pub raw_payload_json: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub biz_error: Option<BizError>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -247,9 +286,6 @@ pub struct StageSummary {
 }
 
 /// 生产路径也采集的轻量阶段耗时（不含请求 / 响应摘要），bypass 据此写阶段日志。
-///
-/// 阶段：`egress_build`（规格校验 + SSRF）、`upstream_auth`（取 / 换票、签名）、`upstream_wire`
-/// （适配器组包、发送、收包与解包）；认证重试轮的阶段名带 `#retry` 后缀。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StageTiming {
     pub name: String,

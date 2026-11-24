@@ -426,7 +426,6 @@ pub struct RequestSigner {
     kid: String,
     alg: AlgorithmId,
     key: KeyRef,
-    registry: AlgorithmRegistry,
 }
 
 impl std::fmt::Debug for RequestSigner {
@@ -455,12 +454,7 @@ impl RequestSigner {
             return Err(RequestBindingError::InvalidKey);
         }
         let key = binding_key_ref(alg, material)?;
-        let signer = Self {
-            kid,
-            alg,
-            key,
-            registry: AlgorithmRegistry::default_registry(),
-        };
+        let signer = Self { kid, alg, key };
         signer.sign_payload("mazbri-request-signer-self-check")?;
         Ok(signer)
     }
@@ -478,7 +472,7 @@ impl RequestSigner {
     }
 
     fn sign_payload(&self, payload: &str) -> Result<String, RequestBindingError> {
-        sign_binding(&self.registry, self.alg, &self.key, payload)
+        sign_binding(AlgorithmRegistry::global(), self.alg, &self.key, payload)
     }
 
     /// 以指定时间戳与 nonce 签名（便于测试复现）。

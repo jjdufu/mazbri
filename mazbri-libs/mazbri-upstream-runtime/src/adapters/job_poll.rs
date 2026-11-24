@@ -123,6 +123,7 @@ async fn invoke_submit(
         return Ok(AdapterOutcome {
             auth_rejection: None,
             payload: serde_json::Value::Null,
+            raw_payload_json: None,
             biz_error: None,
             response: submit,
         });
@@ -136,6 +137,7 @@ async fn invoke_submit(
     Ok(AdapterOutcome {
         auth_rejection: None,
         payload: serde_json::json!({ JOB_ID_FIELD: job_id }),
+        raw_payload_json: None,
         biz_error: None,
         response: submit,
     })
@@ -186,6 +188,7 @@ async fn invoke_query(
         return Ok(AdapterOutcome {
             auth_rejection: None,
             payload: serde_json::Value::Null,
+            raw_payload_json: None,
             biz_error: None,
             response: last,
         });
@@ -194,6 +197,7 @@ async fn invoke_query(
         return Ok(AdapterOutcome {
             auth_rejection: None,
             payload: serde_json::Value::Null,
+            raw_payload_json: None,
             biz_error: Some(crate::types::BizError {
                 code: "NOT_FOUND".into(),
                 message: "job not found".into(),
@@ -206,6 +210,7 @@ async fn invoke_query(
     Ok(AdapterOutcome {
         auth_rejection: None,
         payload: json,
+        raw_payload_json: None,
         biz_error: None,
         response: last,
     })
@@ -255,7 +260,8 @@ mod tests {
             channel_id: "c".into(),
             request_id: "rid".into(),
             payload,
-            spec,
+            spec: Arc::new(spec),
+            spec_validated: false,
             config: None,
             timeout: Duration::from_secs(2),
             mode: ExecuteMode::Business,
@@ -263,6 +269,7 @@ mod tests {
             credentials: HashMap::new(),
             pipeline_keys: None,
             artifact_bytes: None,
+            descriptor_pool: None,
             cache_key: None,
         }
     }
@@ -310,16 +317,18 @@ mod tests {
             job_id_jsonpath: "$.job_id".into(),
         });
         let mut input = invoke_input(payload, spec);
-        input.spec.base_url = base.clone();
+        Arc::make_mut(&mut input.spec).base_url = base.clone();
         let client = reqwest::Client::builder().no_proxy().build().unwrap();
         let ssrf = SsrfChecker::with_allow_private(true);
         let auth = auth_empty();
         let pipeline_keys = crate::crypto_pipeline::PipelineKeys::empty();
-        let registry = mazbri_crypto::AlgorithmRegistry::default_registry();
+        let registry = mazbri_crypto::AlgorithmRegistry::global();
         let ws_pool = crate::ws_pool::WsPool::new(crate::ws_pool::WsPoolConfig::default());
         let invalidation = mazbri_core::AuthInvalidationSpec::default();
+        let wire_clock = crate::types::WireClock::new();
         let ctx = AdapterCtx {
             client: &client,
+            h2c_client: &client,
             ssrf: &ssrf,
             input: &input,
             base_url: base.as_str(),
@@ -327,11 +336,12 @@ mod tests {
             timeout: Duration::from_secs(2),
             ws_pool: &ws_pool,
             pipeline_keys: &pipeline_keys,
-            registry: &registry,
+            registry,
             invalidation: &invalidation,
             ws_stale_retry: None,
             observer: &crate::observe::NoopObserver,
             retry_log: &crate::observe::RetryLog::default(),
+            wire_clock: &wire_clock,
         };
         let out = invoke(&ctx).await.expect("invoke");
         (out, hits)

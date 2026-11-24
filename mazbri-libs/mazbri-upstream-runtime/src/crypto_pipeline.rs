@@ -169,9 +169,26 @@ pub fn seal_request(
     keys: &PipelineKeys,
     ctx: &PipelineContext<'_>,
 ) -> Result<RequestParts, PipelineError> {
-    profile
-        .validate(ctx.registry)
-        .map_err(|e| PipelineError::Profile(e.to_string()))?;
+    seal_request_with_validation(body, profile, keys, ctx, false)
+}
+
+/// 客户端组包（可选跳过已校验 profile 的重复校验）。
+///
+/// # Errors
+///
+/// 同 [`seal_request`]。
+pub fn seal_request_with_validation(
+    body: &[u8],
+    profile: &UpstreamCryptoProfile,
+    keys: &PipelineKeys,
+    ctx: &PipelineContext<'_>,
+    skip_validate: bool,
+) -> Result<RequestParts, PipelineError> {
+    if !skip_validate {
+        profile
+            .validate(ctx.registry)
+            .map_err(|e| PipelineError::Profile(e.to_string()))?;
+    }
 
     match profile.order {
         CryptoOrder::SignOnly => seal_sign_only(body, profile, keys, ctx),
@@ -198,9 +215,26 @@ pub fn open_response(
     keys: &PipelineKeys,
     ctx: &PipelineContext<'_>,
 ) -> Result<Vec<u8>, PipelineError> {
-    profile
-        .validate(ctx.registry)
-        .map_err(|e| PipelineError::Profile(e.to_string()))?;
+    open_response_with_validation(parts, profile, keys, ctx, false)
+}
+
+/// 客户端解包（可选跳过已校验 profile 的重复校验）。
+///
+/// # Errors
+///
+/// 同 [`open_response`]。
+pub fn open_response_with_validation(
+    parts: &RequestParts,
+    profile: &UpstreamCryptoProfile,
+    keys: &PipelineKeys,
+    ctx: &PipelineContext<'_>,
+    skip_validate: bool,
+) -> Result<Vec<u8>, PipelineError> {
+    if !skip_validate {
+        profile
+            .validate(ctx.registry)
+            .map_err(|e| PipelineError::Profile(e.to_string()))?;
+    }
 
     match profile.order {
         CryptoOrder::SignOnly => open_sign_only(parts, profile, keys, ctx),

@@ -23,7 +23,7 @@ use crate::ssrf::SsrfChecker;
 use crate::token_cache::{StaleEvict, TokenCache};
 use crate::types::{
     AuthRejection, ExecuteError, ExecuteMode, InvokeInput, InvokeResult, RetryReason, RetrySkip,
-    StageResult, StageSummary, StageTiming, UpstreamMeta,
+    StageResult, StageSummary, StageTiming, UpstreamMeta, WireClock,
 };
 
 /// 运行时参数（bypass `[upstream]` 与 mgmt `[connector_probe.runtime]` 同一套语义）。
@@ -159,6 +159,7 @@ impl Default for HttpClientDefaults {
 #[derive(Clone)]
 pub struct RuntimeEngine {
     client: Arc<reqwest::Client>,
+    h2c_client: Arc<reqwest::Client>,
     tls_clients: Arc<Mutex<HashMap<[u8; 32], Arc<reqwest::Client>>>>,
     http_defaults: HttpClientDefaults,
     ssrf: SsrfChecker,
@@ -170,16 +171,38 @@ pub struct RuntimeEngine {
     observer: Arc<dyn RuntimeObserver>,
 }
 
+fn build_h2c_client(ssrf: &SsrfChecker, defaults: &HttpClientDefaults) -> Arc<reqwest::Client> {
+    let built = ssrf
+        .configure_http_client(
+            reqwest::Client::builder()
+                .http2_prior_knowledge()
+                .timeout(defaults.timeout)
+                .connect_timeout(defaults.connect_timeout)
+                .user_agent(&defaults.user_agent)
+                .pool_max_idle_per_host(512)
+                .pool_idle_timeout(Duration::from_secs(90))
+                .tcp_nodelay(true)
+                .tcp_keepalive(Duration::from_secs(30))
+                .redirect(reqwest::redirect::Policy::none()),
+        )
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
+    Arc::new(built)
+}
+
 impl RuntimeEngine {
     /// 以默认 [`RuntimeOptions`] 构造；服务启动时再经 [`Self::with_options`] 注入配置。
     #[must_use]
     pub fn new(client: Arc<reqwest::Client>, ssrf: SsrfChecker) -> Self {
         let options = RuntimeOptions::default();
+        let http_defaults = HttpClientDefaults::default();
+        let h2c_client = build_h2c_client(&ssrf, &http_defaults);
         let ws_pool = Arc::new(crate::ws_pool::WsPool::new(options.ws_pool_config()));
         Self {
             client,
+            h2c_client,
             tls_clients: Arc::new(Mutex::new(HashMap::new())),
-            http_defaults: HttpClientDefaults::default(),
+            http_defaults,
             ssrf,
             token_cache: Arc::new(TokenCache::new(options.token_refresh_skew)),
             retry_budgets: Arc::new(options.retry_budgets()),
@@ -202,6 +225,7 @@ impl RuntimeEngine {
             connect_timeout,
             timeout,
         };
+        self.h2c_client = build_h2c_client(&self.ssrf, &self.http_defaults);
         self
     }
 
@@ -327,7 +351,7 @@ impl RuntimeEngine {
 
     async fn invoke_inner(&self, input: &InvokeInput, retry_log: &RetryLog) -> InvokeResult {
         let mut trace = Trace::new(input);
-        let base_url = match self.preflight(input, &mut trace).await {
+        let base_url = match self.preflight(input, &mut trace) {
             Ok(url) => url,
             Err(fail) => return trace.fail(fail),
         };
@@ -488,12 +512,14 @@ impl RuntimeEngine {
         }
     }
 
-    /// validate + ssrf stages; returns the resolved base URL.
-    async fn preflight(&self, input: &InvokeInput, trace: &mut Trace) -> Result<String, StageFail> {
+    /// validate + ssrf syntax/literal stages; returns the resolved base URL.
+    fn preflight(&self, input: &InvokeInput, trace: &mut Trace) -> Result<String, StageFail> {
         let v_start = Instant::now();
         let validate_fail = |err| StageFail::new("validate", v_start, err);
-        mazbri_core::validate_egress_spec(&input.spec)
-            .map_err(|e| validate_fail(ExecuteError::SpecInvalid(e.to_string())))?;
+        if !input.spec_validated {
+            mazbri_core::validate_egress_spec(&input.spec)
+                .map_err(|e| validate_fail(ExecuteError::SpecInvalid(e.to_string())))?;
+        }
         if !input.payload.is_object() {
             return Err(validate_fail(ExecuteError::SpecInvalid(
                 "payload_json 必须是 JSON 对象".into(),
@@ -525,17 +551,18 @@ impl RuntimeEngine {
 
         let s_start = Instant::now();
         self.ssrf
-            .validate_url(&base_url)
-            .await
+            .validate_url_syntax_and_literal(&base_url)
             .map_err(|e| StageFail::new("ssrf", s_start, ExecuteError::SsrfBlocked(e)))?;
         if let Some(url) = ticket_token_url(input) {
-            self.ssrf.validate_url(url).await.map_err(|e| {
-                StageFail::new(
-                    "ssrf",
-                    s_start,
-                    ExecuteError::SsrfBlocked(format!("token_url: {e}")),
-                )
-            })?;
+            self.ssrf
+                .validate_url_syntax_and_literal(url)
+                .map_err(|e| {
+                    StageFail::new(
+                        "ssrf",
+                        s_start,
+                        ExecuteError::SsrfBlocked(format!("token_url: {e}")),
+                    )
+                })?;
         }
         trace.time("egress_build", v_start, true);
         trace.record(|| StageResult {
@@ -598,6 +625,7 @@ impl RuntimeEngine {
             cache_key,
             token_default_ttl: self.options.token_default_ttl,
             request_id: &input.request_id,
+            wire_clock: Some(&trace.wire_clock),
         })
         .await
         {
@@ -625,22 +653,28 @@ impl RuntimeEngine {
             }));
         }
         let u_start = Instant::now();
-        let pipeline_keys = input.pipeline_keys.clone().unwrap_or_else(|| {
-            pipeline_keys_from_credentials(&input.credentials)
-        });
-        let registry = AlgorithmRegistry::default_registry();
+        let derived_keys;
+        let pipeline_keys_ref: &crate::crypto_pipeline::PipelineKeys =
+            if let Some(ref prebuilt) = input.pipeline_keys {
+                prebuilt.as_ref()
+            } else {
+                derived_keys = pipeline_keys_from_credentials(&input.credentials);
+                &derived_keys
+            };
+        let registry = AlgorithmRegistry::global();
         let invalidation = effective_invalidation(input);
         let stale_budget = self.retry_budgets.for_key(cache_key);
         let ctx = AdapterCtx {
             client: &adapter_client,
+            h2c_client: &self.h2c_client,
             ssrf: &self.ssrf,
             input,
             base_url,
             auth: &applied,
             timeout: input.timeout,
             ws_pool: &self.ws_pool,
-            pipeline_keys: &pipeline_keys,
-            registry: &registry,
+            pipeline_keys: pipeline_keys_ref,
+            registry,
             invalidation: &invalidation,
             ws_stale_retry: self
                 .options
@@ -648,6 +682,7 @@ impl RuntimeEngine {
                 .then_some(&*stale_budget),
             observer: &*self.observer,
             retry_log,
+            wire_clock: &trace.wire_clock,
         };
         let outcome = match invoke_adapter(&ctx, kind).await {
             Ok(o) => o,
@@ -683,9 +718,15 @@ fn finalize_adapter_outcome(
     let rejection = outcome.auth_rejection;
     let meta = trace.upstream_meta(&outcome.response);
     let latency_ms = meta.latency_ms;
+    let payload = if outcome.raw_payload_json.is_some() {
+        None
+    } else {
+        Some(outcome.payload)
+    };
     let mut result = trace.result(ResultParts {
         ok: outcome.biz_error.is_none(),
-        payload: Some(outcome.payload),
+        payload,
+        raw_payload_json: outcome.raw_payload_json,
         biz_error: outcome.biz_error,
         upstream_meta: Some(meta),
         token: applied.token,
@@ -848,6 +889,7 @@ impl AttemptOutcome {
 struct ResultParts {
     ok: bool,
     payload: Option<serde_json::Value>,
+    raw_payload_json: Option<String>,
     biz_error: Option<crate::types::BizError>,
     error_code: Option<String>,
     error_message: Option<String>,
@@ -861,6 +903,7 @@ impl ResultParts {
         Self {
             ok: true,
             payload: None,
+            raw_payload_json: None,
             biz_error: None,
             error_code: None,
             error_message: None,
@@ -874,6 +917,7 @@ impl ResultParts {
 /// Stage collector for one invoke: records only when tracing is on.
 struct Trace {
     start: Instant,
+    wire_clock: WireClock,
     stages: Vec<StageResult>,
     enabled: bool,
     adapter: String,
@@ -889,6 +933,7 @@ impl Trace {
     fn new(input: &InvokeInput) -> Self {
         Self {
             start: Instant::now(),
+            wire_clock: WireClock::new(),
             stages: Vec::new(),
             enabled: input.options.collect_trace || !matches!(input.mode, ExecuteMode::Production),
             adapter: input.spec.adapter.clone(),
@@ -928,11 +973,18 @@ impl Trace {
             .iter()
             .find(|(k, _)| k.eq_ignore_ascii_case(&self.request_id_header))
             .map_or_default(|(_, v)| v.trim().to_string());
+        let total_wire = self.wire_clock.total();
+        let effective_wire = if total_wire.is_zero() {
+            response.wire_duration
+        } else {
+            total_wire
+        };
         UpstreamMeta {
             status: response.status,
             url: response.final_url.clone(),
             adapter: self.adapter.clone(),
-            latency_ms: elapsed_ms(self.start),
+            latency_ms: mazbri_core::num::millis_u64(effective_wire),
+            latency_us: mazbri_core::num::micros_u64(effective_wire),
             method: response.method.clone(),
             path: response.path.clone(),
             protocol: response.protocol.clone(),
@@ -946,6 +998,7 @@ impl Trace {
             latency_ms: elapsed_ms(self.start),
             stages: std::mem::take(&mut self.stages),
             payload: parts.payload,
+            raw_payload_json: parts.raw_payload_json,
             biz_error: parts.biz_error,
             error_code: parts.error_code,
             error_message: parts.error_message,
@@ -979,8 +1032,11 @@ impl Trace {
             response_summary: None,
             error: Some(err.to_string()),
         });
+        let total_wire = self.wire_clock.total();
         let upstream_meta = Some(UpstreamMeta {
             adapter: self.adapter.clone(),
+            latency_ms: mazbri_core::num::millis_u64(total_wire),
+            latency_us: mazbri_core::num::micros_u64(total_wire),
             ..Default::default()
         });
         self.result(ResultParts {
@@ -994,12 +1050,20 @@ impl Trace {
 
     /// 认证被拒的最终结果（重试后仍被拒，或跳过重试）：保留最后一轮的上游元信息与阶段，
     /// 结果标记为 `UPSTREAM_AUTH_REJECTED`。
-    fn auth_rejected(&self, message: String, last: InvokeResult) -> InvokeResult {
+    fn auth_rejected(&self, message: String, mut last: InvokeResult) -> InvokeResult {
         let err = ExecuteError::UpstreamAuthRejected(message);
+        let total_wire = self.wire_clock.total();
+        if let Some(ref mut meta) = last.upstream_meta
+            && !total_wire.is_zero()
+        {
+            meta.latency_ms = mazbri_core::num::millis_u64(total_wire);
+            meta.latency_us = mazbri_core::num::micros_u64(total_wire);
+        }
         InvokeResult {
             ok: false,
-            latency_ms: elapsed_ms(self.start),
+            latency_ms: mazbri_core::num::millis_u64(total_wire),
             payload: None,
+            raw_payload_json: None,
             biz_error: None,
             error_code: Some(err.code().to_string()),
             error_message: Some(err.to_string()),

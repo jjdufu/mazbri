@@ -548,24 +548,29 @@ fn current_request_id(headers: &axum::http::HeaderMap) -> String {
 
 fn parse_gateway_request_payload(body_bytes: &[u8]) -> Result<GatewayRequestPayload, JwtAuthError> {
     let body_bytes = trim_leading_ascii_whitespace(body_bytes);
-    if body_bytes.starts_with(
-        br#"{"encrypted":#) {
-        if let Ok(envelope) = serde_json::from_slice::<TransportEnvelope>(body_bytes) {
-            return Ok(GatewayRequestPayload::Encrypted(envelope));
-        }
-    } else if body_bytes.starts_with(br#"{"product_id":"#,
-    ) && let Ok(proxy_req) = serde_json::from_slice::<GatewayRequest>(body_bytes)
+    if body_bytes.starts_with(br#"{"encrypted":"#)
+        && let Ok(envelope) = serde_json::from_slice::<TransportEnvelope>(body_bytes)
     {
-        return Ok(GatewayRequestPayload::Plain(proxy_req));
-    }
-
-    if let Ok(envelope) = serde_json::from_slice::<TransportEnvelope>(body_bytes) {
         return Ok(GatewayRequestPayload::Encrypted(envelope));
     }
 
-    let proxy_req = serde_json::from_slice::<GatewayRequest>(body_bytes)
-        .map_err(|_| JwtAuthError::InvalidRequestBody)?;
-    Ok(GatewayRequestPayload::Plain(proxy_req))
+    if let Ok(proxy_req) = serde_json::from_slice::<GatewayRequest>(body_bytes) {
+        return Ok(GatewayRequestPayload::Plain(proxy_req));
+    }
+
+    if contains_subslice(body_bytes, br#""encrypted""#)
+        && let Ok(envelope) = serde_json::from_slice::<TransportEnvelope>(body_bytes)
+    {
+        return Ok(GatewayRequestPayload::Encrypted(envelope));
+    }
+
+    Err(JwtAuthError::InvalidRequestBody)
+}
+
+fn contains_subslice(haystack: &[u8], needle: &[u8]) -> bool {
+    !needle.is_empty()
+        && haystack.len() >= needle.len()
+        && haystack.windows(needle.len()).any(|w| w == needle)
 }
 
 fn trim_leading_ascii_whitespace(bytes: &[u8]) -> &[u8] {

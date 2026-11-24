@@ -17,13 +17,13 @@ use crate::ws_pool::{auth_fingerprint, PoolKey};
 use super::{AdapterCtx, AdapterOutcome, wrap_by_name};
 
 pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError> {
-    let spec = &ctx.input.spec;
+    let spec = &*ctx.input.spec;
     let operation = spec
         .operation
         .as_deref()
         .ok_or_else(|| ExecuteError::SpecInvalid("ws_unary operation missing".into()))?;
     let path = ws_path(ctx);
-    let url = ws_url(ctx, &path).await?;
+    let url = ws_url(ctx, &path)?;
 
     // 稳定握手头：auth + spec.request；故意不注入 per-request correlation（帧 id 承担）。
     let headers_map = super::merge_request_headers(ctx.auth, spec);
@@ -46,9 +46,16 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
     let text = serde_json::to_string(&frame)
         .map_err(|e| ExecuteError::SpecInvalid(format!("ws frame: {e}")))?;
 
-    let json = match exchange(ctx, &key, &url, &header_pairs, text).await? {
+    let wire_started = std::time::Instant::now();
+    let exchange_res = exchange(ctx, &key, &url, &header_pairs, text).await;
+    let wire_duration = wire_started.elapsed();
+    ctx.wire_clock.add(wire_duration);
+    let json = match exchange_res? {
         Exchange::Reply(json) => json,
-        Exchange::Rejected(outcome) => return Ok(*outcome),
+        Exchange::Rejected(mut outcome) => {
+            outcome.response.wire_duration = wire_duration;
+            return Ok(*outcome);
+        }
     };
 
     let code = json
@@ -64,20 +71,22 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
         return Ok(AdapterOutcome {
             auth_rejection: None,
             payload: serde_json::Value::Null,
+            raw_payload_json: None,
             biz_error: Some(BizError {
                 code: "UPSTREAM_BIZ".into(),
                 message,
                 details: Some(json.clone()),
             }),
-            response: synthetic_response(&url, &json),
+            response: synthetic_response(&url, &json, wire_duration),
         });
     }
     let payload = json.get("data").cloned().unwrap_or(json.clone());
     Ok(AdapterOutcome {
         auth_rejection: None,
         payload,
+        raw_payload_json: None,
         biz_error: None,
-        response: synthetic_response(&url, &json),
+        response: synthetic_response(&url, &json, wire_duration),
     })
 }
 
@@ -97,7 +106,10 @@ async fn exchange(
     text: String,
 ) -> Result<Exchange, ExecuteError> {
     let rid = &ctx.input.request_id;
-    let mut guard = ctx.ws_pool.checkout(key.clone(), url, header_pairs).await?;
+    let mut guard = ctx
+        .ws_pool
+        .checkout(key.clone(), url, header_pairs, ctx.ssrf)
+        .await?;
     for _ in 0..guard.stale_discarded() {
         ctx.observer.on_event(RuntimeEvent::WsStale {
             stage: WsStaleStage::Checkout,
@@ -171,7 +183,7 @@ async fn retry_on_fresh(
 ) -> Result<Exchange, ExecuteError> {
     let mut fresh = ctx
         .ws_pool
-        .checkout_fresh(key.clone(), url, header_pairs)
+        .checkout_fresh(key.clone(), url, header_pairs, ctx.ssrf)
         .await?;
     match send_and_wait(&mut fresh, &ctx.input.request_id, text, ctx.timeout).await {
         Ok(json) => Ok(Exchange::Reply(json)),
@@ -201,6 +213,7 @@ fn closed_or_error(
                 token: token.to_string(),
             }),
             payload: serde_json::Value::Null,
+            raw_payload_json: None,
             biz_error: None,
             response: closed_response(url),
         })));
@@ -329,7 +342,7 @@ fn ws_path(ctx: &AdapterCtx<'_>) -> String {
         .to_string()
 }
 
-async fn ws_url(ctx: &AdapterCtx<'_>, path: &str) -> Result<String, ExecuteError> {
+fn ws_url(ctx: &AdapterCtx<'_>, path: &str) -> Result<String, ExecuteError> {
     let mut url = join_url(ctx.base_url, path);
     if url.starts_with("http://") {
         url = format!("ws://{}", url.trim_start_matches("http://"));
@@ -337,14 +350,10 @@ async fn ws_url(ctx: &AdapterCtx<'_>, path: &str) -> Result<String, ExecuteError
         url = format!("wss://{}", url.trim_start_matches("https://"));
     }
     url = append_query(&url, &super::merge_request_query(ctx.auth, &ctx.input.spec));
-    if let Err(e) = ctx
-        .ssrf
-        .validate_url(
-            &url.replace("ws://", "http://")
-                .replace("wss://", "https://"),
-        )
-        .await
-    {
+    if let Err(e) = ctx.ssrf.validate_url_syntax_and_literal(
+        &url.replace("ws://", "http://")
+            .replace("wss://", "https://"),
+    ) {
         return Err(ExecuteError::SsrfBlocked(e));
     }
     Ok(url)
@@ -360,10 +369,15 @@ fn closed_response(url: &str) -> OutboundResponse {
         method: "WS".into(),
         path: url.to_string(),
         protocol: "WebSocket".into(),
+        wire_duration: std::time::Duration::ZERO,
     }
 }
 
-fn synthetic_response(url: &str, json: &serde_json::Value) -> OutboundResponse {
+fn synthetic_response(
+    url: &str,
+    json: &serde_json::Value,
+    wire_duration: std::time::Duration,
+) -> OutboundResponse {
     OutboundResponse {
         status: 200,
         headers: std::collections::HashMap::default(),
@@ -372,6 +386,7 @@ fn synthetic_response(url: &str, json: &serde_json::Value) -> OutboundResponse {
         method: "WS".into(),
         path: url.to_string(),
         protocol: "WebSocket".into(),
+        wire_duration,
     }
 }
 
@@ -427,7 +442,8 @@ mod tests {
             channel_id: "c".into(),
             request_id: request_id.into(),
             payload: serde_json::json!({"k": "v"}),
-            spec,
+            spec: Arc::new(spec),
+            spec_validated: false,
             config: None,
             timeout: Duration::from_secs(3),
             mode: ExecuteMode::Business,
@@ -435,6 +451,7 @@ mod tests {
             credentials: HashMap::new(),
             pipeline_keys: None,
             artifact_bytes: None,
+            descriptor_pool: None,
             cache_key: None,
         }
     }
@@ -555,13 +572,15 @@ mod tests {
         opts: &RunOpts<'_>,
     ) -> Result<AdapterOutcome, ExecuteError> {
         let mut input = invoke_input(request_id, base_spec("/ws"));
-        input.spec.base_url = base.to_string();
+        Arc::make_mut(&mut input.spec).base_url = base.to_string();
         let client = reqwest::Client::builder().no_proxy().build().unwrap();
         let ssrf = SsrfChecker::with_allow_private(true);
         let pipeline_keys = crate::crypto_pipeline::PipelineKeys::empty();
-        let registry = mazbri_crypto::AlgorithmRegistry::default_registry();
+        let registry = mazbri_crypto::AlgorithmRegistry::global();
+        let wire_clock = crate::types::WireClock::new();
         let ctx = AdapterCtx {
             client: &client,
+            h2c_client: &client,
             ssrf: &ssrf,
             input: &input,
             base_url: base,
@@ -569,11 +588,12 @@ mod tests {
             timeout: opts.timeout,
             ws_pool: pool,
             pipeline_keys: &pipeline_keys,
-            registry: &registry,
+            registry,
             invalidation: &opts.invalidation,
             ws_stale_retry: opts.stale_retry,
             observer: opts.observer.unwrap_or(&crate::observe::NoopObserver),
             retry_log: &opts.retry_log,
+            wire_clock: &wire_clock,
         };
         invoke(&ctx).await
     }

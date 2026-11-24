@@ -393,6 +393,7 @@ mod tests {
             method: "GET".into(),
             path: "/x".into(),
             protocol: "HTTP/1.1".into(),
+            wire_duration: std::time::Duration::ZERO,
         }
     }
 
