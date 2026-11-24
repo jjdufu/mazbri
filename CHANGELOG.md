@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.4](https://github.com/jjdufu/mazbri/compare/v0.6.3...v0.6.4) (2026-11-24)
+
+
+### Bug Fixes
+
+* **gateway:** 完成双容器热路径延迟优化与全协议 SSRF 闭环 ([#90](https://github.com/jjdufu/mazbri/issues/90)) ([6467519](https://github.com/jjdufu/mazbri/commit/64675192fb023179c12a36504ee49dc869336448))
+
 ## [0.6.3](https://github.com/jjdufu/mazbri/compare/v0.6.2...v0.6.3) (2026-11-24)
 
 
