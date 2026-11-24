@@ -80,7 +80,7 @@ struct FetchedResponse {
     cache_lookup_ms: u64,
     /// Wall time of the whole `fetch_response` upstream path (cache miss → bypass hop).
     fetch_wall_ms: u64,
-    /// Full-precision wall duration of `fetch_response` for OTel upstream span.
+    /// Full-precision wall duration of `fetch_response` for `OTel` upstream span.
     fetch_wall_duration: Duration,
 }
 
@@ -174,18 +174,7 @@ pub async fn unified_gateway_handler(
     let fetched =
         fetch_response(&ctx, fallback_enabled, cache_enabled, &trace_context, timing.started_at)
             .await?;
-    timing.cache_lookup_ms = fetched.cache_lookup_ms;
-    // New definition: upstream_ms is pure wire time from bypass (0 on cache/CBPro).
-    timing.upstream_ms = if fetched.from_cache || fetched.from_cbpro_fallback {
-        0
-    } else {
-        fetched.response.upstream_wire_ms
-    };
-    timing.bypass_hop_ms = fetched.fetch_wall_ms
-        .saturating_sub(timing.cache_lookup_ms)
-        .saturating_sub(timing.upstream_ms);
-    log_upstream_stage(&ctx, timing.upstream_ms, &fetched);
-    spawn_cache_populate(&ctx, &fetched, cache_enabled);
+    record_fetched_timing_and_cache(&ctx, &fetched, cache_enabled, &mut timing);
     let status = fetched.response.status;
     let http_status = StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
     let response_error = (!(200..300).contains(&status)).then(|| fetched.response.error.clone());
@@ -224,6 +213,27 @@ pub async fn unified_gateway_handler(
     let mut response = build_response(http_status, encrypted_response, serialized.bytes)?;
     response.extensions_mut().insert(super::rejection_log::AccessLogged);
     Ok(response)
+}
+
+fn record_fetched_timing_and_cache(
+    ctx: &HandlerCtx<'_>,
+    fetched: &FetchedResponse,
+    cache_enabled: bool,
+    timing: &mut GatewayRequestTiming,
+) {
+    timing.cache_lookup_ms = fetched.cache_lookup_ms;
+    // New definition: upstream_ms is pure wire time from bypass (0 on cache/CBPro).
+    timing.upstream_ms = if fetched.from_cache || fetched.from_cbpro_fallback {
+        0
+    } else {
+        fetched.response.upstream_wire_ms
+    };
+    timing.bypass_hop_ms = fetched
+        .fetch_wall_ms
+        .saturating_sub(timing.cache_lookup_ms)
+        .saturating_sub(timing.upstream_ms);
+    log_upstream_stage(ctx, timing.upstream_ms, fetched);
+    spawn_cache_populate(ctx, fetched, cache_enabled);
 }
 
 fn log_request_prepare(

@@ -661,24 +661,6 @@ impl TenantCryptoState {
     /// # Errors
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-    pub async fn decrypt_request_value(
-        &self,
-        tenant_id: Uuid,
-        body: GatewayRequestPayload,
-        http_path: &str,
-    ) -> Result<
-        (
-            GatewayRequest,
-            TenantCryptoProfile,
-            bool,
-            TenantCryptoTiming,
-        ),
-        ProxyError,
-    > {
-        self.decrypt_request_value_with_precheck(tenant_id, body, http_path, false)
-            .await
-    }
-
     pub async fn decrypt_request_value_with_precheck(
         &self,
         tenant_id: Uuid,

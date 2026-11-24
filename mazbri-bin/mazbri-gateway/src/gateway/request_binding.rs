@@ -302,33 +302,15 @@ pub async fn enforce_request_binding(
     )
     .await?;
     let verify_ms = mazbri_core::num::millis_u64(verify_started.elapsed());
-    let envelope_nonce_prechecked =
-        if let Some((key_version, env_nonce)) = envelope_nonce.filter(|_| profile.encryption_mode != "none") {
-            let (binding_ok, envelope_ok) = crypto
-                .consume_binding_and_envelope_nonces(
-                    nonce_prefix,
-                    tenant_id,
-                    nonce,
-                    key_version,
-                    env_nonce,
-                    profile.nonce_ttl_seconds,
-                )
-                .await
-                .map_err(|_| RequestBindingError::nonce())?;
-            if !binding_ok || !envelope_ok {
-                return Err(RequestBindingError::nonce());
-            }
-            true
-        } else {
-            let inserted = crypto
-                .consume_binding_nonce(nonce_prefix, tenant_id, nonce, profile.nonce_ttl_seconds)
-                .await
-                .map_err(|_| RequestBindingError::nonce())?;
-            if !inserted {
-                return Err(RequestBindingError::nonce());
-            }
-            false
-        };
+    let envelope_nonce_prechecked = consume_request_nonces(
+        crypto,
+        nonce_prefix,
+        tenant_id,
+        nonce,
+        envelope_nonce,
+        &profile,
+    )
+    .await?;
     GATEWAY_REQUEST_BINDING_TOTAL
         .with_label_values(&["ok"])
         .inc();
@@ -345,6 +327,44 @@ pub async fn enforce_request_binding(
         verify_ms: Some(verify_ms),
         envelope_nonce_prechecked,
     })
+}
+
+async fn consume_request_nonces(
+    crypto: &TenantCryptoState,
+    nonce_prefix: &str,
+    tenant_id: Uuid,
+    nonce: &str,
+    envelope_nonce: Option<(&str, &str)>,
+    profile: &crate::crypto::TenantCryptoProfile,
+) -> Result<bool, RequestBindingError> {
+    if let Some((key_version, env_nonce)) =
+        envelope_nonce.filter(|_| profile.encryption_mode != "none")
+    {
+        let (binding_ok, envelope_ok) = crypto
+            .consume_binding_and_envelope_nonces(
+                nonce_prefix,
+                tenant_id,
+                nonce,
+                key_version,
+                env_nonce,
+                profile.nonce_ttl_seconds,
+            )
+            .await
+            .map_err(|_| RequestBindingError::nonce())?;
+        if !binding_ok || !envelope_ok {
+            return Err(RequestBindingError::nonce());
+        }
+        Ok(true)
+    } else {
+        let inserted = crypto
+            .consume_binding_nonce(nonce_prefix, tenant_id, nonce, profile.nonce_ttl_seconds)
+            .await
+            .map_err(|_| RequestBindingError::nonce())?;
+        if !inserted {
+            return Err(RequestBindingError::nonce());
+        }
+        Ok(false)
+    }
 }
 
 pub fn record_jwt_kid(kid: &str, result: &'static str) {

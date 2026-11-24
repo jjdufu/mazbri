@@ -250,26 +250,7 @@ pub async fn jwt_auth_middleware(
             return Err(JwtAuthError::InsufficientScope.into_response().into());
         }
         if let Some(ctx) = tenant_context.clone() {
-            let payload =
-                parse_gateway_request_payload(&body_bytes).map_err(IntoResponse::into_response)?;
-            record_rejection_scope(&parts.extensions, &claims, &payload);
-            match &payload {
-                GatewayRequestPayload::Plain(gateway_req) => {
-                    parts
-                        .extensions
-                        .insert(ctx.with_product_id(gateway_req.product_id.clone()));
-                    parts.extensions.insert(ProxyExecutionContext {
-                        api_endpoint: gateway_req.path.clone(),
-                    });
-                }
-                GatewayRequestPayload::Encrypted(_) => {
-                    parts.extensions.insert(ctx);
-                    parts.extensions.insert(ProxyExecutionContext {
-                        api_endpoint: parts.uri.path().to_string(),
-                    });
-                }
-            }
-            parts.extensions.insert(payload);
+            prepare_gateway_invoke_extensions(&mut parts, &claims, ctx, &body_bytes)?;
         }
         if let Some(tenant_id) = tenant_context.as_ref().map(|ctx| ctx.tenant_id) {
             let envelope_nonce = match parts.extensions.get::<GatewayRequestPayload>() {
@@ -321,6 +302,49 @@ pub async fn jwt_auth_middleware(
         .run(Request::from_parts(parts, Body::from(body_bytes)))
         .await)
 }
+fn prepare_gateway_invoke_extensions(
+    parts: &mut axum::http::request::Parts,
+    claims: &MazbriClaims,
+    ctx: TenantContext,
+    body_bytes: &[u8],
+) -> Result<(), MiddlewareRejection> {
+    let payload = parse_gateway_request_payload(body_bytes).map_err(IntoResponse::into_response)?;
+    record_rejection_scope(&parts.extensions, claims, &payload);
+    match &payload {
+        GatewayRequestPayload::Plain(gateway_req) => {
+            parts
+                .extensions
+                .insert(ctx.with_product_id(gateway_req.product_id.clone()));
+            parts.extensions.insert(ProxyExecutionContext {
+                api_endpoint: gateway_req.path.clone(),
+            });
+        }
+        GatewayRequestPayload::Encrypted(_) => {
+            parts.extensions.insert(ctx);
+            parts.extensions.insert(ProxyExecutionContext {
+                api_endpoint: parts.uri.path().to_string(),
+            });
+        }
+    }
+    parts.extensions.insert(payload);
+    Ok(())
+}
+
+fn require_tenant_context(req: &Request) -> Result<TenantContext, MiddlewareRejection> {
+    req.extensions().get::<TenantContext>().cloned().ok_or_else(|| {
+        (
+            StatusCode::UNAUTHORIZED,
+            axum::Json(serde_json::json!({
+                "success": false,
+                "error": "未找到租户上下文",
+                "status": StatusCode::UNAUTHORIZED.as_u16(),
+            })),
+        )
+            .into_response()
+            .into()
+    })
+}
+
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
@@ -330,20 +354,7 @@ pub async fn ratelimit_middleware(
     mut req: Request,
     next: Next,
 ) -> Result<Response, MiddlewareRejection> {
-    let tenant_context = req
-        .extensions()
-        .get::<TenantContext>()
-        .cloned()
-        .ok_or_else(|| {
-            (
-                StatusCode::UNAUTHORIZED,
-                axum::Json(serde_json::json!(
-                    { "success" : false, "error" : "未找到租户上下文",
-                    "status" : StatusCode::UNAUTHORIZED.as_u16(), }
-                )),
-            )
-                .into_response()
-        })?;
+    let tenant_context = require_tenant_context(&req)?;
     let api_endpoint = req.extensions().get::<ProxyExecutionContext>().map_or_else(
         || req.uri().path().to_string(),
         |ctx| ctx.api_endpoint.clone(),
