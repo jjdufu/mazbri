@@ -144,8 +144,7 @@ pub fn encrypt_secret_with_alg(
     }
     reject_legacy_at_rest_prefix(plaintext)?;
 
-    let registry = AlgorithmRegistry::default_registry();
-    let (_, aead) = resolve_aead(&registry, alg.as_str())?;
+    let (_, aead) = resolve_aead(AlgorithmRegistry::global(), alg.as_str())?;
     let key_ref = KeyRef::raw(KeyPurpose::KeyWrap, key.to_vec());
     let mut nonce = [0u8; AEAD_NONCE_LEN];
     rand::rng().fill_bytes(&mut nonce);
@@ -184,8 +183,7 @@ pub fn decrypt_secret(value: &str, key: &[u8; 32]) -> Result<String, SupplierSec
             "invalid enc:v2 credential format (empty alg or blob)",
         ));
     }
-    let registry = AlgorithmRegistry::default_registry();
-    let (_, aead) = resolve_aead(&registry, alg_raw)?;
+    let (_, aead) = resolve_aead(AlgorithmRegistry::global(), alg_raw)?;
     let blob = B64
         .decode(b64.as_bytes())
         .map_err(|e| SupplierSecretsError::msg(format!("invalid credential ciphertext: {e}")))?;

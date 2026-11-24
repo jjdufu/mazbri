@@ -2,6 +2,7 @@ use super::execution::ProxyBody;
 use super::response::ProxyError;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
+use serde_json::value::RawValue;
 
 #[derive(Debug, Clone)]
 pub(crate) struct SerializedProxyResponse {
@@ -14,24 +15,24 @@ pub(crate) struct SerializedProxyResponse {
     pub(crate) bytes: Vec<u8>,
 }
 
-#[derive(Serialize, Deserialize)]
-struct SuccessEnvelope {
+#[derive(Serialize)]
+struct SuccessEnvelope<'a, D: Serialize> {
     success: bool,
-    data: serde_json::Value,
+    data: D,
     status: u16,
-    request_id: String,
+    request_id: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
-    content_type: Option<String>,
+    content_type: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    body_encoding: Option<String>,
+    body_encoding: Option<&'static str>,
 }
 
 #[derive(Serialize, Deserialize)]
-struct ErrorEnvelope {
+struct ErrorEnvelope<'a> {
     success: bool,
-    error: String,
+    error: &'a str,
     status: u16,
-    request_id: String,
+    request_id: &'a str,
 }
 
 pub(crate) fn serialize_proxy_response(
@@ -76,6 +77,14 @@ pub(crate) fn proxy_body_to_json_value(body: &ProxyBody) -> serde_json::Value {
     match body {
         ProxyBody::Empty => serde_json::Value::Null,
         ProxyBody::JsonValue(value) => value.clone(),
+        ProxyBody::JsonRawStr(raw) => {
+            serde_json::from_str::<serde_json::Value>(raw).unwrap_or_else(|_| {
+                serde_json::json!({
+                    "raw": raw.as_ref(),
+                    "body_encoding": "json_raw_invalid"
+                })
+            })
+        }
         ProxyBody::JsonRaw(raw) => {
             serde_json::from_slice::<serde_json::Value>(raw).unwrap_or_else(|_| {
                 serde_json::json!({
@@ -92,10 +101,30 @@ pub(crate) fn proxy_body_to_json_value(body: &ProxyBody) -> serde_json::Value {
 pub(crate) fn proxy_body_encoding(body: &ProxyBody) -> &'static str {
     match body {
         ProxyBody::Empty => "empty",
-        ProxyBody::JsonValue(_) | ProxyBody::JsonRaw(_) => "json",
+        ProxyBody::JsonValue(_) | ProxyBody::JsonRaw(_) | ProxyBody::JsonRawStr(_) => "json",
         ProxyBody::Text(_) => "text",
         ProxyBody::Binary(_) => "base64",
     }
+}
+
+fn encode_envelope<D: Serialize>(
+    status: u16,
+    request_id: &str,
+    data: D,
+    content_type: Option<&str>,
+    body_encoding: Option<&'static str>,
+) -> Result<Vec<u8>, ProxyError> {
+    let envelope = SuccessEnvelope {
+        success: true,
+        data,
+        status,
+        request_id,
+        content_type,
+        body_encoding,
+    };
+    serde_json::to_vec(&envelope).map_err(|error| {
+        ProxyError::InternalError(format!("failed to serialize proxy response: {error}"))
+    })
 }
 
 fn serialize_success_response(
@@ -104,61 +133,54 @@ fn serialize_success_response(
     body: &ProxyBody,
     content_type: Option<&str>,
 ) -> Result<(&'static str, &'static str, Vec<u8>), ProxyError> {
-    let (data, effective_content_type, envelope_body_encoding) = match body {
-        ProxyBody::Empty => (serde_json::Value::Null, None, None),
-        ProxyBody::JsonValue(value) => (value.clone(), None, None),
-        ProxyBody::JsonRaw(raw) => (
-            serde_json::from_slice::<serde_json::Value>(raw).unwrap_or_else(|_| {
-                serde_json::json!({
+    match body {
+        ProxyBody::Empty => {
+            let bytes = encode_envelope(status, request_id, serde_json::Value::Null, None, None)?;
+            Ok(("empty", "empty", bytes))
+        }
+        ProxyBody::JsonValue(value) => {
+            let bytes = encode_envelope(status, request_id, value, None, None)?;
+            Ok(("json_value", "json", bytes))
+        }
+        ProxyBody::JsonRawStr(raw) => {
+            let bytes = if let Ok(rv) = serde_json::from_str::<&RawValue>(raw) {
+                encode_envelope(status, request_id, rv, None, None)?
+            } else {
+                let fallback = serde_json::json!({
+                    "raw": raw.as_ref(),
+                    "body_encoding": "json_raw_invalid"
+                });
+                encode_envelope(status, request_id, &fallback, None, None)?
+            };
+            Ok(("json_raw", "json", bytes))
+        }
+        ProxyBody::JsonRaw(raw) => {
+            let bytes = if let Ok(s) = std::str::from_utf8(raw)
+                && let Ok(rv) = serde_json::from_str::<&RawValue>(s)
+            {
+                encode_envelope(status, request_id, rv, None, None)?
+            } else {
+                let fallback = serde_json::json!({
                     "raw": String::from_utf8_lossy(raw),
                     "body_encoding": "json_raw_invalid"
-                })
-            }),
-            None,
-            None,
-        ),
+                });
+                encode_envelope(status, request_id, &fallback, None, None)?
+            };
+            Ok(("json_raw", "json", bytes))
+        }
         ProxyBody::Text(text) => {
-            let content_type = content_type.unwrap_or("text/plain; charset=utf-8");
-            (
-                serde_json::Value::String(text.clone()),
-                Some(content_type.to_string()),
-                Some("text".to_string()),
-            )
+            let ct = content_type.unwrap_or("text/plain; charset=utf-8");
+            let bytes = encode_envelope(status, request_id, text.as_str(), Some(ct), Some("text"))?;
+            Ok(("text", "text", bytes))
         }
-        ProxyBody::Binary(bytes) => {
-            let content_type = content_type.unwrap_or("application/octet-stream");
-            (
-                serde_json::Value::String(STANDARD.encode(bytes)),
-                Some(content_type.to_string()),
-                Some("base64".to_string()),
-            )
+        ProxyBody::Binary(bin) => {
+            let ct = content_type.unwrap_or("application/octet-stream");
+            let encoded = STANDARD.encode(bin);
+            let bytes =
+                encode_envelope(status, request_id, encoded.as_str(), Some(ct), Some("base64"))?;
+            Ok(("binary", "base64", bytes))
         }
-    };
-    let envelope = SuccessEnvelope {
-        success: true,
-        data,
-        status,
-        request_id: request_id.to_string(),
-        content_type: effective_content_type,
-        body_encoding: envelope_body_encoding,
-    };
-    let bytes = serde_json::to_vec(&envelope).map_err(|error| {
-        ProxyError::InternalError(format!("failed to serialize proxy response: {error}"))
-    })?;
-    let body_kind = match body {
-        ProxyBody::Empty => "empty",
-        ProxyBody::JsonValue(_) => "json_value",
-        ProxyBody::JsonRaw(_) => "json_raw",
-        ProxyBody::Text(_) => "text",
-        ProxyBody::Binary(_) => "binary",
-    };
-    let body_encoding = match body {
-        ProxyBody::Empty => "empty",
-        ProxyBody::JsonValue(_) | ProxyBody::JsonRaw(_) => "json",
-        ProxyBody::Text(_) => "text",
-        ProxyBody::Binary(_) => "base64",
-    };
-    Ok((body_kind, body_encoding, bytes))
+    }
 }
 
 fn serialize_error_response(
@@ -168,12 +190,54 @@ fn serialize_error_response(
 ) -> Result<(&'static str, &'static str, Vec<u8>), ProxyError> {
     let envelope = ErrorEnvelope {
         success: false,
-        error: error.to_string(),
+        error,
         status,
-        request_id: request_id.to_string(),
+        request_id,
     };
     let bytes = serde_json::to_vec(&envelope).map_err(|err| {
         ProxyError::InternalError(format!("failed to serialize proxy response: {err}"))
     })?;
     Ok(("empty", "json", bytes))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    #[test]
+    fn json_raw_str_splices_exact_payload_without_dom_reordering() {
+        let raw = r#"{"z":1,"a":[true,"ok"]}"#;
+        let out = serialize_proxy_response(
+            200,
+            "req-1",
+            &ProxyBody::JsonRawStr(Arc::from(raw)),
+            None,
+            Some("application/json"),
+        )
+        .unwrap();
+        assert!(out.success);
+        assert_eq!(out.body_kind, "json_raw");
+        assert_eq!(out.body_encoding, "json");
+        let text = String::from_utf8(out.bytes).unwrap();
+        assert_eq!(
+            text,
+            r#"{"success":true,"data":{"z":1,"a":[true,"ok"]},"status":200,"request_id":"req-1"}"#
+        );
+    }
+
+    #[test]
+    fn invalid_json_raw_falls_back_cleanly() {
+        let out = serialize_proxy_response(
+            200,
+            "req-2",
+            &ProxyBody::JsonRaw(Arc::from(&b"not-json"[..])),
+            None,
+            None,
+        )
+        .unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&out.bytes).unwrap();
+        assert_eq!(v["data"]["body_encoding"], "json_raw_invalid");
+        assert_eq!(v["data"]["raw"], "not-json");
+    }
 }

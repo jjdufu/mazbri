@@ -11,8 +11,11 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use mazbri_core::num::SaturatingFrom;
 use mazbri_rpc::{CacheGetRequest, CacheSetRequest};
 use serde::{Deserialize, Serialize};
+use serde_json::value::RawValue;
 use sha2::{Digest, Sha256};
-use tracing::{debug, warn, Instrument};
+use std::sync::Arc;
+use std::time::Duration;
+use tracing::{Instrument, debug, warn};
 
 /// Max body bytes we will put into the tenant response cache.
 const MAX_CACHEABLE_BODY_BYTES: usize = 512 * 1024;
@@ -20,7 +23,7 @@ const MAX_CACHEABLE_BODY_BYTES: usize = 512 * 1024;
 /// Short fail-open timeout for cache get RPC when the snapshot says caching is on.
 /// Kept as a fixed constant (not a new config knob) so a slow/hung cache cannot
 /// add tens of milliseconds to every miss path.
-const CACHE_GET_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(8);
+const CACHE_GET_TIMEOUT: Duration = Duration::from_millis(8);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct CachedUpstreamResponse {
@@ -35,6 +38,7 @@ pub(crate) struct CachedUpstreamResponse {
 pub(crate) enum CachedBody {
     Empty,
     Json(serde_json::Value),
+    JsonRaw(String),
     Text(String),
     Binary(String),
 }
@@ -50,9 +54,21 @@ impl CachedUpstreamResponse {
         let body = match &response.body {
             ProxyBody::Empty => CachedBody::Empty,
             ProxyBody::JsonValue(v) => CachedBody::Json(v.clone()),
+            ProxyBody::JsonRawStr(raw) => {
+                if raw.len() > MAX_CACHEABLE_BODY_BYTES
+                    || serde_json::from_str::<&RawValue>(raw).is_err()
+                {
+                    return None;
+                }
+                CachedBody::JsonRaw(raw.to_string())
+            }
             ProxyBody::JsonRaw(bytes) => {
-                let value = serde_json::from_slice(bytes.as_ref()).ok()?;
-                CachedBody::Json(value)
+                if bytes.len() > MAX_CACHEABLE_BODY_BYTES {
+                    return None;
+                }
+                let s = std::str::from_utf8(bytes).ok()?;
+                serde_json::from_str::<&RawValue>(s).ok()?;
+                CachedBody::JsonRaw(s.to_string())
             }
             ProxyBody::Text(s) => {
                 if s.len() > MAX_CACHEABLE_BODY_BYTES {
@@ -79,8 +95,13 @@ impl CachedUpstreamResponse {
         let (body, body_bytes_len) = match self.body {
             CachedBody::Empty => (ProxyBody::Empty, 0),
             CachedBody::Json(v) => {
-                let len = serde_json::to_vec(&v).map_or(0, |b| b.len() as u64);
-                (ProxyBody::JsonValue(v), len)
+                let raw = serde_json::to_string(&v).unwrap_or_else(|_| "null".into());
+                let len = raw.len() as u64;
+                (ProxyBody::JsonRawStr(Arc::from(raw)), len)
+            }
+            CachedBody::JsonRaw(raw) => {
+                let len = raw.len() as u64;
+                (ProxyBody::JsonRawStr(Arc::from(raw)), len)
             }
             CachedBody::Text(s) => {
                 let len = s.len() as u64;
@@ -100,7 +121,7 @@ impl CachedUpstreamResponse {
             error: self.error,
             content_type: self.content_type,
             body_bytes_len,
-            upstream_wire_ms: 0,
+            upstream_wire_duration: Duration::ZERO,
             upstream_request_id: String::new(),
         }
     }
@@ -125,10 +146,8 @@ pub(crate) fn build_proxy_cache_key(req: &GatewayRequest) -> String {
         }
     }
     hasher.update(b"\0");
-    if let Some(body) = &req.body
-        && let Ok(bytes) = serde_json::to_vec(body)
-    {
-        hasher.update(&bytes);
+    if let Some(body) = &req.body {
+        hasher.update(body.as_raw_json_str().as_bytes());
     }
     format!("proxy:{}", hex::encode(hasher.finalize()))
 }
@@ -146,7 +165,6 @@ pub(crate) async fn try_get_cached_response(
     cache_key: &str,
     cache_enabled: bool,
 ) -> Option<CachedUpstreamResponse> {
-    // Snapshot gate: disabled / missing cache_configs → zero RPC.
     if !should_attempt_cache_rpc(cache_enabled) {
         return None;
     }
@@ -238,7 +256,6 @@ pub(crate) async fn try_put_cached_response(
             return;
         }
     };
-    // ttl_seconds=0 → cache-service uses tenant default_ttl from cache_configs.
     match client
         .set(
             tarpc::context::current(),
@@ -268,7 +285,6 @@ pub(crate) async fn try_put_cached_response(
     }
 }
 
-
 #[cfg(test)]
 mod skip_disabled_cache_tests {
     use super::should_attempt_cache_rpc;
@@ -276,7 +292,6 @@ mod skip_disabled_cache_tests {
 
     #[test]
     fn disabled_snapshot_skips_cache_rpc() {
-        // Product snapshot fills this from cache_configs.enabled (or false if missing).
         assert!(
             !should_attempt_cache_rpc(false),
             "false / missing cache_configs must skip RPC"

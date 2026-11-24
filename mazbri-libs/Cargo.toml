@@ -45,7 +45,7 @@ tower-http = {version = "0.6.8", features = ["trace", "cors", "compression-gzip"
 http = "1.4.0"
 sqlx = {version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-aws-lc-rs", "postgres", "derive", "chrono", "uuid", "json", "rust_decimal", "ipnetwork"]}
 serde = {version = "1.0", features = ["derive"]}
-serde_json = "1.0"
+serde_json = { version = "1.0", features = ["raw_value"] }
 pin-project-lite = "0.2"
 toml = "1.2"
 tracing = "0.1"

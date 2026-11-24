@@ -44,6 +44,7 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
         return Ok(AdapterOutcome {
             auth_rejection: None,
             payload: serde_json::Value::Null,
+            raw_payload_json: None,
             biz_error: Some(map_jsonrpc_error(err)),
             response,
         });
@@ -56,6 +57,7 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
         auth_rejection: None,
         response,
         payload,
+        raw_payload_json: None,
         biz_error: None,
     })
 }

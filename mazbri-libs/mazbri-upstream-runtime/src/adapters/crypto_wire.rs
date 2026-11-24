@@ -1,5 +1,6 @@
 //! 适配器侧 `egress.crypto` → `crypto_pipeline` 共用接线（禁止在各 adapter 复制算法）。
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 use mazbri_crypto::{
@@ -8,14 +9,27 @@ use mazbri_crypto::{
 use serde_json::Value;
 
 use crate::crypto_pipeline::{
-    default_slots_json_cipher_sign_iv, default_slots_sign_form, open_response,
-    parts_from_json_object, seal_request, PipelineContext, PipelineError, PipelineKeys,
-    RequestParts,
+    PipelineContext, PipelineError, PipelineKeys, RequestParts, default_slots_json_cipher_sign_iv,
+    default_slots_sign_form, open_response_with_validation, parts_from_json_object,
+    seal_request_with_validation,
 };
 use crate::types::{BodyKind, ExecuteError};
 
 pub(crate) fn map_pipeline_err(err: &PipelineError) -> ExecuteError {
     ExecuteError::AdapterFailed(format!("crypto pipeline: {err}"))
+}
+
+/// 当槽位非空时直接借用 `&UpstreamCryptoProfile`，仅在缺默认槽位时按需克隆补齐。
+pub(crate) fn profile_with_slots(
+    profile: &UpstreamCryptoProfile,
+    form_style: bool,
+) -> Cow<'_, UpstreamCryptoProfile> {
+    if !profile.slots.is_empty() {
+        return Cow::Borrowed(profile);
+    }
+    let mut owned = profile.clone();
+    ensure_profile_slots(&mut owned, form_style);
+    Cow::Owned(owned)
 }
 
 /// 缺槽位时按适配器惯例补齐（envelope/json → JSON `cipher`/`sign`/`iv`；`sign_form` → form）。
@@ -70,6 +84,7 @@ pub(crate) fn seal_body(
     keys: &PipelineKeys,
     registry: &AlgorithmRegistry,
     canon_fields: &[(String, String)],
+    skip_validate: bool,
 ) -> Result<RequestParts, ExecuteError> {
     let derived;
     let fields: &[(String, String)] = if canon_fields.is_empty() {
@@ -85,7 +100,8 @@ pub(crate) fn seal_body(
         aad: &[],
         field_iv: None,
     };
-    seal_request(body, profile, keys, &ctx).map_err(|e| map_pipeline_err(&e))
+    seal_request_with_validation(body, profile, keys, &ctx, skip_validate)
+        .map_err(|e| map_pipeline_err(&e))
 }
 
 /// `sorted_kv` / `concat` 且调用方未给拼串字段时，从 JSON 对象扁平字段推导（跳过 sign 槽位名）。
@@ -222,6 +238,7 @@ pub(crate) fn maybe_open_json_body(
     keys: &PipelineKeys,
     registry: &AlgorithmRegistry,
     canon_fields: &[(String, String)],
+    skip_validate: bool,
 ) -> Vec<u8> {
     let Ok(Value::Object(map)) = serde_json::from_slice::<Value>(body) else {
         return body.to_vec();
@@ -252,7 +269,7 @@ pub(crate) fn maybe_open_json_body(
         aad: &[],
         field_iv: None,
     };
-    match open_response(&parts, profile, keys, &ctx) {
+    match open_response_with_validation(&parts, profile, keys, &ctx, skip_validate) {
         Ok(plain) => plain,
         Err(err) => {
             tracing::debug!(error = %err, "open_response skipped; using raw JSON body");
@@ -320,7 +337,7 @@ pub(crate) fn soft_verify_signed_object(
         aad: &[],
         field_iv: None,
     };
-    if let Err(err) = open_response(&parts, &verify_profile, keys, &ctx) {
+    if let Err(err) = open_response_with_validation(&parts, &verify_profile, keys, &ctx, true) {
         tracing::warn!(error = %err, "response signature verify failed");
     }
 }

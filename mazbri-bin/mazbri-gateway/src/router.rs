@@ -24,7 +24,6 @@ use mazbri_cache::RedisPermissionCache;
 use mazbri_callback::CallbackWorker;
 use mazbri_product::{ProductConfig, ProductService};
 use mazbri_service::{error_handler_middleware, metrics_middleware, request_id_middleware};
-use serde::Deserialize as _;
 use sqlx::PgPool;
 use std::future::Future;
 use std::sync::Arc;
@@ -126,7 +125,6 @@ pub async fn create_router(init: RouterInit<'_>) -> anyhow::Result<Router> {
         cert_service_url: &tls_config.cert_service_url,
         cert_service_token: tls_config.cert_service_token.clone(),
         services_config: config.services.clone(),
-        supplier_config_send_cache: crate::supplier_config_cache::SupplierConfigSendCache::new(),
     })
     .await?;
     if let Some(cache) = service_health_cache.clone() {
@@ -325,7 +323,7 @@ async fn load_routes_and_warmup(
     tarpc_pool: &TarpcClientPool,
     upstream_http2_pool: &UpstreamHttp2ClientPool,
     config: &GatewayConfig,
-) -> anyhow::Result<mazbri_routing::RouteEngine> {
+) -> anyhow::Result<crate::route_source::GatewayRouteEngine> {
     let route_engine = crate::route_source::load_route_engine(db).await?;
     if route_engine.is_empty() {
         match crate::route_source::check_tenants_count(db).await {
@@ -350,8 +348,10 @@ async fn load_routes_and_warmup(
     // `supplier_upstream_url`). Transparent suppliers are reached through bypass,
     // which is warmed separately; warming their raw IP/HTTP URL would fail mTLS.
     let direct_upstreams = route_engine.unique_service_urls_where(|channel| {
-        !mazbri_core::SupplierConfig::deserialize(&channel.supplier_config)
-            .is_ok_and(|cfg| cfg.is_transparent())
+        matches!(
+            channel.prepared,
+            crate::route_source::PreparedChannel::Microservice { .. }
+        )
     });
     tracing::info!(
         direct_upstreams = direct_upstreams.len(),
@@ -454,7 +454,7 @@ fn spawn_ratelimit_health_monitor(
 fn spawn_background_workers(
     config: &GatewayConfig,
     db: &PgPool,
-    route_engine: &Arc<arc_swap::ArcSwap<mazbri_routing::RouteEngine>>,
+    route_engine: &Arc<arc_swap::ArcSwap<crate::route_source::GatewayRouteEngine>>,
     admin_state: Option<&Arc<AdminState>>,
     proxy_state: &ProxyState,
 ) -> Arc<crate::route_reload::RouteReloadStatus> {

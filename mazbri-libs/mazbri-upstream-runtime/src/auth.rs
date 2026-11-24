@@ -12,9 +12,9 @@ use crate::auth_digest::DigestAttempt;
 use crate::http_call::HttpCall;
 
 use crate::funcs::{basic_b64, url_encode};
-use crate::ssrf::SsrfChecker;
+use crate::ssrf::{SsrfChecker, extract_ssrf_error};
 use crate::token_cache::{CachedToken, TokenCache};
-use crate::types::ExecuteError;
+use crate::types::{ExecuteError, WireClock};
 use mazbri_core::json_path::extract_by_path;
 
 pub struct AppliedAuth {
@@ -91,6 +91,7 @@ pub struct AuthApply<'a> {
     /// 换票响应既无配置的过期字段、也无 `expires_in` 时的缓存时长。
     pub token_default_ttl: Duration,
     pub request_id: &'a str,
+    pub wire_clock: Option<&'a WireClock>,
 }
 
 /// 注入位置、键名与格式（空值回落到默认）。
@@ -273,6 +274,7 @@ async fn ticket_token(
                 refresh_skew: args.token_cache.refresh_skew(),
             },
         },
+        args.wire_clock,
     )
     .await
 }
@@ -381,19 +383,47 @@ async fn fetch_token(
     token_cache: &Arc<TokenCache>,
     cache_key: &str,
     fetch: TokenFetch,
+    wire_clock: Option<&WireClock>,
 ) -> Result<String, ExecuteError> {
-    token_cache
-        .get_token(cache_key, || async move {
-            if let Err(e) = fetch.ssrf.validate_url(&fetch.token_url).await {
-                return Err(format!("Auth SSRF Violation: {e}"));
-            }
+    if let Err(e) = fetch.ssrf.validate_url_syntax_and_literal(&fetch.token_url) {
+        return Err(ExecuteError::SsrfBlocked(format!("Auth SSRF Violation: {e}")));
+    }
+    let started = std::time::Instant::now();
+    let outcome = token_cache
+        .get_token_timed(cache_key, || async move {
             match fetch.profile {
                 AuthProfile::Gettoken => fetch_gettoken(&fetch).await,
                 _ => fetch_oauth_cc_form(&fetch).await,
             }
         })
-        .await
-        .map_err(ExecuteError::AuthTokenFailed)
+        .await;
+    match outcome {
+        Ok((token, waited)) => {
+            if let Some(clock) = wire_clock
+                && !waited.is_zero()
+            {
+                clock.add(waited);
+            }
+            Ok(token)
+        }
+        Err(err) => {
+            if err.contains("SSRF Violation:") || err.contains("SSRF:") {
+                return Err(ExecuteError::SsrfBlocked(err));
+            }
+            if let Some(clock) = wire_clock {
+                clock.add(started.elapsed());
+            }
+            Err(ExecuteError::AuthTokenFailed(err))
+        }
+    }
+}
+
+fn map_token_send_error(e: &reqwest::Error) -> String {
+    if let Some(ssrf) = extract_ssrf_error(e) {
+        format!("Auth {ssrf}")
+    } else {
+        format!("Token request failed: {e}")
+    }
 }
 
 async fn fetch_gettoken(fetch: &TokenFetch) -> Result<CachedToken, String> {
@@ -418,7 +448,7 @@ async fn fetch_gettoken(fetch: &TokenFetch) -> Result<CachedToken, String> {
     let resp = builder
         .send()
         .await
-        .map_err(|e| format!("Token request failed: {e}"))?;
+        .map_err(|e| map_token_send_error(&e))?;
     parse_token_response(resp, auth, expiry).await
 }
 
@@ -476,7 +506,7 @@ async fn fetch_oauth_cc_form(fetch: &TokenFetch) -> Result<CachedToken, String> 
         let resp = builder
             .send()
             .await
-            .map_err(|e| format!("Token request failed: {e}"))?;
+            .map_err(|e| map_token_send_error(&e))?;
         return parse_token_response(resp, auth, expiry).await;
     }
     let mut form: Vec<(String, String)> = vec![("grant_type".into(), "client_credentials".into())];
@@ -506,7 +536,7 @@ async fn fetch_oauth_cc_form(fetch: &TokenFetch) -> Result<CachedToken, String> 
     let resp = builder
         .send()
         .await
-        .map_err(|e| format!("Token request failed: {e}"))?;
+        .map_err(|e| map_token_send_error(&e))?;
     parse_token_response(resp, auth, expiry).await
 }
 
@@ -792,6 +822,7 @@ mod tests {
                     cache_key: "s:c:k",
                     token_default_ttl: Duration::from_hours(1),
                     request_id: "rid",
+                    wire_clock: None,
                 })
                 .await
                 .unwrap()

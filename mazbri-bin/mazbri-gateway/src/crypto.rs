@@ -253,7 +253,6 @@ pub struct TenantCryptoState {
     redis: RedisClient,
     cert_service_url: String,
     cert_service_token: String,
-    registry: AlgorithmRegistry,
 }
 
 impl TenantCryptoState {
@@ -296,7 +295,6 @@ impl TenantCryptoState {
             redis,
             cert_service_url: cert_service_url.to_string(),
             cert_service_token,
-            registry: AlgorithmRegistry::default_registry(),
         })
     }
 
@@ -717,7 +715,7 @@ impl TenantCryptoState {
                 let decrypt_started_at = Instant::now();
                 let plaintext = open_envelope(
                     &transport,
-                    &self.registry,
+                    AlgorithmRegistry::global(),
                     &tenant_key,
                     mac_key,
                     &tenant_id_str,
@@ -764,7 +762,7 @@ impl TenantCryptoState {
         let mac_key = mac_alg.map(|_| tenant_key.as_slice());
         seal_envelope(SealEnvelopeParams {
             profile: &transport,
-            registry: &self.registry,
+            registry: AlgorithmRegistry::global(),
             data_key: &tenant_key,
             mac_key,
             key_version,
@@ -1014,12 +1012,6 @@ impl TenantCryptoState {
             .map_err(|error| {
                 ProxyError::InternalError(format!("nonce pipeline redis operation failed: {error}"))
             })
-    }
-
-    /// 算法注册表。
-    #[must_use]
-    pub const fn registry(&self) -> &AlgorithmRegistry {
-        &self.registry
     }
 
     /// 按 (tenant, kid) 取可用的请求绑定密钥（HMAC 解包 / 公钥校验完整性摘要后解析）。
@@ -1386,15 +1378,15 @@ mod transport_profile_tests {
 
     #[test]
     fn mode_full_aes_roundtrip_via_profile_seal_open() {
-        let registry = AlgorithmRegistry::default_registry();
+        let registry = AlgorithmRegistry::global();
         let db_profile = full_aes_db_profile();
         let transport = db_profile.transport_profile().expect("transport");
-        transport.validate(&registry).expect("validate");
+        transport.validate(registry).expect("validate");
         let key = [11u8; 32];
         let plaintext = br#"{"ok":true}"#;
         let sealed = seal_envelope(SealEnvelopeParams {
             profile: &transport,
-            registry: &registry,
+            registry,
             data_key: &key,
             mac_key: None,
             key_version: "v1",
@@ -1407,7 +1399,7 @@ mod transport_profile_tests {
         assert_eq!(sealed.data_alg, "aes-256-gcm");
         let opened = open_envelope(
             &transport,
-            &registry,
+            registry,
             &key,
             None,
             "11111111-1111-1111-1111-111111111111",
@@ -1436,8 +1428,8 @@ mod transport_profile_tests {
         };
         let transport = profile.transport_profile().expect("transport");
         assert!(matches!(transport.mode, TransportMode::None));
-        let registry = AlgorithmRegistry::default_registry();
-        transport.validate(&registry).expect("plaintext profile ok");
+        let registry = AlgorithmRegistry::global();
+        transport.validate(registry).expect("plaintext profile ok");
     }
 
     #[test]

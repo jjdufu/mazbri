@@ -321,6 +321,7 @@ fn invoke_assert_response(
             method: "POST".into(),
             path: "/".into(),
             protocol: String::new(),
+            wire_duration: Duration::ZERO,
         });
         r.body = serde_json::to_vec(p).unwrap_or_default();
         if result.biz_error.is_some() {
@@ -900,6 +901,7 @@ fn run_bypass_assertions(
         method: "POST".into(),
         path: "/".into(),
         protocol: String::new(),
+        wire_duration: Duration::ZERO,
     };
     evaluate_assertions(&parsed, Some(&response), outcome.upstream_wire_ms)
 }
@@ -1081,7 +1083,8 @@ async fn prepare_run_input(
         channel_id: endpoint_key.clone().unwrap_or_else(|| row.id.to_string()),
         request_id: request_id.clone(),
         payload,
-        spec,
+        spec: Arc::new(spec),
+        spec_validated: true,
         config: Some(Arc::new(cfg)),
         timeout: Duration::from_millis(timeout_ms),
         mode,
@@ -1091,9 +1094,12 @@ async fn prepare_run_input(
             mask_secrets: true,
             collect_trace: true,
         },
-        pipeline_keys: Some(mazbri_upstream_runtime::pipeline_keys_from_credentials(&credentials)),
+        pipeline_keys: Some(Arc::new(
+            mazbri_upstream_runtime::pipeline_keys_from_credentials(&credentials),
+        )),
         credentials,
-        artifact_bytes,
+        artifact_bytes: artifact_bytes.map(Arc::from),
+        descriptor_pool: None,
         cache_key: Some(format!("probe:{}", row.id)),
     };
 

@@ -3,15 +3,18 @@ use crate::types::{BodyKind, ExecuteError};
 use mazbri_core::BodyEncoding;
 use serde_json::Value;
 
-use super::crypto_wire::{apply_parts, ensure_profile_slots, maybe_open_json_body, seal_body};
-use super::{AdapterCtx, AdapterOutcome, apply_ok_and_unwrap, parse_json_body};
+use super::crypto_wire::{apply_parts, maybe_open_json_body, profile_with_slots, seal_body};
+use super::{
+    AdapterCtx, AdapterOutcome, apply_ok_and_unwrap, can_passthrough_raw_json, parse_json_body,
+    try_take_valid_raw_json,
+};
 
 pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError> {
-    let spec = &ctx.input.spec;
+    let spec = &*ctx.input.spec;
+    let skip_validate = ctx.input.spec_validated;
     let method = spec.request.method.as_str();
     let path = spec.request.path.as_str();
     let mut query = super::merge_request_query(ctx.auth, spec);
-    let encoding = spec.request.body_encoding;
     let mut headers = super::merge_request_headers(ctx.auth, spec);
 
     // GET/HEAD 无 body：把 JSON 对象标量字段摊进 query（通用，便于 posts/search 等）。
@@ -19,54 +22,10 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
         append_payload_to_query(&mut query, &ctx.input.payload)?;
     }
 
-    let body = if let Some(profile) = spec.crypto.as_ref() {
-        if method.eq_ignore_ascii_case("GET")
-            || method.eq_ignore_ascii_case("HEAD")
-            || encoding == BodyEncoding::None
-        {
-            None
-        } else {
-            let raw = if ctx.input.payload.is_null() {
-                b"{}".to_vec()
-            } else {
-                serde_json::to_vec(&ctx.input.payload)
-                    .map_err(|e| ExecuteError::SpecInvalid(format!("payload json: {e}")))?
-            };
-            let mut profile = profile.clone();
-            let form_style = encoding == BodyEncoding::Form;
-            ensure_profile_slots(&mut profile, form_style);
-            let sealed = seal_body(&raw, &profile, ctx.pipeline_keys, ctx.registry, &[])?;
-            let mut wire = apply_parts(&mut headers, &mut query, &sealed)?;
-            // named_fields 等场景 seal 后 body 仍是 JSON 对象：按请求编码压成 form。
-            if form_style
-                && let Some(BodyKind::Json(s)) = wire
-            {
-                let v: Value = serde_json::from_str(&s).map_err(|e| {
-                    ExecuteError::AdapterFailed(format!("crypto form from json: {e}"))
-                })?;
-                wire = Some(BodyKind::Form(encode_form_object(&v)?));
-            }
-            if matches!(wire, Some(BodyKind::Form(_))) {
-                super::force_urlencoded_content_type(&mut headers);
-            } else {
-                super::apply_json_content_type_override(&mut headers, spec);
-            }
-            wire
-        }
-    } else {
-        let body = outbound_body(method, encoding, &ctx.input.payload)?;
-        if body.is_some() {
-            if encoding == BodyEncoding::Form {
-                super::force_urlencoded_content_type(&mut headers);
-            } else {
-                super::apply_json_content_type_override(&mut headers, spec);
-            }
-        }
-        body
-    };
+    let body = build_request_body(ctx, &mut headers, &mut query)?;
 
     let url = append_query(&join_url(ctx.base_url, path), &query);
-    let response = super::dispatch_http(
+    let mut response = super::dispatch_http(
         ctx,
         HttpCall {
             method,
@@ -80,18 +39,34 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
     if ctx.is_reject_status(response.status) {
         return Ok(AdapterOutcome::raw(response));
     }
-    let body_for_parse = if let Some(profile) = spec.crypto.as_ref() {
-        maybe_open_json_body(
+    if spec.crypto.is_none()
+        && can_passthrough_raw_json(ctx, spec)
+        && let Some(raw_json) =
+            try_take_valid_raw_json(&mut response, ctx.needs_raw_body_for_invalidation())
+    {
+        return Ok(AdapterOutcome {
+            auth_rejection: None,
+            response,
+            payload: Value::Null,
+            raw_payload_json: Some(raw_json),
+            biz_error: None,
+        });
+    }
+    let decrypted;
+    let body_slice: &[u8] = if let Some(profile) = spec.crypto.as_ref() {
+        decrypted = maybe_open_json_body(
             &response.body,
             profile,
             ctx.pipeline_keys,
             ctx.registry,
             &[],
-        )
+            skip_validate,
+        );
+        &decrypted
     } else {
-        response.body.clone()
+        &response.body
     };
-    let json = parse_json_body(&body_for_parse).unwrap_or_else(|_| {
+    let json = parse_json_body(body_slice).unwrap_or_else(|_| {
         serde_json::Value::String(String::from_utf8_lossy(&response.body).into_owned())
     });
     let (payload, biz_error) = apply_ok_and_unwrap(&json, spec)?;
@@ -99,8 +74,67 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
         auth_rejection: None,
         response,
         payload,
+        raw_payload_json: None,
         biz_error,
     })
+}
+
+fn build_request_body(
+    ctx: &AdapterCtx<'_>,
+    headers: &mut std::collections::HashMap<String, String>,
+    query: &mut Vec<(String, String)>,
+) -> Result<Option<BodyKind>, ExecuteError> {
+    let spec = &*ctx.input.spec;
+    let skip_validate = ctx.input.spec_validated;
+    let method = spec.request.method.as_str();
+    let encoding = spec.request.body_encoding;
+    if let Some(profile) = spec.crypto.as_ref() {
+        if method.eq_ignore_ascii_case("GET")
+            || method.eq_ignore_ascii_case("HEAD")
+            || encoding == BodyEncoding::None
+        {
+            return Ok(None);
+        }
+        let raw = if ctx.input.payload.is_null() {
+            b"{}".to_vec()
+        } else {
+            serde_json::to_vec(&ctx.input.payload)
+                .map_err(|e| ExecuteError::SpecInvalid(format!("payload json: {e}")))?
+        };
+        let form_style = encoding == BodyEncoding::Form;
+        let effective_profile = profile_with_slots(profile, form_style);
+        let sealed = seal_body(
+            &raw,
+            &effective_profile,
+            ctx.pipeline_keys,
+            ctx.registry,
+            &[],
+            skip_validate,
+        )?;
+        let mut wire = apply_parts(headers, query, &sealed)?;
+        if form_style
+            && let Some(BodyKind::Json(s)) = wire
+        {
+            let v: Value = serde_json::from_str(&s)
+                .map_err(|e| ExecuteError::AdapterFailed(format!("crypto form from json: {e}")))?;
+            wire = Some(BodyKind::Form(encode_form_object(&v)?));
+        }
+        if matches!(wire, Some(BodyKind::Form(_))) {
+            super::force_urlencoded_content_type(headers);
+        } else {
+            super::apply_json_content_type_override(headers, spec);
+        }
+        return Ok(wire);
+    }
+    let body = outbound_body(method, encoding, &ctx.input.payload)?;
+    if body.is_some() {
+        if encoding == BodyEncoding::Form {
+            super::force_urlencoded_content_type(headers);
+        } else {
+            super::apply_json_content_type_override(headers, spec);
+        }
+    }
+    Ok(body)
 }
 
 /// GET/HEAD never send a body. `none` encoding skips the body. JSON + Null payload → `{}`.
@@ -259,5 +293,72 @@ mod tests {
     fn form_rejects_non_object() {
         let err = encode_form_object(&serde_json::json!([1, 2])).unwrap_err();
         assert!(err.to_string().contains("JSON 对象"));
+    }
+
+    #[tokio::test]
+    async fn production_http_json_uses_raw_passthrough_and_records_wire_us() {
+        use std::collections::HashMap;
+        use std::sync::Arc;
+        use std::time::Duration;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let (mut sock, _) = listener.accept().await.unwrap();
+            let mut buf = vec![0u8; 4096];
+            let _ = sock.read(&mut buf).await.unwrap();
+            let body = r#"{"ok":true,"items":[1,2,3]}"#;
+            let resp = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
+                body.len()
+            );
+            let _ = sock.write_all(resp.as_bytes()).await;
+        });
+
+        let spec = mazbri_core::ChannelEgressSpec {
+            adapter: mazbri_core::ADAPTER_HTTP_JSON.into(),
+            base_url: format!("http://{addr}"),
+            request: mazbri_core::EgressRequestSpec {
+                method: "POST".into(),
+                path: "/echo".into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let ssrf = crate::ssrf::SsrfChecker::with_allow_private(true);
+        let client = Arc::new(reqwest::Client::builder().no_proxy().build().unwrap());
+        let engine = crate::engine::RuntimeEngine::new(client, ssrf);
+        let result = engine
+            .invoke(crate::types::InvokeInput {
+                supplier_id: "s".into(),
+                supplier_code: "S".into(),
+                channel_id: "c".into(),
+                request_id: "r".into(),
+                payload: serde_json::json!({"ping": 1}),
+                spec: Arc::new(spec),
+                spec_validated: true,
+                config: None,
+                timeout: Duration::from_secs(2),
+                mode: crate::types::ExecuteMode::Production,
+                options: crate::types::ExecuteOptions::default(),
+                credentials: HashMap::new(),
+                pipeline_keys: None,
+                artifact_bytes: None,
+                descriptor_pool: None,
+                cache_key: None,
+            })
+            .await;
+        assert!(result.ok);
+        assert!(
+            result.payload.is_none(),
+            "production direct JSON must avoid Value DOM allocation"
+        );
+        assert_eq!(
+            result.raw_payload_json.as_deref(),
+            Some(r#"{"ok":true,"items":[1,2,3]}"#)
+        );
+        let meta = result.upstream_meta.expect("upstream_meta");
+        assert!(meta.latency_us > 0);
     }
 }

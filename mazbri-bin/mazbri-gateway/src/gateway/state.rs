@@ -7,9 +7,9 @@ use crate::config::ServiceEndpoint;
 use crate::crypto::TenantCryptoState;
 use crate::http2_upstream_client::UpstreamHttp2ClientPool;
 use crate::ratelimit::{BandwidthPrepaid, ChannelRateLimitEngine, LocalRateLimitEngine};
+use crate::route_source::GatewayRouteEngine;
 use crate::tarpc_client::TarpcClientPool;
 use mazbri_product::ProductService;
-use mazbri_routing::RouteEngine;
 use mazbri_rpc::{ObservationRequest, RuntimeDecision};
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -68,13 +68,12 @@ pub struct ProxyStateInit<'a> {
     pub channel_rate_limit: ChannelRateLimitConfig,
     pub cbpro_client: Option<CBProClient>,
     pub cbpro_ext_client: Option<CBProExtClient>,
-    pub route_engine: Arc<arc_swap::ArcSwap<RouteEngine>>,
+    pub route_engine: Arc<arc_swap::ArcSwap<GatewayRouteEngine>>,
     pub db: Arc<PgPool>,
     pub redis: mazbri_core::redis::RedisClient,
     pub cert_service_url: &'a str,
     pub cert_service_token: String,
     pub services_config: crate::config::ServicesConfig,
-    pub supplier_config_send_cache: crate::supplier_config_cache::SupplierConfigSendCache,
 }
 #[derive(Clone)]
 pub struct ProxyState {
@@ -89,13 +88,12 @@ pub struct ProxyState {
     pub cbpro_ext_client: Option<CBProExtClient>,
     pub cbpro_runtime_decision_cache: moka::sync::Cache<String, RuntimeDecision>,
     pub cbpro_observation_tx: Option<tokio::sync::mpsc::Sender<ObservationRequest>>,
-    pub route_engine: Arc<arc_swap::ArcSwap<RouteEngine>>,
+    pub route_engine: Arc<arc_swap::ArcSwap<GatewayRouteEngine>>,
     pub db: Arc<PgPool>,
     pub local_ratelimiter: Arc<LocalRateLimitEngine>,
     pub channel_ratelimiter: Arc<ChannelRateLimitEngine>,
     pub crypto_state: TenantCryptoState,
     pub services_config: crate::config::ServicesConfig,
-    pub supplier_config_send_cache: crate::supplier_config_cache::SupplierConfigSendCache,
 }
 impl ProxyState {
     /// # Errors
@@ -143,7 +141,6 @@ impl ProxyState {
             channel_ratelimiter,
             crypto_state,
             services_config: init.services_config,
-            supplier_config_send_cache: init.supplier_config_send_cache,
         };
         if let Err(error) = state.crypto_state.warm_start().await {
             tracing::warn!(error = %error, "Gateway tenant crypto warmup failed");

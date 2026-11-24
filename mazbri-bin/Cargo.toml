@@ -78,7 +78,7 @@ reqwest = { version = "0.13.2", default-features = false, features = ["json", "g
 rust-embed = { version = "8.7", features = ["interpolate-folder-path"] }
 rust_decimal = { version = "1.32", features = ["serde"] }
 serde = { version = "1.0", features = ["derive"] }
-serde_json = { version = "1.0" }
+serde_json = { version = "1.0", features = ["raw_value"] }
 serde_urlencoded = { version = "0.7" }
 serde_yaml = { version = "0.9" }
 sha1 = { version = "0.11" }

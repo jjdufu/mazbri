@@ -162,7 +162,7 @@ fn input(base: &str, adapter: &str, auth: AuthSpec) -> InvokeInput {
         channel_id: "c".into(),
         request_id: "1".into(),
         payload: serde_json::json!({"k": "v"}),
-        spec: ChannelEgressSpec {
+        spec: Arc::new(ChannelEgressSpec {
             adapter: adapter.into(),
             base_url: base.into(),
             operation: Some("demo.op".into()),
@@ -173,7 +173,8 @@ fn input(base: &str, adapter: &str, auth: AuthSpec) -> InvokeInput {
                 ..Default::default()
             },
             ..Default::default()
-        },
+        }),
+        spec_validated: true,
         config: None,
         timeout: Duration::from_secs(3),
         mode: ExecuteMode::Production,
@@ -181,6 +182,7 @@ fn input(base: &str, adapter: &str, auth: AuthSpec) -> InvokeInput {
         credentials: HashMap::new(),
         pipeline_keys: None,
         artifact_bytes: None,
+        descriptor_pool: None,
         cache_key: None,
     }
 }

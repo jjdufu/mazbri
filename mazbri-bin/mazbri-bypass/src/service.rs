@@ -6,15 +6,16 @@ use mazbri_core::trace_propagation::{remote_span_context, set_remote_parent};
 use mazbri_core::{
     AccessHttpFields, AccessLogEvent, AccessNetworkFields, AccessOutcomeFields, AccessRouteFields,
     AccessTimingFields, AccessUpstreamMetaFields, ChannelEgressSpec, SupplierConfig, TraceContext,
-    emit_access_log, hash_egress_spec_json, normalize_upstream_host, parse_and_validate_egress,
-    classify_outcome, request_id_or_new,
+    classify_outcome, emit_access_log, hash_egress_spec_json, normalize_upstream_host,
+    parse_and_validate_egress, request_id_or_new,
 };
 use mazbri_upstream_contracts::UPSTREAM_AUTH_REJECTED_PREFIX;
 use mazbri_upstream_contracts::mgmt_probe::{ProbeInvokeRequest, ProbeInvokeResponse};
 use mazbri_upstream_contracts::shared as upstream_proto;
 use mazbri_upstream_runtime::{
-    ExecuteMode, ExecuteOptions, InvokeInput, RuntimeEngine, RuntimeOptions, SsrfChecker,
-    StageResult, StageTiming, pipeline_keys_from_credentials,
+    DescriptorPool, ExecuteMode, ExecuteOptions, InvokeInput, PipelineKeys, RuntimeEngine,
+    RuntimeOptions, SsrfChecker, StageResult, StageTiming, decode_grpc_descriptor_pool,
+    pipeline_keys_from_credentials,
 };
 use moka::sync::Cache;
 use sha2::{Digest, Sha256};
@@ -35,12 +36,20 @@ fn hash_config_json(config_json: &str) -> String {
 struct CachedSupplierConfig {
     hash: String,
     config: Arc<SupplierConfig>,
+    credentials: HashMap<String, String>,
+    pipeline_keys: Arc<PipelineKeys>,
 }
 
 #[derive(Clone)]
 struct CachedEgressSpec {
     hash: String,
-    spec: ChannelEgressSpec,
+    spec: Arc<ChannelEgressSpec>,
+}
+
+#[derive(Clone)]
+struct CachedArtifact {
+    bytes: Arc<[u8]>,
+    descriptor_pool: Option<Arc<DescriptorPool>>,
 }
 
 #[derive(Clone)]
@@ -50,7 +59,7 @@ pub struct MazbriBypassServiceImpl {
     db: Arc<PgPool>,
     supplier_config_cache: Cache<String, CachedSupplierConfig>,
     egress_spec_cache: Cache<String, CachedEgressSpec>,
-    artifact_cache: Cache<String, Arc<Vec<u8>>>,
+    artifact_cache: Cache<String, CachedArtifact>,
     /// 出站 HTTP 客户端的 User-Agent（`upstream.user_agent`），记入访问日志。
     user_agent: Arc<str>,
 }
@@ -61,6 +70,52 @@ const CONFIG_CACHE_IDLE: Duration = Duration::from_secs(600);
 
 /// bypass 返回给网关、要求带全量配置重发的错误前缀。
 const CONFIG_CACHE_MISS_PREFIX: &str = "CONFIG_CACHE_MISS";
+
+fn parse_cached_supplier_config(
+    hash: String,
+    json: &str,
+) -> Result<CachedSupplierConfig, String> {
+    let mut cfg: SupplierConfig = serde_json::from_str(json).map_err(|e| {
+        UpstreamMetricsRecorder::record_config_cache("supplier", "invalid");
+        format!("invalid supplier_config JSON: {e}")
+    })?;
+    cfg = cfg.decrypt_credentials_for_runtime().map_err(|e| {
+        UpstreamMetricsRecorder::record_config_cache("supplier", "invalid");
+        format!("decrypt supplier credentials failed: {e}")
+    })?;
+    let mut credentials = HashMap::new();
+    if let Some(ref auth) = cfg.auth_flow {
+        credentials.clone_from(&auth.credentials);
+    }
+    let pipeline_keys = Arc::new(pipeline_keys_from_credentials(&credentials));
+    UpstreamMetricsRecorder::record_config_cache("supplier", "miss");
+    Ok(CachedSupplierConfig {
+        hash,
+        config: Arc::new(cfg),
+        credentials,
+        pipeline_keys,
+    })
+}
+
+fn parse_cached_egress_spec(hash: String, full: &str) -> Result<CachedEgressSpec, String> {
+    let value: serde_json::Value = serde_json::from_str(full).map_err(|e| {
+        UpstreamMetricsRecorder::record_config_cache("egress", "invalid");
+        format!("invalid egress_spec JSON: {e}")
+    })?;
+    let mut spec = parse_and_validate_egress(&value).map_err(|e| {
+        UpstreamMetricsRecorder::record_config_cache("egress", "invalid");
+        e.to_string()
+    })?;
+    spec = spec.decrypt_secrets_for_runtime().map_err(|e| {
+        UpstreamMetricsRecorder::record_config_cache("egress", "invalid");
+        format!("decrypt egress secrets failed: {e}")
+    })?;
+    UpstreamMetricsRecorder::record_config_cache("egress", "miss");
+    Ok(CachedEgressSpec {
+        hash,
+        spec: Arc::new(spec),
+    })
+}
 
 impl MazbriBypassServiceImpl {
     pub fn new(
@@ -105,6 +160,7 @@ impl MazbriBypassServiceImpl {
         self
     }
 
+    #[must_use]
     pub fn with_options(mut self, options: RuntimeOptions) -> Self {
         self.engine = self.engine.with_options(options);
         self
@@ -114,49 +170,29 @@ impl MazbriBypassServiceImpl {
         &self,
         hash: &str,
         full: &str,
-    ) -> Result<Option<Arc<SupplierConfig>>, String> {
-        let hash = if hash.is_empty() {
-            None
-        } else {
-            Some(hash.to_string())
-        };
-        let full = if full.is_empty() {
-            None
-        } else {
-            Some(full.to_string())
-        };
-
-        if let Some(ref h) = hash
-            && let Some(cached) = self.supplier_config_cache.get(h)
-            && (full.is_none() || cached.hash == *h)
+    ) -> Result<Option<CachedSupplierConfig>, String> {
+        let hash = hash.trim();
+        let full = full.trim();
+        if !hash.is_empty()
+            && let Some(cached) = self.supplier_config_cache.get(hash)
+            && (full.is_empty() || cached.hash == hash)
         {
             UpstreamMetricsRecorder::record_config_cache("supplier", "hit");
-            return Ok(Some(cached.config));
+            return Ok(Some(cached));
         }
-
-        if let Some(ref json) = full {
-            let mut cfg: SupplierConfig = serde_json::from_str(json).map_err(|e| {
-                UpstreamMetricsRecorder::record_config_cache("supplier", "invalid");
-                format!("invalid supplier_config JSON: {e}")
-            })?;
-            cfg = cfg.decrypt_credentials_for_runtime().map_err(|e| {
-                UpstreamMetricsRecorder::record_config_cache("supplier", "invalid");
-                format!("decrypt supplier credentials failed: {e}")
-            })?;
-            let h = hash.unwrap_or_else(|| hash_config_json(json));
-            let arc = Arc::new(cfg);
-            self.supplier_config_cache.insert(
-                h.clone(),
-                CachedSupplierConfig {
-                    hash: h,
-                    config: arc.clone(),
-                },
-            );
-            UpstreamMetricsRecorder::record_config_cache("supplier", "miss");
-            return Ok(Some(arc));
+        if !full.is_empty() {
+            let key = if hash.is_empty() {
+                hash_config_json(full)
+            } else {
+                hash.to_string()
+            };
+            let entry = self
+                .supplier_config_cache
+                .try_get_with(key.clone(), || parse_cached_supplier_config(key, full))
+                .map_err(|e| e.as_ref().clone())?;
+            return Ok(Some(entry));
         }
-
-        if hash.is_some() {
+        if !hash.is_empty() {
             UpstreamMetricsRecorder::record_config_cache("supplier", "miss");
             return Err(
                 "CONFIG_CACHE_MISS: supplier config hash not in bypass cache; resend full supplier_config_json"
@@ -166,7 +202,7 @@ impl MazbriBypassServiceImpl {
         Ok(None)
     }
 
-    fn resolve_egress_spec(&self, hash: &str, full: &str) -> Result<ChannelEgressSpec, String> {
+    fn resolve_egress_spec(&self, hash: &str, full: &str) -> Result<Arc<ChannelEgressSpec>, String> {
         let hash = hash.trim();
         let full = full.trim();
         if !hash.is_empty()
@@ -186,41 +222,24 @@ impl MazbriBypassServiceImpl {
                     .into(),
             );
         }
-        let value: serde_json::Value = serde_json::from_str(full).map_err(|e| {
-            UpstreamMetricsRecorder::record_config_cache("egress", "invalid");
-            format!("invalid egress_spec JSON: {e}")
-        })?;
-        let mut spec = parse_and_validate_egress(&value).map_err(|e| {
-            UpstreamMetricsRecorder::record_config_cache("egress", "invalid");
-            e.to_string()
-        })?;
-        spec = spec.decrypt_secrets_for_runtime().map_err(|e| {
-            UpstreamMetricsRecorder::record_config_cache("egress", "invalid");
-            format!("decrypt egress secrets failed: {e}")
-        })?;
-        UpstreamMetricsRecorder::record_config_cache("egress", "miss");
-        let h = if hash.is_empty() {
+        let key = if hash.is_empty() {
             hash_egress_spec_json(full)
         } else {
             hash.to_string()
         };
-        self.egress_spec_cache.insert(
-            h.clone(),
-            CachedEgressSpec {
-                hash: h,
-                spec: spec.clone(),
-            },
-        );
-        Ok(spec)
+        self.egress_spec_cache
+            .try_get_with(key.clone(), || parse_cached_egress_spec(key, full))
+            .map(|c| c.spec)
+            .map_err(|e| e.as_ref().clone())
     }
 
-    async fn load_artifact_bytes(&self, artifact_id: &str) -> Result<Option<Vec<u8>>, String> {
+    async fn load_artifact(&self, artifact_id: &str) -> Result<Option<CachedArtifact>, String> {
         let id = artifact_id.trim();
         if id.is_empty() {
             return Ok(None);
         }
         if let Some(cached) = self.artifact_cache.get(id) {
-            return Ok(Some(cached.as_ref().clone()));
+            return Ok(Some(cached));
         }
         let uuid = Uuid::parse_str(id)
             .map_err(|_| format!("ARTIFACT_INVALID: artifact_id '{id}' is not a UUID"))?;
@@ -232,9 +251,14 @@ impl MazbriBypassServiceImpl {
                 .map_err(|e| format!("ARTIFACT_LOAD_FAILED: {e}"))?;
         match row {
             Some((bytes,)) => {
-                let arc = Arc::new(bytes);
-                self.artifact_cache.insert(id.to_string(), arc.clone());
-                Ok(Some(arc.as_ref().clone()))
+                let bytes: Arc<[u8]> = Arc::from(bytes);
+                let descriptor_pool = decode_grpc_descriptor_pool(&bytes).ok();
+                let cached = CachedArtifact {
+                    bytes,
+                    descriptor_pool,
+                };
+                self.artifact_cache.insert(id.to_string(), cached.clone());
+                Ok(Some(cached))
             }
             None => Err(format!(
                 "ARTIFACT_MISSING: upstream_artifacts id={id} not found"
@@ -329,24 +353,54 @@ impl MazbriBypassServiceImpl {
             return (outcome, trace_id);
         }
         let duration_ms = mazbri_core::num::millis_u64(start_time.elapsed());
-        let service_name = Arc::clone(&self.service_name);
-        let user_agent = Arc::clone(&self.user_agent);
-        let req_owned = req.clone();
-        let response_owned = outcome.response.clone();
-        let stage_timings = std::mem::take(&mut outcome.stage_timings);
+        let snapshot = self.capture_log_snapshot(
+            req,
+            trace_context,
+            spec.as_deref(),
+            &outcome.response,
+            std::mem::take(&mut outcome.stage_timings),
+            duration_ms,
+        );
         tokio::spawn(async move {
-            let ctx = AccessCtx {
-                service_name: service_name.as_ref(),
-                user_agent: user_agent.as_ref(),
-                req: &req_owned,
-                trace_context: &trace_context,
-                spec: spec.as_ref(),
-                duration_ms,
-            };
-            emit_bypass_access(&ctx, &response_owned);
-            emit_bypass_stages(&ctx, &response_owned, &stage_timings);
+            snapshot.emit();
         });
         (outcome, trace_id)
+    }
+
+    fn capture_log_snapshot(
+        &self,
+        req: &upstream_proto::InvokeRequest,
+        trace_context: TraceContext,
+        spec: Option<&ChannelEgressSpec>,
+        response: &upstream_proto::InvokeResponse,
+        stage_timings: Vec<StageTiming>,
+        duration_ms: u64,
+    ) -> BypassLogSnapshot {
+        BypassLogSnapshot {
+            service_name: Arc::clone(&self.service_name),
+            user_agent: Arc::clone(&self.user_agent),
+            trace_context,
+            tenant_id: req.tenant_id.clone(),
+            tenant_code: req.tenant_code.clone(),
+            product_id: req.product_id.clone(),
+            supplier_id: req.supplier_id.clone(),
+            supplier_code: req.supplier_code.clone(),
+            channel_id: req.channel_id.clone(),
+            channel_code: req.channel_code.clone(),
+            attempt_order: req.attempt_order,
+            request_bytes: req.payload_json.len() as u64,
+            response_bytes: response.payload_json.len() as u64,
+            spec_adapter: spec.map_or_default(|s| s.adapter.clone()),
+            spec_method_upper: spec.map(|s| s.request.method.to_ascii_uppercase()),
+            route_template: spec.map_or_default(|s| s.request.path.clone()),
+            response_success: response.success,
+            response_error: response.error.clone(),
+            biz_error_code: response.biz_error.as_ref().map(|b| b.code.clone()),
+            upstream_meta: response.upstream_meta.clone(),
+            retry_reasons: response.retry_reasons.clone(),
+            stage_timings,
+            duration_ms,
+        }
     }
 
     /// `BypassHttpProxyService/Health`.
@@ -363,12 +417,12 @@ impl MazbriBypassServiceImpl {
     async fn execute_once(
         &self,
         req: &upstream_proto::InvokeRequest,
-        spec: &ChannelEgressSpec,
+        spec: &Arc<ChannelEgressSpec>,
         mode: ExecuteMode,
         options: ExecuteOptions,
     ) -> OnceOutcome {
         let start_time = Instant::now();
-        let config = match self
+        let cached_supplier = match self
             .resolve_supplier_config(&req.supplier_config_hash, &req.supplier_config_json)
         {
             Ok(cfg) => cfg,
@@ -378,15 +432,23 @@ impl MazbriBypassServiceImpl {
             Ok(v) => v,
             Err(error) => return OnceOutcome::error(error),
         };
-        let artifact_bytes = match spec.artifact_id.as_deref().map(str::trim) {
-            Some(id) if !id.is_empty() => match self.load_artifact_bytes(id).await {
-                Ok(bytes) => bytes,
+        let artifact = match spec.artifact_id.as_deref().map(str::trim) {
+            Some(id) if !id.is_empty() => match self.load_artifact(id).await {
+                Ok(art) => art,
                 Err(error) => return OnceOutcome::error(error),
             },
             _ => None,
         };
         let collect_probe_meta = options.collect_trace;
-        let input = build_invoke_input(req, spec, config, payload, artifact_bytes, mode, options);
+        let input = build_invoke_input(
+            req,
+            spec,
+            cached_supplier,
+            payload,
+            artifact,
+            mode,
+            options,
+        );
         let mut result = {
             let span = tracing::info_span!(
                 "upstream.http",
@@ -442,13 +504,17 @@ impl OnceOutcome {
 
 fn build_invoke_input(
     req: &upstream_proto::InvokeRequest,
-    spec: &ChannelEgressSpec,
-    config: Option<Arc<SupplierConfig>>,
+    spec: &Arc<ChannelEgressSpec>,
+    cached_supplier: Option<CachedSupplierConfig>,
     payload: serde_json::Value,
-    artifact_bytes: Option<Vec<u8>>,
+    artifact: Option<CachedArtifact>,
     mode: ExecuteMode,
     options: ExecuteOptions,
 ) -> InvokeInput {
+    let (config, credentials, pipeline_keys) = match cached_supplier {
+        Some(c) => (Some(c.config), c.credentials, Some(c.pipeline_keys)),
+        None => (None, HashMap::new(), None),
+    };
     let timeout = if req.timeout_ms > 0 {
         Duration::from_millis(req.timeout_ms)
     } else {
@@ -462,20 +528,18 @@ fn build_invoke_input(
             }),
         )
     };
-    let mut credentials = HashMap::new();
-    if let Some(ref cfg) = config
-        && let Some(ref auth) = cfg.auth_flow
-    {
-        credentials.clone_from(&auth.credentials);
-    }
-    let pipeline_keys = Some(pipeline_keys_from_credentials(&credentials));
+    let (artifact_bytes, descriptor_pool) = match artifact {
+        Some(a) => (Some(a.bytes), a.descriptor_pool),
+        None => (None, None),
+    };
     InvokeInput {
         supplier_id: req.supplier_id.clone(),
         supplier_code: req.supplier_code.clone(),
         channel_id: req.channel_id.clone(),
         request_id: req.request_id.clone(),
         payload,
-        spec: spec.clone(),
+        spec: Arc::clone(spec),
+        spec_validated: true,
         config,
         timeout,
         mode,
@@ -483,6 +547,7 @@ fn build_invoke_input(
         credentials,
         pipeline_keys,
         artifact_bytes,
+        descriptor_pool,
         cache_key: None,
     }
 }
@@ -586,11 +651,13 @@ fn invoke_success(
         UpstreamMetricsRecorder::record_token_fetch("ok");
     }
 
-    let payload_json = result
-        .payload
-        .as_ref()
-        .and_then(|v| serde_json::to_string(v).ok())
-        .unwrap_or_default();
+    let payload_json = result.raw_payload_json.unwrap_or_else(|| {
+        result
+            .payload
+            .as_ref()
+            .and_then(|v| serde_json::to_string(v).ok())
+            .unwrap_or_default()
+    });
     let biz_error = result.biz_error.map(|b| upstream_proto::InvokeBizError {
         code: b.code,
         message: b.message,
@@ -604,6 +671,7 @@ fn invoke_success(
         .unwrap_or(mazbri_upstream_runtime::UpstreamMeta {
             adapter: spec_adapter.to_string(),
             latency_ms: result.latency_ms,
+            latency_us: result.latency_ms.saturating_mul(1_000),
             ..Default::default()
         });
 
@@ -626,7 +694,14 @@ fn parse_payload(payload_json: &str) -> Result<serde_json::Value, String> {
     serde_json::from_str(payload_json).map_err(|e| format!("invalid payload_json: {e}"))
 }
 
-fn proto_upstream_meta(meta: mazbri_upstream_runtime::UpstreamMeta) -> upstream_proto::InvokeUpstreamMeta {
+fn proto_upstream_meta(
+    meta: mazbri_upstream_runtime::UpstreamMeta,
+) -> upstream_proto::InvokeUpstreamMeta {
+    let upstream_wire_us = if meta.latency_us > 0 {
+        meta.latency_us
+    } else {
+        meta.latency_ms.saturating_mul(1_000)
+    };
     upstream_proto::InvokeUpstreamMeta {
         status: u32::from(meta.status),
         url: meta.url,
@@ -636,6 +711,7 @@ fn proto_upstream_meta(meta: mazbri_upstream_runtime::UpstreamMeta) -> upstream_
         method: meta.method,
         path: meta.path,
         protocol: meta.protocol,
+        upstream_wire_us,
     }
 }
 
@@ -670,34 +746,179 @@ fn bypass_trace_context(req: &upstream_proto::InvokeRequest, span: &tracing::Spa
 
 /// `(error_code, error_class)` for the access log.
 fn classify_bypass_outcome(
-    response: &upstream_proto::InvokeResponse,
+    error: &str,
+    biz_code: Option<&str>,
     is_success: bool,
 ) -> (String, String) {
     if is_success {
         (String::new(), "ok".to_string())
-    } else if let Some(ref biz) = response.biz_error {
-        (biz.code.clone(), "biz".to_string())
-    } else if response.error.contains("SSRF") {
+    } else if let Some(code) = biz_code {
+        (code.to_string(), "biz".to_string())
+    } else if error.contains("SSRF") {
         ("SSRF_BLOCKED".to_string(), "ssrf".to_string())
-    } else if response.error.contains("Token") || response.error.contains("Auth") {
+    } else if error.contains("Token") || error.contains("Auth") {
         ("AUTH_ERROR".to_string(), "auth_token".to_string())
-    } else if response.error.contains("CONFIG_CACHE") || response.error.contains("SPEC_INVALID") {
+    } else if error.contains("CONFIG_CACHE") || error.contains("SPEC_INVALID") {
         ("CONFIG_ERROR".to_string(), "config".to_string())
-    } else if response.error.contains("timeout") || response.error.contains("Timeout") {
+    } else if error.contains("timeout") || error.contains("Timeout") {
         ("UPSTREAM_TIMEOUT".to_string(), "timeout".to_string())
     } else {
         ("UPSTREAM_ERROR".to_string(), "transport".to_string())
     }
 }
 
-/// 访问行的请求级上下文（与本次调用结果无关的部分）。
-struct AccessCtx<'a> {
-    service_name: &'a str,
-    user_agent: &'a str,
-    req: &'a upstream_proto::InvokeRequest,
-    trace_context: &'a TraceContext,
-    spec: Option<&'a ChannelEgressSpec>,
+/// 异步访问与阶段日志的轻量快照：不克隆请求载荷、全量配置或响应大报文。
+struct BypassLogSnapshot {
+    service_name: Arc<str>,
+    user_agent: Arc<str>,
+    trace_context: TraceContext,
+    tenant_id: String,
+    tenant_code: String,
+    product_id: String,
+    supplier_id: String,
+    supplier_code: String,
+    channel_id: String,
+    channel_code: String,
+    attempt_order: u32,
+    request_bytes: u64,
+    response_bytes: u64,
+    spec_adapter: String,
+    spec_method_upper: Option<String>,
+    route_template: String,
+    response_success: bool,
+    response_error: String,
+    biz_error_code: Option<String>,
+    upstream_meta: Option<upstream_proto::InvokeUpstreamMeta>,
+    retry_reasons: Vec<String>,
+    stage_timings: Vec<StageTiming>,
     duration_ms: u64,
+}
+
+impl BypassLogSnapshot {
+    fn emit(&self) {
+        self.emit_access();
+        self.emit_stages();
+    }
+
+    fn emit_stages(&self) {
+        let error_code_head = self.response_error.split(':').next().unwrap_or_default();
+        for stage in &self.stage_timings {
+            tracing::info!(
+                target: "bypass.stage",
+                service = %self.service_name,
+                stage_name = %stage.name,
+                stage_ms = stage.ms,
+                request_id = %self.trace_context.request_id,
+                trace_id = %self.trace_context.trace_id,
+                span_id = %self.trace_context.span_id,
+                tenant_id = %self.tenant_id,
+                tenant_code = %self.tenant_code,
+                product_id = %self.product_id,
+                supplier_id = %self.supplier_id,
+                supplier_code = %self.supplier_code,
+                channel_id = %self.channel_id,
+                channel_code = %self.channel_code,
+                attempt_order = self.attempt_order,
+                upstream_mode = %self.spec_adapter,
+                result = if stage.ok { "ok" } else { "error" },
+                error_stage = if stage.ok { "" } else { stage.name.as_str() },
+                error_code = if stage.ok { "" } else { error_code_head },
+                message = "Bypass stage completed"
+            );
+        }
+    }
+
+    fn emit_access(&self) {
+        let meta = self.upstream_meta.as_ref();
+        let adapter = meta
+            .map(|m| m.adapter.as_str())
+            .filter(|s| !s.is_empty())
+            .unwrap_or("http_json");
+        let upstream_status = meta.map_or(0, |m| u16::saturating_from(m.status));
+        let status_code = match upstream_status {
+            0 if self.response_success => 200,
+            0 => 502,
+            s => s,
+        };
+        let is_success = self.response_success && self.biz_error_code.is_none();
+        let (error_code, error_class) = classify_bypass_outcome(
+            &self.response_error,
+            self.biz_error_code.as_deref(),
+            is_success,
+        );
+        let error_stage = if is_success {
+            String::new()
+        } else {
+            "upstream".to_string()
+        };
+        let outcome = classify_outcome(&error_code, &error_stage, status_code);
+        let upstream_host = meta
+            .filter(|_| upstream_status > 0)
+            .and_then(|m| normalize_upstream_host(&m.url));
+        let outbound = |f: fn(&upstream_proto::InvokeUpstreamMeta) -> &str| {
+            meta.map(f).filter(|s| !s.is_empty()).map(str::to_string)
+        };
+        let upstream_wire_ms = meta.map_or(0, |m| m.upstream_wire_ms);
+
+        let event = AccessLogEvent::builder(self.service_name.as_ref().to_string())
+            .message(format!("request_completed mode={adapter}"))
+            .trace_context(&self.trace_context)
+            .route(AccessRouteFields {
+                tenant_id: non_empty(&self.tenant_id),
+                tenant_code: non_empty(&self.tenant_code),
+                product_id: non_empty(&self.product_id),
+                supplier_id: non_empty(&self.supplier_id),
+                supplier_code: non_empty(&self.supplier_code),
+                channel_id: non_empty(&self.channel_id),
+                channel_code: non_empty(&self.channel_code),
+                attempt_order: Some(self.attempt_order).filter(|n| *n > 0),
+                api_key_id: None,
+            })
+            .http(AccessHttpFields {
+                method: outbound(|m| m.method.as_str())
+                    .or_else(|| self.spec_method_upper.clone())
+                    .unwrap_or_default(),
+                protocol: outbound(|m| m.protocol.as_str()).unwrap_or_default(),
+                host_header: None,
+                path: outbound(|m| m.path.as_str())
+                    .unwrap_or_else(|| self.route_template.clone()),
+                route_template: self.route_template.clone(),
+                status_code,
+                request_bytes: self.request_bytes,
+                response_bytes: self.response_bytes,
+                user_agent: non_empty(&self.user_agent),
+            })
+            .timing(AccessTimingFields {
+                duration_ms: self.duration_ms,
+                upstream_service_time_ms: Some(upstream_wire_ms),
+                dependency_wait_ms: 0,
+                internal_ms: self.duration_ms.saturating_sub(upstream_wire_ms),
+                post_response_ms: 0,
+            })
+            .network(AccessNetworkFields {
+                upstream_host,
+                upstream_status_code: Some(upstream_status),
+                client_ip: None,
+                xff: None,
+                cache_hit: false,
+                fallback_used: false,
+                retry_reasons: self.retry_reasons.clone(),
+                upstream_request_id: outbound(|m| m.upstream_request_id.as_str()),
+            })
+            .upstream_meta(AccessUpstreamMetaFields {
+                upstream_mode: adapter.to_string(),
+                contract_id: "BYPASS-HTTP-PROXY".into(),
+            })
+            .outcome(AccessOutcomeFields {
+                error_code,
+                error_stage,
+                response_flags: outcome.response_flags.to_string(),
+                error_source: outcome.error_source.as_str().to_string(),
+                error_class,
+            })
+            .build();
+        emit_access_log("mazbri-bypass.access", &event);
+    }
 }
 
 fn non_empty(value: &str) -> Option<String> {
@@ -727,135 +948,6 @@ fn emit_config_cache_miss(
     );
 }
 
-/// bypass 阶段日志（target `bypass.stage`，与网关阶段日志同表）：每次真正执行上游调用写
-/// `egress_build`、`upstream_auth`、`upstream_wire`、`response_decode` 各一行（认证重试轮另有
-/// `#retry` 行），维度与访问行一致，可按 `request_id` / `trace_id` 和网关阶段串起来。
-fn emit_bypass_stages(
-    ctx: &AccessCtx<'_>,
-    response: &upstream_proto::InvokeResponse,
-    stages: &[StageTiming],
-) {
-    let req = ctx.req;
-    let adapter = ctx.spec.map_or("", |s| s.adapter.as_str());
-    for stage in stages {
-        tracing::info!(
-            target: "bypass.stage",
-            service = %ctx.service_name,
-            stage_name = %stage.name,
-            stage_ms = stage.ms,
-            request_id = %ctx.trace_context.request_id,
-            trace_id = %ctx.trace_context.trace_id,
-            span_id = %ctx.trace_context.span_id,
-            tenant_id = %req.tenant_id,
-            tenant_code = %req.tenant_code,
-            product_id = %req.product_id,
-            supplier_id = %req.supplier_id,
-            supplier_code = %req.supplier_code,
-            channel_id = %req.channel_id,
-            channel_code = %req.channel_code,
-            attempt_order = req.attempt_order,
-            upstream_mode = %adapter,
-            result = if stage.ok { "ok" } else { "error" },
-            error_stage = if stage.ok { "" } else { stage.name.as_str() },
-            error_code = if stage.ok { "" } else { response.error.split(':').next().unwrap_or_default() },
-            message = "Bypass stage completed"
-        );
-    }
-}
-
-fn emit_bypass_access(ctx: &AccessCtx<'_>, response: &upstream_proto::InvokeResponse) {
-    let req = ctx.req;
-    let duration_ms = ctx.duration_ms;
-    let route_template = ctx.spec.map_or_default(|s| s.request.path.clone());
-    let meta = response.upstream_meta.as_ref();
-    let adapter = meta
-        .map(|m| m.adapter.as_str())
-        .filter(|s| !s.is_empty())
-        .unwrap_or("http_json");
-    // 上游真正回了响应才有状态码；没发到上游的失败记 upstream_status_code=0、upstream_host 空。
-    let upstream_status = meta.map_or(0, |m| u16::saturating_from(m.status));
-    let status_code = match upstream_status {
-        0 if response.success => 200,
-        0 => 502,
-        s => s,
-    };
-    let is_success = response.success && response.biz_error.is_none();
-    let (error_code, error_class) = classify_bypass_outcome(response, is_success);
-    let error_stage = if is_success {
-        String::new()
-    } else {
-        "upstream".to_string()
-    };
-    let outcome = classify_outcome(&error_code, &error_stage, status_code);
-    let upstream_host = meta
-        .filter(|_| upstream_status > 0)
-        .and_then(|m| normalize_upstream_host(&m.url));
-    let outbound = |f: fn(&upstream_proto::InvokeUpstreamMeta) -> &str| {
-        meta.map(f).filter(|s| !s.is_empty()).map(str::to_string)
-    };
-    let upstream_wire_ms = meta.map_or(0, |m| m.upstream_wire_ms);
-
-    let event = AccessLogEvent::builder(ctx.service_name.to_string())
-        .message(format!("request_completed mode={adapter}"))
-        .trace_context(ctx.trace_context)
-        .route(AccessRouteFields {
-            tenant_id: non_empty(&req.tenant_id),
-            tenant_code: non_empty(&req.tenant_code),
-            product_id: non_empty(&req.product_id),
-            supplier_id: non_empty(&req.supplier_id),
-            supplier_code: non_empty(&req.supplier_code),
-            channel_id: non_empty(&req.channel_id),
-            channel_code: non_empty(&req.channel_code),
-            attempt_order: Some(req.attempt_order).filter(|n| *n > 0),
-            api_key_id: None,
-        })
-        .http(AccessHttpFields {
-            // 记真实出站值（对标 Kong `upstream_uri`、Apigee `target_url`），不是 gRPC hop 的值。
-            method: outbound(|m| m.method.as_str())
-                .or_else(|| ctx.spec.map(|s| s.request.method.to_ascii_uppercase()))
-                .unwrap_or_default(),
-            protocol: outbound(|m| m.protocol.as_str()).unwrap_or_default(),
-            host_header: None,
-            path: outbound(|m| m.path.as_str()).unwrap_or_else(|| route_template.clone()),
-            route_template,
-            status_code,
-            request_bytes: req.payload_json.len() as u64,
-            response_bytes: response.payload_json.len() as u64,
-            user_agent: non_empty(ctx.user_agent),
-        })
-        .timing(AccessTimingFields {
-            duration_ms,
-            // Pure upstream wire time (not full Execute).
-            upstream_service_time_ms: Some(upstream_wire_ms),
-            dependency_wait_ms: 0,
-            internal_ms: duration_ms.saturating_sub(upstream_wire_ms),
-            post_response_ms: 0,
-        })
-        .network(AccessNetworkFields {
-            upstream_host,
-            upstream_status_code: Some(upstream_status),
-            client_ip: None,
-            xff: None,
-            cache_hit: false,
-            fallback_used: false,
-            retry_reasons: response.retry_reasons.clone(),
-            upstream_request_id: outbound(|m| m.upstream_request_id.as_str()),
-        })
-        .upstream_meta(AccessUpstreamMetaFields {
-            upstream_mode: adapter.to_string(),
-            contract_id: "BYPASS-HTTP-PROXY".into(),
-        })
-        .outcome(AccessOutcomeFields {
-            error_code,
-            error_stage,
-            response_flags: outcome.response_flags.to_string(),
-            error_source: outcome.error_source.as_str().to_string(),
-            error_class,
-        })
-        .build();
-    emit_access_log("mazbri-bypass.access", &event);
-}
-
 #[cfg(test)]
 mod pipeline_key_tests {
     use mazbri_upstream_runtime::pipeline_keys_from_credentials;
@@ -882,7 +974,7 @@ mod pipeline_key_tests {
 #[cfg(test)]
 mod retry_passthrough_tests {
     use super::*;
-    use mazbri_upstream_runtime::{AuthRejectTrigger, InvokeResult, RetryReason};
+    use mazbri_upstream_runtime::{AuthRejectTrigger, InvokeResult, RetryReason, UpstreamMeta};
 
     fn result(ok: bool) -> InvokeResult {
         InvokeResult {
@@ -890,6 +982,7 @@ mod retry_passthrough_tests {
             latency_ms: 1,
             stages: Vec::new(),
             payload: None,
+            raw_payload_json: None,
             biz_error: None,
             error_code: (!ok).then(|| "UPSTREAM_AUTH_REJECTED".into()),
             error_message: None,
@@ -932,5 +1025,23 @@ mod retry_passthrough_tests {
         );
         assert_eq!(resp.internal_retries, 1);
         assert_eq!(resp.retry_reasons, vec!["auth_rejected:jsonrpc_code"]);
+    }
+
+    #[test]
+    fn invoke_success_prefers_raw_payload_json_and_preserves_wire_us() {
+        let mut r = result(true);
+        r.raw_payload_json = Some(r#"{"fast":true}"#.into());
+        r.upstream_meta = Some(UpstreamMeta {
+            status: 200,
+            adapter: "http_json".into(),
+            latency_ms: 0,
+            latency_us: 450,
+            ..Default::default()
+        });
+        let resp = invoke_success(r, "http_json", 0.001);
+        assert_eq!(resp.payload_json, r#"{"fast":true}"#);
+        let meta = resp.upstream_meta.expect("meta");
+        assert_eq!(meta.upstream_wire_ms, 0);
+        assert_eq!(meta.upstream_wire_us, 450);
     }
 }

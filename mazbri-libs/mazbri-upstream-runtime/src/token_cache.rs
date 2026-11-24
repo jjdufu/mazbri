@@ -120,15 +120,35 @@ impl TokenCache {
         F: FnOnce() -> Fut,
         Fut: Future<Output = Result<CachedToken, String>>,
     {
+        self.get_token_timed(cache_key, fetch_fn)
+            .await
+            .map(|(token, _)| token)
+    }
+
+    /// 获取令牌并返回因未命中缓存而在外部换票请求上等待的真实时长（缓存命中时为 0）。
+    ///
+    /// # Errors
+    ///
+    /// 换票请求或响应解析失败时返回错误。
+    pub async fn get_token_timed<F, Fut>(
+        &self,
+        cache_key: &str,
+        fetch_fn: F,
+    ) -> Result<(String, std::time::Duration), String>
+    where
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = Result<CachedToken, String>>,
+    {
         {
             let guard = self.cache.read().await;
             if let Some(cached) = guard.get(cache_key)
                 && self.is_fresh(cached, Utc::now())
             {
-                return Ok(cached.token.clone());
+                return Ok((cached.token.clone(), std::time::Duration::ZERO));
             }
         }
 
+        let wait_started = std::time::Instant::now();
         let cached = self
             .flight_group
             .work(&cache_key.to_string(), || async move {
@@ -145,11 +165,12 @@ impl TokenCache {
                 Ok(new_cached)
             })
             .await?;
+        let waited = wait_started.elapsed();
 
         let mut guard = self.cache.write().await;
         guard.insert(cache_key.to_string(), cached.clone());
 
-        Ok(cached.token)
+        Ok((cached.token, waited))
     }
 
     /// 认证被拒后的「作废令牌」决策（原子，写锁内完成）：

@@ -87,6 +87,8 @@ message InvokeUpstreamMeta {
   string method = 6;
   string path = 7;
   string protocol = 8;
+  // 本次调用累计全部外部上游网络 I/O 微秒耗时（含换票、Digest 挑战、重试与业务收发）。
+  uint64 upstream_wire_us = 9;
 }
 
 message InvokeRequest {

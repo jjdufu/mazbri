@@ -85,6 +85,14 @@ impl AlgorithmRegistry {
         registry
     }
 
+    /// 进程级静态只读默认注册表单例，避免热路径重复构建 `BTreeMap`。
+    #[must_use]
+    pub fn global() -> &'static Self {
+        static GLOBAL: std::sync::LazyLock<AlgorithmRegistry> =
+            std::sync::LazyLock::new(AlgorithmRegistry::default_registry);
+        &GLOBAL
+    }
+
     /// 登记元数据；同 id 重复登记覆盖。
     pub fn register(&mut self, meta: AlgorithmMeta) {
         self.entries.insert(meta.id, meta);

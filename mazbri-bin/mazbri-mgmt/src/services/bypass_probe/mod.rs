@@ -396,6 +396,7 @@ mod tests {
                 method: "POST".into(),
                 path: "/v3/gateway".into(),
                 protocol: "HTTP/1.1".into(),
+                upstream_wire_us: upstream_wire_ms.saturating_mul(1_000),
             }),
             internal_retries: 0,
             retry_reasons: Vec::new(),

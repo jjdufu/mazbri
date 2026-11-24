@@ -3,8 +3,7 @@ use mazbri_core::CoreError;
 use mazbri_tls::{ManagedCertificate, resolve_connect_target};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::time::Duration;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tonic::Request;
 use tonic::transport::{Certificate, Channel, ClientTlsConfig, Endpoint, Identity};
 use tonic_prost::ProstCodec;
@@ -27,16 +26,53 @@ pub const CHANNELS_PER_ENDPOINT: usize = 16;
 /// Refresh starts this fraction (1/N) of the TTL before expiry, in the background.
 const REFRESH_LEAD_DIVISOR: u64 = 10;
 
+/// 单条 HTTP/2 长连接及其与对端 bypass 实例已确认的配置哈希账本。
+///
+/// 哈希随连接生命周期绑定：连接轮换新建时为空，传输层错误或重连迹象发生时清空，
+/// 且仅在对端成功响应（非 `CONFIG_CACHE_MISS`）后写入确认状态。
+pub struct PooledChannel {
+    channel: Channel,
+    synced_hashes: DashMap<Arc<str>, Arc<str>>,
+}
+
+impl PooledChannel {
+    fn new(channel: Channel) -> Self {
+        Self {
+            channel,
+            synced_hashes: DashMap::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn is_synced(&self, key: &str, hash: &str) -> bool {
+        self.synced_hashes
+            .get(key)
+            .is_some_and(|entry| entry.value().as_ref() == hash)
+    }
+
+    pub fn mark_synced(&self, key: Arc<str>, hash: Arc<str>) {
+        self.synced_hashes.insert(key, hash);
+    }
+
+    pub fn invalidate_key(&self, key: &str) {
+        self.synced_hashes.remove(key);
+    }
+
+    pub fn clear_synced(&self) {
+        self.synced_hashes.clear();
+    }
+}
+
 /// A set of channels to one endpoint plus round-robin cursor and refresh state.
 struct ChannelSet {
-    channels: Vec<Channel>,
+    channels: Vec<Arc<PooledChannel>>,
     next: AtomicUsize,
     created_at: Instant,
     refreshing: AtomicBool,
 }
 
 impl ChannelSet {
-    fn new(channels: Vec<Channel>) -> Self {
+    fn new(channels: Vec<Arc<PooledChannel>>) -> Self {
         Self {
             channels,
             next: AtomicUsize::new(0),
@@ -45,9 +81,9 @@ impl ChannelSet {
         }
     }
 
-    fn pick(&self) -> Channel {
+    fn pick(&self) -> Arc<PooledChannel> {
         let i = self.next.fetch_add(1, Ordering::Relaxed) % self.channels.len();
-        self.channels[i].clone()
+        Arc::clone(&self.channels[i])
     }
 }
 
@@ -84,7 +120,15 @@ impl UpstreamHttp2ClientPool {
 
     /// Hot path: never rebuilds synchronously once a set exists. Near/after TTL the old
     /// set keeps serving while a background task builds and swaps in a new one.
-    async fn get_channel(&self, contract_id: &str, endpoint: &str) -> Result<Channel, CoreError> {
+    ///
+    /// # Errors
+    ///
+    /// 首次建连或 TLS 握手失败时返回错误。
+    pub async fn pick_slot(
+        &self,
+        contract_id: &str,
+        endpoint: &str,
+    ) -> Result<Arc<PooledChannel>, CoreError> {
         let set = self.clients.get(endpoint).map(|e| Arc::clone(e.value()));
         if let Some(set) = set {
             if needs_refresh(set.created_at.elapsed().as_secs(), self.client_ttl_secs)
@@ -135,7 +179,7 @@ impl UpstreamHttp2ClientPool {
             GATEWAY_UPSTREAM_H2_CONNECTS_TOTAL
                 .with_label_values(&[endpoint, reason, label])
                 .inc();
-            channels.push(result?);
+            channels.push(Arc::new(PooledChannel::new(result?)));
         }
         Ok(ChannelSet::new(channels))
     }
@@ -164,7 +208,6 @@ impl UpstreamHttp2ClientPool {
             .timeout(DEFAULT_CONNECT_TIMEOUT);
 
         let endpoint_uri = format!("https://{}", target.display_addr);
-        // 内网跳 keepalive：降低热路径重握手概率，配合启动预热压低 hop
         let endpoint_obj = Endpoint::from_shared(endpoint_uri.clone())
             .map_err(|error| CoreError::Config(error.to_string()))?
             .connect_timeout(DEFAULT_CONNECT_TIMEOUT)
@@ -204,13 +247,11 @@ impl UpstreamHttp2ClientPool {
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn warmup_endpoint(&self, endpoint: &str) -> Result<(), CoreError> {
-        let _ = self.get_channel("warmup", endpoint).await?;
+        let _ = self.pick_slot("warmup", endpoint).await?;
         Ok(())
     }
 
     /// 按契约 ID 调用上游 Execute。
-    ///
-    /// `contract_id` 必须是已注册契约（见 `upstream_contract`），不是业务 `channel_code`。
     ///
     /// # Errors
     ///
@@ -221,28 +262,36 @@ impl UpstreamHttp2ClientPool {
         endpoint: &str,
         request: HttpUpstreamRequest,
     ) -> Result<HttpUpstreamResponse, CoreError> {
-        self.call::<HttpUpstreamRequest, HttpUpstreamResponse>(contract_id, endpoint, request)
-            .await
+        let slot = self.pick_slot(contract_id, endpoint).await?;
+        self.call_on_slot::<HttpUpstreamRequest, HttpUpstreamResponse>(
+            &slot,
+            contract_id,
+            endpoint,
+            request,
+        )
+        .await
     }
 
-    /// Code-free invoke: `BypassHttpProxyService/Execute` with `InvokeRequest`.
+    /// 在指定连接槽位上执行 `BypassHttpProxyService/Execute`（用于按连接追踪配置同步状态）。
     ///
     /// # Errors
     ///
-    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-    pub async fn execute_invoke(
+    /// 契约未知或传输层失败时返回错误（失败时自动清空该连接已确认哈希）。
+    pub async fn execute_invoke_on_slot(
         &self,
+        slot: &PooledChannel,
         contract_id: &str,
         endpoint: &str,
         request: InvokeRequest,
     ) -> Result<InvokeResponse, CoreError> {
-        self.call::<InvokeRequest, InvokeResponse>(contract_id, endpoint, request)
+        self.call_on_slot::<InvokeRequest, InvokeResponse>(slot, contract_id, endpoint, request)
             .await
     }
 
     /// Shared unary call with pool metrics: ready-wait, in-use streams, error kinds.
-    async fn call<Req, Resp>(
+    async fn call_on_slot<Req, Resp>(
         &self,
+        slot: &PooledChannel,
         contract_id: &str,
         endpoint: &str,
         request: Req,
@@ -251,17 +300,17 @@ impl UpstreamHttp2ClientPool {
         Req: tonic_prost::prost::Message + Send + Sync + 'static,
         Resp: tonic_prost::prost::Message + Default + Send + Sync + 'static,
     {
-        let channel = self.get_channel(contract_id, endpoint).await?;
         let grpc_path = grpc_path_for_contract(contract_id)?;
         let path = http::uri::PathAndQuery::from_static(grpc_path);
 
-        let mut client = tonic::client::Grpc::new(channel);
+        let mut client = tonic::client::Grpc::new(slot.channel.clone());
         let ready_started = Instant::now();
         let ready = client.ready().await;
         GATEWAY_UPSTREAM_H2_READY_WAIT_SECONDS
             .with_label_values(&[endpoint])
             .observe(ready_started.elapsed().as_secs_f64());
         ready.map_err(|error| {
+            slot.clear_synced();
             let msg = format!("{error:?}");
             GATEWAY_UPSTREAM_H2_ERRORS_TOTAL
                 .with_label_values(&[endpoint, "ready", classify_h2_error(&msg)])
@@ -274,6 +323,7 @@ impl UpstreamHttp2ClientPool {
         let response = client.unary(Request::new(request), path, codec).await;
         in_use.dec();
         let response = response.map_err(|status| {
+            slot.clear_synced();
             let msg = format!("{} {:?}", status.message(), status);
             GATEWAY_UPSTREAM_H2_ERRORS_TOTAL
                 .with_label_values(&[endpoint, "call", classify_h2_error(&msg)])
@@ -318,7 +368,14 @@ impl UpstreamHttp2ClientPool {
 
 #[cfg(test)]
 mod tests {
-    use super::needs_refresh;
+    use super::{PooledChannel, needs_refresh};
+    use std::sync::Arc;
+    use tonic::transport::Endpoint;
+
+    fn dummy_slot() -> PooledChannel {
+        let ch = Endpoint::from_static("http://127.0.0.1:9").connect_lazy();
+        PooledChannel::new(ch)
+    }
 
     #[test]
     fn refresh_starts_before_ttl() {
@@ -327,5 +384,29 @@ mod tests {
         assert!(needs_refresh(270, 300));
         assert!(needs_refresh(400, 300));
         assert!(needs_refresh(0, 0));
+    }
+
+    #[tokio::test]
+    async fn pooled_channel_sync_tracks_confirm_invalidate_and_reconnect_clear() {
+        let slot = dummy_slot();
+        let key: Arc<str> = Arc::from("egress:ch-1");
+        let h1: Arc<str> = Arc::from("hash-v1");
+        let h2: Arc<str> = Arc::from("hash-v2");
+
+        // Unconfirmed slot forces full send for all concurrent callers.
+        assert!(!slot.is_synced(&key, &h1));
+        assert!(!slot.is_synced(&key, &h1));
+
+        slot.mark_synced(Arc::clone(&key), Arc::clone(&h1));
+        assert!(slot.is_synced(&key, &h1));
+        assert!(!slot.is_synced(&key, &h2));
+
+        slot.invalidate_key(&key);
+        assert!(!slot.is_synced(&key, &h1));
+
+        slot.mark_synced(Arc::clone(&key), Arc::clone(&h2));
+        assert!(slot.is_synced(&key, &h2));
+        slot.clear_synced();
+        assert!(!slot.is_synced(&key, &h2));
     }
 }

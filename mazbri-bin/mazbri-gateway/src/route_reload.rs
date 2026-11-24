@@ -4,11 +4,10 @@
 //! LISTEN/NOTIFY 仅加速唤醒；轮询始终是保底。
 
 use crate::config::RouteReloadConfig;
-use crate::route_source;
+use crate::route_source::{self, GatewayRouteEngine};
 use arc_swap::ArcSwap;
 use mazbri_core::metrics::{MetricsBuilder, REGISTRY, register_collector_once};
 use mazbri_core::num::SaturatingFrom;
-use mazbri_routing::RouteEngine;
 use prometheus::{CounterVec, Gauge, HistogramVec, IntGauge};
 use serde::Serialize;
 use sqlx::PgPool;
@@ -241,7 +240,7 @@ fn format_unix_secs(secs: i64) -> String {
 pub fn spawn_route_hot_reload(
     db: PgPool,
     listen_database: mazbri_core::DatabaseConfig,
-    route_engine: Arc<ArcSwap<RouteEngine>>,
+    route_engine: Arc<ArcSwap<GatewayRouteEngine>>,
     cfg: RouteReloadConfig,
     status: Arc<RouteReloadStatus>,
 ) {
@@ -253,7 +252,7 @@ pub fn spawn_route_hot_reload(
 async fn run_route_hot_reload_loop(
     db: PgPool,
     listen_database: mazbri_core::DatabaseConfig,
-    route_engine: Arc<ArcSwap<RouteEngine>>,
+    route_engine: Arc<ArcSwap<GatewayRouteEngine>>,
     cfg: RouteReloadConfig,
     status: Arc<RouteReloadStatus>,
 ) {
@@ -353,7 +352,7 @@ enum ReloadOutcome {
 
 async fn reload_if_needed(
     db: &PgPool,
-    route_engine: &Arc<ArcSwap<RouteEngine>>,
+    route_engine: &Arc<ArcSwap<GatewayRouteEngine>>,
     last_seen_version: &mut i64,
     status: &RouteReloadStatus,
 ) -> anyhow::Result<ReloadOutcome> {

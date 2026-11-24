@@ -1,20 +1,21 @@
-use tracing::Instrument;
 use super::{
-    Arc, AttemptStatus, CandidateChannel, ChannelAttempt, ChannelRateLimitDecision,
-    ChannelRateLimitRequest, CircuitBreaker, CircuitBreakerConfig, Deserialize, Duration,
-    GATEWAY_UPSTREAM_ATTEMPTS_TOTAL, GatewayRequest, InteractionEvent, MazbriClaims, ProxyError,
+    Arc, AttemptStatus, ChannelAttempt, ChannelRateLimitDecision, ChannelRateLimitRequest,
+    CircuitBreaker, CircuitBreakerConfig, Deserialize, Duration, GATEWAY_UPSTREAM_ATTEMPTS_TOTAL,
+    GatewayCandidateChannel, GatewayRequest, InteractionEvent, MazbriClaims, ProxyError,
     ProxyState, RetryReason, RouteMatchContext, Serialize, TraceContext, UpstreamAttempt, Uuid,
-    classify_proxy_result, debug, execute_channel_attempt, info, record_retry,
-    resolve_mode_and_contract_hint, should_switch, should_switch_status,
-    spawn_persist_event_best_effort, store_fallback_snapshot, try_cbpro_fallback, warn,
+    classify_proxy_result, debug, enqueue_interaction_event, execute_channel_attempt, info,
+    record_retry, should_switch, should_switch_status, spawn_store_fallback_snapshot,
+    try_cbpro_fallback, warn,
 };
 use mazbri_core::num::SaturatingFrom;
+use tracing::Instrument;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(super) struct FallbackSnapshot {
     pub(super) status: u16,
     pub(super) data: serde_json::Value,
 }
+
 #[derive(Debug, Clone)]
 pub(crate) struct UpstreamResponse {
     pub(crate) status: u16,
@@ -22,19 +23,22 @@ pub(crate) struct UpstreamResponse {
     pub(crate) error: String,
     pub(crate) content_type: Option<String>,
     pub(crate) body_bytes_len: u64,
-    /// Pure upstream wire time from bypass (`upstream_meta.upstream_wire_ms`); 0 if none.
-    pub(crate) upstream_wire_ms: u64,
+    /// Full-precision pure upstream wire duration (`upstream_meta.upstream_wire_us` on bypass).
+    pub(crate) upstream_wire_duration: Duration,
     /// 上游回的流水号（bypass `upstream_meta.upstream_request_id`）；无则为空。
     pub(crate) upstream_request_id: String,
 }
+
 #[derive(Debug, Clone)]
 pub(crate) enum ProxyBody {
     Empty,
     JsonValue(serde_json::Value),
     JsonRaw(Arc<[u8]>),
+    JsonRawStr(Arc<str>),
     Text(String),
     Binary(Vec<u8>),
 }
+
 #[derive(Debug)]
 pub(crate) struct ProxyExecutionOutcome {
     pub(crate) response: UpstreamResponse,
@@ -43,6 +47,7 @@ pub(crate) struct ProxyExecutionOutcome {
     /// True when body was served from `CBPro` fallback snapshot (not live upstream).
     pub(crate) from_cbpro_fallback: bool,
 }
+
 #[derive(Debug, Clone)]
 pub(crate) struct UpstreamRouteMetadata {
     pub(crate) supplier_id: String,
@@ -52,7 +57,7 @@ pub(crate) struct UpstreamRouteMetadata {
     pub(crate) upstream_url: String,
     pub(crate) route_template: String,
     pub(crate) attempt_order: u32,
-    /// transparent | microservice
+    /// adapter name (transparent) | microservice
     pub(crate) upstream_mode: String,
     /// gRPC 契约 ID（见 `upstream_contract::known_contract_ids`）
     pub(crate) contract_id: String,
@@ -60,12 +65,12 @@ pub(crate) struct UpstreamRouteMetadata {
     pub(crate) cost_price: String,
 }
 
-/// Build access-route metadata from a matched candidate channel (no live call required).
+/// Build access-route metadata from a matched candidate channel (zero runtime JSON deserialization).
 pub(crate) fn upstream_route_from_channel(
-    channel: &CandidateChannel,
+    channel: &GatewayCandidateChannel,
     attempt_order: u32,
 ) -> UpstreamRouteMetadata {
-    let (mode_hint, contract_hint) = resolve_mode_and_contract_hint(channel);
+    let (mode_hint, contract_hint) = channel.prepared.mode_and_contract_hint();
     UpstreamRouteMetadata {
         supplier_id: channel.supplier_id.clone(),
         supplier_code: channel.supplier_code.clone(),
@@ -74,9 +79,23 @@ pub(crate) fn upstream_route_from_channel(
         upstream_url: channel.supplier_upstream_url.clone(),
         route_template: channel.path_prefix.clone(),
         attempt_order,
-        upstream_mode: mode_hint,
-        contract_id: contract_hint,
+        upstream_mode: mode_hint.to_string(),
+        contract_id: contract_hint.to_string(),
         cost_price: channel.cost_price.clone(),
+    }
+}
+
+fn build_route_match_ctx(claims: &MazbriClaims, req: &GatewayRequest) -> RouteMatchContext {
+    let client_version = req.headers.as_ref().and_then(|headers| {
+        headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case("x-api-version"))
+            .map(|(_, v)| v.clone())
+    });
+    RouteMatchContext {
+        tenant_id: claims.tenant_id.clone(),
+        product_id: req.product_id.clone(),
+        client_version,
     }
 }
 
@@ -86,23 +105,14 @@ pub(crate) fn match_primary_route_metadata(
     claims: &MazbriClaims,
     req: &GatewayRequest,
 ) -> Option<UpstreamRouteMetadata> {
-    let client_version = req.headers.as_ref().and_then(|headers| {
-        headers
-            .iter()
-            .find(|(k, _)| k.eq_ignore_ascii_case("x-api-version"))
-            .map(|(_, v)| v.clone())
-    });
-    let match_ctx = RouteMatchContext {
-        tenant_id: claims.tenant_id.clone(),
-        product_id: req.product_id.clone(),
-        client_version,
-    };
+    let match_ctx = build_route_match_ctx(claims, req);
     let current_engine = state.route_engine.load();
     let candidates = current_engine.match_route(&match_ctx)?;
     candidates
         .first()
         .map(|channel| upstream_route_from_channel(channel, 0))
 }
+
 pub(crate) async fn get_or_create_breaker(
     state: &ProxyState,
     product_id: &str,
@@ -140,6 +150,7 @@ pub(crate) async fn get_or_create_breaker(
         breaker
     })
 }
+
 /// 通道总 QPS 拒绝信息（用于最终 429 文案）。
 struct ChannelDenied {
     retry_after_ms: u64,
@@ -151,7 +162,7 @@ struct ChannelDenied {
 
 impl ChannelDenied {
     fn into_error(self) -> ProxyError {
-        let retry_after_secs = (self.retry_after_ms.div_ceil(1000)).max(1);
+        let retry_after_secs = self.retry_after_ms.div_ceil(1000).max(1);
         let detail = match self.reason {
             "queue_timeout" => "排队等待超时",
             "queue_full" => "排队已满",
@@ -167,26 +178,7 @@ impl ChannelDenied {
     }
 }
 
-fn match_candidates(
-    state: &ProxyState,
-    req: &GatewayRequest,
-    claims: &MazbriClaims,
-) -> Option<Vec<CandidateChannel>> {
-    let client_version = req.headers.as_ref().and_then(|headers| {
-        headers
-            .iter()
-            .find(|(k, _)| k.eq_ignore_ascii_case("x-api-version"))
-            .map(|(_, v)| v.clone())
-    });
-    let match_ctx = RouteMatchContext {
-        tenant_id: claims.tenant_id.clone(),
-        product_id: req.product_id.clone(),
-        client_version,
-    };
-    state.route_engine.load().match_route(&match_ctx)
-}
-
-fn record_attempt_start(event: &mut InteractionEvent, channel: &CandidateChannel) {
+fn record_attempt_start(event: &mut InteractionEvent, channel: &GatewayCandidateChannel) {
     event.record_upstream_attempt(
         &channel.channel_id,
         UpstreamAttempt {
@@ -205,7 +197,7 @@ fn switch_on_status(
     event: &mut InteractionEvent,
     status: u16,
     mode_hint: &str,
-    channel: &CandidateChannel,
+    channel: &GatewayCandidateChannel,
     request_id: &str,
 ) -> bool {
     if (200..300).contains(&status) || !should_switch_status(status, &channel.switch_condition) {
@@ -228,7 +220,7 @@ fn record_attempt_error(
     event: &mut InteractionEvent,
     e: &ProxyError,
     mode_hint: &str,
-    channel: &CandidateChannel,
+    channel: &GatewayCandidateChannel,
 ) -> bool {
     let status = match e {
         ProxyError::GatewayTimeout(_) => AttemptStatus::Timeout,
@@ -264,13 +256,12 @@ fn classify_attempt_error(e: &ProxyError) -> &'static str {
     }
 }
 
-/// 跨租户通道总 QPS；拒绝时返回 `Some`（已记日志）。
+/// 跨租户通道总 QPS；调用前已确认 `is_enabled() && channel.qps_limit > 0`。
 async fn check_channel_rate_limit(
     state: &ProxyState,
-    channel: &CandidateChannel,
+    channel: &GatewayCandidateChannel,
     request_id: &str,
 ) -> Option<ChannelDenied> {
-    let started = std::time::Instant::now();
     let span = tracing::info_span!(
         "check_channel_rate_limit",
         channel_id = %channel.channel_id,
@@ -282,11 +273,10 @@ async fn check_channel_rate_limit(
             channel_id: channel.channel_id.clone(),
             channel_code: channel.channel_code.clone(),
             qps_limit: channel.qps_limit,
-            channel_config: channel.channel_config.clone(),
+            overrides: channel.rate_limit,
         })
         .instrument(span)
         .await;
-    let _channel_rl_ms = started.elapsed();
     match decision {
         ChannelRateLimitDecision::Allow {
             queue_wait_ms,
@@ -344,78 +334,74 @@ pub(crate) async fn execute_gateway_request_with_event(
     trace_context: &TraceContext,
 ) -> Result<ProxyExecutionOutcome, ProxyError> {
     let mut event = InteractionEvent::new(request_id, &claims.tenant_id, &req.product_id);
+    let interaction_event_id = event.id;
 
-    let Some(candidates) = match_candidates(state, req, claims) else {
+    let match_ctx = build_route_match_ctx(claims, req);
+    let current_engine = state.route_engine.load_full();
+    let Some(candidates) = current_engine.match_route(&match_ctx) else {
         event.mark_final("no_route");
-        spawn_persist_event_best_effort(state, &event);
+        enqueue_interaction_event(&state.db, event);
         return Err(ProxyError::NotFound(format!(
             "No route found for product: {}",
             req.product_id
         )));
     };
-    // Primary matched channel for CBPro/access when live upstream is not used.
     let primary_route = candidates
         .first()
         .map(|channel| upstream_route_from_channel(channel, 0));
     let mut saw_non_rate_limit_failure = false;
     let mut last_channel_rate_limit: Option<ChannelDenied> = None;
     let mut last_attempted_route: Option<UpstreamRouteMetadata> = None;
-    for (index, channel) in candidates.into_iter().enumerate() {
+    for (index, channel_arc) in candidates.iter().enumerate() {
+        let channel = channel_arc.as_ref();
         last_attempted_route = Some(upstream_route_from_channel(
-            &channel,
+            channel,
             u32::saturating_from(index + 1),
         ));
-        record_attempt_start(&mut event, &channel);
-        let (mode_hint, _) = resolve_mode_and_contract_hint(&channel);
+        record_attempt_start(&mut event, channel);
+        let (mode_hint, _) = channel.prepared.mode_and_contract_hint();
 
-        // Cross-tenant channel total QPS — independent of tenant ratelimit policy.
-        // Default mode=reject (429); optional queue waits under max_wait/max_queue_depth.
-        if let Some(denied) = check_channel_rate_limit(state, &channel, request_id).await {
+        if state.channel_ratelimiter.is_enabled()
+            && channel.qps_limit > 0
+            && let Some(denied) = check_channel_rate_limit(state, channel, request_id).await
+        {
             GATEWAY_UPSTREAM_ATTEMPTS_TOTAL
-                .with_label_values(&[mode_hint.as_str(), "ratelimit"])
+                .with_label_values(&[mode_hint, "ratelimit"])
                 .inc();
             event.mark_last_attempt(AttemptStatus::Failed(denied.attempt_detail.clone()));
             last_channel_rate_limit = Some(denied);
             continue;
         }
 
-        let attempt = ChannelAttempt::new(&channel, index + 1);
+        let attempt = ChannelAttempt::new(channel, index + 1);
         match execute_channel_attempt(state, req, attempt, claims, request_id, trace_context).await
         {
             Ok(response) => {
-                if switch_on_status(
-                    &mut event,
-                    response.status,
-                    &mode_hint,
-                    &channel,
-                    request_id,
-                ) {
+                if switch_on_status(&mut event, response.status, mode_hint, channel, request_id) {
                     saw_non_rate_limit_failure = true;
                     continue;
                 }
                 event.mark_last_attempt(AttemptStatus::Success);
                 event.mark_final("success");
-                spawn_persist_event_best_effort(state, &event);
+                enqueue_interaction_event(&state.db, event);
                 if fallback_enabled {
-                    store_fallback_snapshot(state, req, claims, request_id, &response).await;
+                    spawn_store_fallback_snapshot(state, req, claims, request_id, &response);
                 }
                 let result = classify_proxy_result(response.status, None);
                 GATEWAY_UPSTREAM_ATTEMPTS_TOTAL
-                    .with_label_values(&[mode_hint.as_str(), result])
+                    .with_label_values(&[mode_hint, result])
                     .inc();
-                // transparent / microservice：access 的 upstream_host 均为业务侧 supplier_upstream_url
-                // （transparent 不写 bypass 地址，便于按业务目标 host 排障）
                 return Ok(ProxyExecutionOutcome {
                     response,
-                    interaction_event_id: event.id,
+                    interaction_event_id,
                     upstream_route: last_attempted_route,
                     from_cbpro_fallback: false,
                 });
             }
             Err(e) => {
-                if !record_attempt_error(&mut event, &e, &mode_hint, &channel) {
+                if !record_attempt_error(&mut event, &e, mode_hint, channel) {
                     event.mark_final("failed");
-                    spawn_persist_event_best_effort(state, &event);
+                    enqueue_interaction_event(&state.db, event);
                     return Err(e);
                 }
                 saw_non_rate_limit_failure = true;
@@ -426,24 +412,59 @@ pub(crate) async fn execute_gateway_request_with_event(
             }
         }
     }
-    event.mark_final("exhausted");
-    if fallback_enabled
-        && let Some(snapshot) =
-            try_cbpro_fallback(state, req, claims, request_id, "exhausted").await
+    finalize_exhausted(ExhaustedContext {
+        state,
+        req,
+        claims,
+        request_id,
+        fallback_enabled,
+        event,
+        fallback_route: last_attempted_route.or(primary_route),
+        last_channel_rate_limit,
+        saw_non_rate_limit_failure,
+    })
+    .await
+}
+
+struct ExhaustedContext<'a> {
+    state: &'a ProxyState,
+    req: &'a GatewayRequest,
+    claims: &'a MazbriClaims,
+    request_id: &'a str,
+    fallback_enabled: bool,
+    event: InteractionEvent,
+    fallback_route: Option<UpstreamRouteMetadata>,
+    last_channel_rate_limit: Option<ChannelDenied>,
+    saw_non_rate_limit_failure: bool,
+}
+
+async fn finalize_exhausted(
+    mut ctx: ExhaustedContext<'_>,
+) -> Result<ProxyExecutionOutcome, ProxyError> {
+    let interaction_event_id = ctx.event.id;
+    ctx.event.mark_final("exhausted");
+    if ctx.fallback_enabled
+        && let Some(snapshot) = try_cbpro_fallback(
+            ctx.state,
+            ctx.req,
+            ctx.claims,
+            ctx.request_id,
+            "exhausted",
+        )
+        .await
     {
-        event.mark_final("fallback_success");
-        spawn_persist_event_best_effort(state, &event);
-        // Attach matched route channel so monitoring shows CB: + channel (not "-").
+        ctx.event.mark_final("fallback_success");
+        enqueue_interaction_event(&ctx.state.db, ctx.event);
         return Ok(ProxyExecutionOutcome {
             response: snapshot,
-            interaction_event_id: event.id,
-            upstream_route: last_attempted_route.or(primary_route),
+            interaction_event_id,
+            upstream_route: ctx.fallback_route,
             from_cbpro_fallback: true,
         });
     }
-    spawn_persist_event_best_effort(state, &event);
-    if let Some(denied) = last_channel_rate_limit
-        && !saw_non_rate_limit_failure
+    enqueue_interaction_event(&ctx.state.db, ctx.event);
+    if let Some(denied) = ctx.last_channel_rate_limit
+        && !ctx.saw_non_rate_limit_failure
     {
         return Err(denied.into_error());
     }

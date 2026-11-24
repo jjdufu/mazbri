@@ -18,7 +18,6 @@ mod route_source;
 mod router;
 mod service_health_cache;
 mod startup_metrics;
-mod supplier_config_cache;
 mod tarpc_client;
 mod upstream_contract;
 mod warmup;
@@ -102,14 +101,8 @@ async fn main() -> Result<()> {
         .map_err(|e| anyhow::anyhow!("Failed to load JWT secret from database: {e}"))?;
     info!("JWT secret loaded from database (HKDF derived)");
     info!("Using log-based request logging (tracing output)");
-    let service_health_cache = {
-        info!("Service health cache enabled with dynamic registry monitoring (interval 15s)");
-        let cache = service_health_cache::ServiceHealthCache::new();
-        let cert_url = bootstrap.cert_service.base().to_owned();
-        let token = tls_config.cert_service_token.clone();
-        let _handle = cache.clone().spawn_dynamic(cert_url, token);
-        Some(cache)
-    };
+    let service_health_cache =
+        Some(init_service_health_cache(&bootstrap, &tls_config.cert_service_token));
     let app = router::create_router(router::RouterInit {
         service_name: service_name.clone(),
         config: config.clone(),
@@ -145,14 +138,28 @@ async fn main() -> Result<()> {
         shutdown_timeout,
     ))
     .await?;
-    // Server no longer accepts or serves requests: flush post-response billing work.
+    // Server no longer accepts or serves requests: flush post-response billing and interaction events.
     // Keep (graceful_shutdown_timeout + this) below the container stop grace period.
-    gateway::post_response::drain_on_shutdown(USAGE_CHARGE_DRAIN_TIMEOUT).await;
+    tokio::join!(
+        gateway::post_response::drain_on_shutdown(USAGE_CHARGE_DRAIN_TIMEOUT),
+        interaction_store::drain_on_shutdown(USAGE_CHARGE_DRAIN_TIMEOUT),
+    );
     Ok(())
 }
 
 /// Upper bound for flushing deferred usage charges at shutdown.
 const USAGE_CHARGE_DRAIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(8);
+
+fn init_service_health_cache(
+    bootstrap: &PureBootstrap,
+    cert_service_token: &str,
+) -> service_health_cache::ServiceHealthCache {
+    info!("Service health cache enabled with dynamic registry monitoring (interval 15s)");
+    let cache = service_health_cache::ServiceHealthCache::new();
+    let cert_url = bootstrap.cert_service.base().to_owned();
+    let _handle = cache.clone().spawn_dynamic(cert_url, cert_service_token.to_owned());
+    cache
+}
 
 async fn graceful_shutdown(
     renewal_task: mazbri_tls::RenewalTaskHandle,

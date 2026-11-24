@@ -31,6 +31,8 @@ mod token_cache;
 mod types;
 mod ws_pool;
 
+pub use adapters::grpc::decode_grpc_descriptor_pool;
+pub use prost_reflect::DescriptorPool;
 pub use assert::{Assertion, AssertionResult, evaluate_assertions};
 pub use crypto_pipeline::{
     default_slots_json_cipher_sign_iv, default_slots_sign_form, open_response,
@@ -48,5 +50,5 @@ pub use token_cache::{CachedToken, StaleEvict, TokenCache};
 pub use types::{
     AuthRejectTrigger, AuthRejection, BizError, BodyKind, DEFAULT_MAX_BODY_CAPTURE, ExecuteError,
     ExecuteMode, ExecuteOptions, InvokeInput, InvokeResult, OutboundResponse, RetryReason,
-    RetrySkip, StageResult, StageSummary, StageTiming, UpstreamMeta,
+    RetrySkip, StageResult, StageSummary, StageTiming, UpstreamMeta, WireClock,
 };

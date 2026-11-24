@@ -155,6 +155,7 @@ mod tests {
                     method: "POST".into(),
                     path: "/x".into(),
                     protocol: "HTTP/1.1".into(),
+                    upstream_wire_us: 42_000,
                 }),
                 internal_retries: 0,
                 retry_reasons: Vec::new(),

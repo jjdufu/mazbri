@@ -1,98 +1,99 @@
-use super::*;
+use super::{
+    Arc, BYPASS_CONTRACT_ID, Duration, GATEWAY_UPSTREAM_CONTRACT_ERRORS_TOTAL,
+    GatewayCandidateChannel, GatewayRequest, GatewayRequestBody, HashMap, Instant, MazbriClaims,
+    PreparedChannel, ProxyBody, ProxyState, RetryReason, RngExt, TraceContext, UpstreamResponse,
+    record_internal_retries, record_retry, record_timeout_if_any, upstream_proto,
+};
+use crate::http2_upstream_client::PooledChannel;
 use mazbri_core::num::SaturatingFrom;
-use std::sync::Arc;
+use serde_json::value::RawValue;
 
 pub(super) async fn execute_http_upstream_request(
     state: &ProxyState,
     req: &GatewayRequest,
-    channel: &CandidateChannel,
+    channel: &GatewayCandidateChannel,
     claims: &MazbriClaims,
     attempt: AttemptCtx<'_>,
     trace_context: &TraceContext,
 ) -> Result<UpstreamResponse, String> {
-    // 唯一真相源：mazbri_core::SupplierConfig；分发只认 upstream_type（禁止 URL 启发式 / Default 吞错）
-    // Deserialize from borrowed Value — no clone of the full JSON tree.
-    let config = mazbri_core::SupplierConfig::deserialize(&channel.supplier_config)
-        .map_err(|e| format!("invalid supplier_config JSON: {e}"))?;
-    if !config.is_transparent() && !config.is_microservice() {
-        return Err(format!(
-            "invalid upstream_type: '{}' (expect transparent|microservice)",
-            config.upstream_type
-        ));
-    }
-    let is_transparent = config.is_transparent();
-    let contract_id = resolve_contract_id(&config)?;
-
-    // 超时：优先 supplier.timeouts.total_ms，否则 0 表示 bypass/上游使用默认
-    let timeout_secs = config
-        .timeouts
-        .as_ref()
-        .and_then(|t| t.total_ms)
-        .map_or(0, |ms| ms.div_ceil(1000).max(1));
-
-    let mut headers = sanitize_client_ip_headers(req.headers.clone().unwrap_or_default());
-
-    // Write correlation headers in-place (no intermediate HashMap).
-    trace_context.write_propagate_headers(&mut headers);
-    // 下游的父节点是当前 upstream.attempt span，而不是网关请求 span。
-    if let Some(span_context) = mazbri_core::trace_propagation::current_span_context() {
-        headers.insert(
-            "traceparent".to_string(),
-            mazbri_core::trace_spans::traceparent_of(&span_context),
-        );
-        headers.insert("x-span-id".to_string(), span_context.span_id().to_string());
-    }
-    headers.insert(
-        "x-mazbri-upstream-mode".to_string(),
-        if is_transparent {
-            "transparent".into()
-        } else {
-            "microservice".into()
-        },
-    );
-    headers.insert("x-mazbri-contract-id".to_string(), contract_id.clone());
-
-    if is_transparent {
-        let target = TransparentTarget {
-            state,
-            req,
-            channel,
-            claims,
-            trace_context,
-            config: &config,
+    match &channel.prepared {
+        PreparedChannel::Invalid {
+            error,
+            unknown_contract_id,
+            ..
+        } => {
+            if let Some(cid) = unknown_contract_id {
+                GATEWAY_UPSTREAM_CONTRACT_ERRORS_TOTAL
+                    .with_label_values(&[cid.as_ref(), "unknown_contract"])
+                    .inc();
+            }
+            Err(error.to_string())
+        }
+        PreparedChannel::Transparent {
+            adapter,
+            timeout_ms,
+            supplier_json,
+            supplier_hash,
+            egress_json,
+            egress_hash,
+            supplier_sync_key,
+            egress_sync_key,
+            ..
+        } => {
+            let span_id = current_attempt_span_id(trace_context);
+            let request_id = client_or_trace_request_id(req, trace_context);
+            let payload_json = extract_transparent_payload_json(req.body.as_ref())?;
+            let bypass_endpoint = state.services_config.bypass.as_ref().ok_or_else(|| {
+                "Bypass service endpoint is not configured in ServicesConfig (transparent upstream requires bypass_url)"
+                    .to_string()
+            })?;
+            let bypass_addr = format!("https://{}", bypass_endpoint.url());
+            let target = TransparentInvokeSpec {
+                req,
+                channel,
+                claims,
+                trace_context,
+                request_id: &request_id,
+                span_id: &span_id,
+                payload_json,
+                timeout_ms: *timeout_ms,
+                attempt_order: attempt.attempt_order,
+                adapter,
+                supplier_json,
+                supplier_hash,
+                egress_json,
+                egress_hash,
+                supplier_sync_key,
+                egress_sync_key,
+            };
+            invoke_bypass(state, &bypass_addr, &target, attempt).await
+        }
+        PreparedChannel::Microservice {
+            contract_id,
             timeout_secs,
-            attempt_order: attempt.attempt_order,
-        };
-        let (bypass_addr, invoke_req) = build_invoke_request(&target, &mut headers)?;
-        return invoke_bypass(
-            state,
-            channel,
-            &contract_id,
-            &bypass_addr,
-            invoke_req,
-            attempt,
-        )
-        .await;
+            ..
+        } => {
+            let headers = build_microservice_headers(req, trace_context, contract_id);
+            let request = upstream_proto::HttpUpstreamRequest {
+                product_id: req.product_id.clone(),
+                tenant_id: claims.tenant_id.clone(),
+                path: req.path.clone(),
+                method: req.method.clone(),
+                query: req.query.clone().unwrap_or_default(),
+                headers,
+                body: req.body.as_ref().map(proxy_body_to_upstream_body_proto),
+                timeout_secs: *timeout_secs,
+            };
+            execute_plain_request(
+                state,
+                contract_id,
+                channel.supplier_upstream_url.as_str(),
+                request,
+                attempt,
+            )
+            .await
+        }
     }
-
-    let request = upstream_proto::HttpUpstreamRequest {
-        product_id: req.product_id.clone(),
-        tenant_id: claims.tenant_id.clone(),
-        path: req.path.clone(),
-        method: req.method.clone(),
-        query: req.query.clone().unwrap_or_default(),
-        headers,
-        body: req.body.as_ref().map(proxy_body_to_upstream_body_proto),
-        timeout_secs,
-    };
-    execute_plain_request(
-        state,
-        &contract_id,
-        channel.supplier_upstream_url.as_str(),
-        request,
-        attempt,
-    )
-    .await
 }
 
 /// 单通道尝试上下文：重试上限 + 指标 `mode` 标签。
@@ -104,213 +105,122 @@ pub(super) struct AttemptCtx<'a> {
     pub attempt_order: u32,
 }
 
-/// 契约身份与业务 channel 分离：transparent 固定 BYPASS；microservice 读 `config.contract_id`。
-fn resolve_contract_id(config: &mazbri_core::SupplierConfig) -> Result<String, String> {
-    if config.is_transparent() {
-        return Ok(BYPASS_CONTRACT_ID.to_string());
-    }
-    let id = config
-        .contract_id
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| "microservice supplier missing config.contract_id".to_string())?;
-    // 预检未知契约，便于 switch 下一通道并打 contract_errors 指标
-    if let Err(e) = grpc_path_for_contract(id) {
-        GATEWAY_UPSTREAM_CONTRACT_ERRORS_TOTAL
-            .with_label_values(&[id, "unknown_contract"])
-            .inc();
-        return Err(format!("upstream contract error: {e}"));
-    }
-    Ok(id.to_string())
-}
-
-struct TransparentTarget<'a> {
-    state: &'a ProxyState,
+struct TransparentInvokeSpec<'a> {
     req: &'a GatewayRequest,
-    channel: &'a CandidateChannel,
+    channel: &'a GatewayCandidateChannel,
     claims: &'a MazbriClaims,
     trace_context: &'a TraceContext,
-    config: &'a mazbri_core::SupplierConfig,
-    timeout_secs: u64,
+    request_id: &'a str,
+    span_id: &'a str,
+    payload_json: &'a str,
+    timeout_ms: u64,
     attempt_order: u32,
+    adapter: &'a Arc<str>,
+    supplier_json: &'a Arc<str>,
+    supplier_hash: &'a Arc<str>,
+    egress_json: &'a Arc<str>,
+    egress_hash: &'a Arc<str>,
+    supplier_sync_key: &'a Arc<str>,
+    egress_sync_key: &'a Arc<str>,
 }
 
-/// 增量下发：内容未变时只发 hash，bypass 缓存未命中再回退全量。
-fn should_send_full_and_mark(state: &ProxyState, cache_key: &str, hash: &str) -> bool {
-    let send_full = state
-        .supplier_config_send_cache
-        .should_send_full(cache_key, hash);
-    if send_full {
-        state
-            .supplier_config_send_cache
-            .mark_full_sent(cache_key, hash);
-    }
-    send_full
-}
-
-/// Parsed egress spec + its serialized JSON and SHA256, cached per channel and reused
-/// while the source `channel_config` is unchanged (content equality = config version).
-struct EgressEntry {
-    source: serde_json::Value,
-    spec: mazbri_core::ChannelEgressSpec,
-    json: String,
-    hash: String,
-}
-
-/// Serialized supplier config + SHA256, cached per supplier while the config is unchanged.
-struct SupplierEntry {
-    source: mazbri_core::SupplierConfig,
-    json: String,
-    hash: String,
-}
-
-static EGRESS_CACHE: std::sync::LazyLock<dashmap::DashMap<String, Arc<EgressEntry>>> =
-    std::sync::LazyLock::new(dashmap::DashMap::new);
-static SUPPLIER_CACHE: std::sync::LazyLock<dashmap::DashMap<String, Arc<SupplierEntry>>> =
-    std::sync::LazyLock::new(dashmap::DashMap::new);
-
-fn sha_hex(json: &str) -> String {
-    crate::supplier_config_cache::SupplierConfigSendCache::hash_config_json(json)
-}
-
-fn cached_egress(channel_id: &str, source: &serde_json::Value) -> Result<Arc<EgressEntry>, String> {
-    if let Some(e) = EGRESS_CACHE.get(channel_id)
-        && e.source == *source
-    {
-        return Ok(Arc::clone(e.value()));
-    }
-    let spec = mazbri_core::parse_channel_config_egress(source).map_err(|e| e.to_string())?;
-    let json = serde_json::to_string(&spec).unwrap_or_else(|_| "{}".into());
-    let entry = Arc::new(EgressEntry {
-        source: source.clone(),
-        spec,
-        hash: sha_hex(&json),
-        json,
-    });
-    EGRESS_CACHE.insert(channel_id.to_string(), Arc::clone(&entry));
-    Ok(entry)
-}
-
-fn cached_supplier(
-    supplier_code: &str,
-    source: &mazbri_core::SupplierConfig,
-) -> Arc<SupplierEntry> {
-    if let Some(e) = SUPPLIER_CACHE.get(supplier_code)
-        && e.source == *source
-    {
-        return Arc::clone(e.value());
-    }
-    let json = serde_json::to_string(source).unwrap_or_else(|_| "{}".to_string());
-    let entry = Arc::new(SupplierEntry {
-        source: source.clone(),
-        hash: sha_hex(&json),
-        json,
-    });
-    SUPPLIER_CACHE.insert(supplier_code.to_string(), Arc::clone(&entry));
-    entry
-}
-
-/// transparent 免代码路径：组装发往 bypass 的 `InvokeRequest`，返回 `(bypass 地址, 请求)`。
-fn build_invoke_request(
-    target: &TransparentTarget<'_>,
-    headers: &mut HashMap<String, String>,
-) -> Result<(String, upstream_proto::InvokeRequest), String> {
-    let TransparentTarget {
-        state,
-        req,
-        channel,
-        claims,
-        trace_context,
-        config,
-        timeout_secs,
-        attempt_order,
-    } = *target;
-    let egress = cached_egress(&channel.channel_id, &channel.channel_config)?;
-    let spec = &egress.spec;
-    headers.insert("x-mazbri-upstream-mode".to_string(), spec.adapter.clone());
-
-    let payload_json = match req.body.as_ref() {
-        Some(GatewayRequestBody::Json(v)) if v.is_object() => {
-            serde_json::to_string(v).unwrap_or_else(|_| "{}".into())
+impl TransparentInvokeSpec<'_> {
+    fn build_request_for_slot(
+        &self,
+        slot: &PooledChannel,
+        force_full: bool,
+    ) -> upstream_proto::InvokeRequest {
+        let _ = self.adapter;
+        let send_egress_full = force_full || !slot.is_synced(self.egress_sync_key, self.egress_hash);
+        let send_supplier_full =
+            force_full || !slot.is_synced(self.supplier_sync_key, self.supplier_hash);
+        upstream_proto::InvokeRequest {
+            product_id: self.req.product_id.clone(),
+            tenant_id: self.claims.tenant_id.clone(),
+            channel_id: self.channel.channel_id.clone(),
+            request_id: self.request_id.to_string(),
+            trace: Some(upstream_proto::TraceContext {
+                request_id: self.trace_context.request_id.to_string(),
+                trace_id: self.trace_context.trace_id.to_string(),
+                span_id: self.span_id.to_string(),
+                parent_span_id: self.trace_context.parent_span_id.to_string(),
+                sampled: self.trace_context.sampled,
+            }),
+            timeout_ms: self.timeout_ms,
+            payload_json: self.payload_json.to_string(),
+            egress_spec_hash: self.egress_hash.to_string(),
+            egress_spec_json: if send_egress_full {
+                self.egress_json.to_string()
+            } else {
+                String::new()
+            },
+            supplier_id: self.channel.supplier_id.clone(),
+            supplier_code: self.channel.supplier_code.clone(),
+            supplier_config_hash: self.supplier_hash.to_string(),
+            supplier_config_json: if send_supplier_full {
+                self.supplier_json.to_string()
+            } else {
+                String::new()
+            },
+            attempt_order: self.attempt_order,
+            tenant_code: self.claims.tenant_code.clone(),
+            channel_code: self.channel.channel_code.clone(),
         }
-        None | Some(GatewayRequestBody::Empty) => "{}".to_string(),
-        _ => {
-            return Err(
-                "transparent 免代码路径只接受 JSON 对象 body（XML/form/protobuf 由 bypass 组包）"
-                    .into(),
-            );
-        }
-    };
-    let supplier = cached_supplier(&channel.supplier_code, config);
-    let egress_hash = egress.hash.clone();
-    let config_hash = supplier.hash.clone();
-    let send_spec_full = should_send_full_and_mark(
-        state,
-        &format!("egress:{}", channel.channel_id),
-        &egress_hash,
+    }
+}
+
+fn current_attempt_span_id(trace_context: &TraceContext) -> String {
+    mazbri_core::trace_propagation::current_span_context()
+        .map_or_else(|| trace_context.span_id.to_string(), |sc| sc.span_id().to_string())
+}
+
+fn client_or_trace_request_id(req: &GatewayRequest, trace_context: &TraceContext) -> String {
+    req.headers
+        .as_ref()
+        .and_then(|h| {
+            h.iter()
+                .find(|(k, _)| k.eq_ignore_ascii_case("x-request-id"))
+                .map(|(_, v)| v.clone())
+        })
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| trace_context.request_id.to_string())
+}
+
+fn extract_transparent_payload_json(body: Option<&GatewayRequestBody>) -> Result<&str, String> {
+    match body {
+        Some(b) if b.is_json_object() => Ok(b.as_raw_json_str()),
+        None => Ok("{}"),
+        Some(_) => Err(
+            "transparent 免代码路径只接受 JSON 对象 body（XML/form/protobuf 由 bypass 组包）"
+                .into(),
+        ),
+    }
+}
+
+fn build_microservice_headers(
+    req: &GatewayRequest,
+    trace_context: &TraceContext,
+    contract_id: &str,
+) -> HashMap<String, String> {
+    let mut headers = sanitize_client_ip_headers(req.headers.clone().unwrap_or_default());
+    trace_context.write_propagate_headers(&mut headers);
+    if let Some(span_context) = mazbri_core::trace_propagation::current_span_context() {
+        headers.insert(
+            "traceparent".to_string(),
+            mazbri_core::trace_spans::traceparent_of(&span_context),
+        );
+        headers.insert("x-span-id".to_string(), span_context.span_id().to_string());
+    }
+    headers.insert(
+        "x-mazbri-upstream-mode".to_string(),
+        "microservice".to_string(),
     );
-    let send_cfg_full = should_send_full_and_mark(
-        state,
-        &format!("supplier:{}", channel.supplier_code),
-        &config_hash,
-    );
-
-    let timeout_ms = spec
-        .timeout_ms
-        .or_else(|| config.timeouts.as_ref().and_then(|t| t.total_ms))
-        .unwrap_or(timeout_secs.saturating_mul(1000));
-
-    let bypass_endpoint = state.services_config.bypass.as_ref().ok_or_else(|| {
-        "Bypass service endpoint is not configured in ServicesConfig (transparent upstream requires bypass_url)"
-            .to_string()
-    })?;
-    let bypass_addr = format!("https://{}", bypass_endpoint.url());
-
-    let invoke_req = upstream_proto::InvokeRequest {
-        product_id: req.product_id.clone(),
-        tenant_id: claims.tenant_id.clone(),
-        channel_id: channel.channel_id.clone(),
-        request_id: headers
-            .get("x-request-id")
-            .cloned()
-            .unwrap_or_else(|| trace_context.request_id.to_string()),
-        trace: Some(upstream_proto::TraceContext {
-            request_id: trace_context.request_id.to_string(),
-            trace_id: trace_context.trace_id.to_string(),
-            span_id: headers
-                .get("x-span-id")
-                .cloned()
-                .unwrap_or_else(|| trace_context.span_id.to_string()),
-            parent_span_id: trace_context.parent_span_id.to_string(),
-            sampled: trace_context.sampled,
-        }),
-        timeout_ms,
-        payload_json,
-        egress_spec_hash: egress_hash,
-        egress_spec_json: if send_spec_full {
-            egress.json.clone()
-        } else {
-            String::new()
-        },
-        supplier_id: channel.supplier_id.clone(),
-        supplier_code: channel.supplier_code.clone(),
-        supplier_config_hash: config_hash,
-        supplier_config_json: if send_cfg_full {
-            supplier.json.clone()
-        } else {
-            String::new()
-        },
-        attempt_order,
-        tenant_code: claims.tenant_code.clone(),
-        channel_code: channel.channel_code.clone(),
-    };
-    Ok((bypass_addr, invoke_req))
+    headers.insert("x-mazbri-contract-id".to_string(), contract_id.to_string());
+    headers
 }
 
 /// 指数退避 + 抖动；返回 `false` 表示重试次数已用尽。
 async fn backoff_before_retry(attempt: &mut u32, max_retries: u32) -> bool {
-    use rand::RngExt;
     if *attempt >= max_retries {
         return false;
     }
@@ -323,18 +233,24 @@ async fn backoff_before_retry(attempt: &mut u32, max_retries: u32) -> bool {
 
 async fn invoke_bypass(
     state: &ProxyState,
-    channel: &CandidateChannel,
-    contract_id: &str,
     bypass_addr: &str,
-    mut request: upstream_proto::InvokeRequest,
+    target: &TransparentInvokeSpec<'_>,
     ctx: AttemptCtx<'_>,
 ) -> Result<UpstreamResponse, String> {
     let mut attempt = 0u32;
     let mut forced_full_config = false;
+    let mut slot = state
+        .upstream_http2_pool
+        .pick_slot(BYPASS_CONTRACT_ID, bypass_addr)
+        .await
+        .map_err(|e| format!("upstream HTTP/2 request failed: {e}"))?;
+
     loop {
+        // 正常单次路径直接移动 `InvokeRequest`，零多余克隆。
+        let request = target.build_request_for_slot(&slot, forced_full_config);
         let response = state
             .upstream_http2_pool
-            .execute_invoke(contract_id, bypass_addr, request.clone())
+            .execute_invoke_on_slot(&slot, BYPASS_CONTRACT_ID, bypass_addr, request)
             .await;
         if let Ok(ref response) = response {
             record_internal_retries(ctx.mode, response.internal_retries, &response.retry_reasons);
@@ -347,7 +263,8 @@ async fn invoke_bypass(
                     response.error
                 };
                 if !forced_full_config && error.contains("CONFIG_CACHE_MISS") {
-                    force_full_config(state, channel, &mut request)?;
+                    slot.invalidate_key(target.egress_sync_key);
+                    slot.invalidate_key(target.supplier_sync_key);
                     forced_full_config = true;
                     record_retry(ctx.mode, RetryReason::ConfigCacheMiss);
                     continue;
@@ -355,7 +272,17 @@ async fn invoke_bypass(
                 record_timeout_if_any(ctx.mode, &error);
                 return Err(error);
             }
-            Ok(response) => return Ok(invoke_response_to_upstream(&response)),
+            Ok(response) => {
+                slot.mark_synced(
+                    Arc::clone(target.egress_sync_key),
+                    Arc::clone(target.egress_hash),
+                );
+                slot.mark_synced(
+                    Arc::clone(target.supplier_sync_key),
+                    Arc::clone(target.supplier_hash),
+                );
+                return Ok(invoke_response_to_upstream(response));
+            }
             Err(error) => {
                 record_timeout_if_any(ctx.mode, &error.to_string());
                 if backoff_before_retry(&mut attempt, ctx.max_retries).await {
@@ -366,6 +293,11 @@ async fn invoke_bypass(
                         "upstream.transport_retry"
                     );
                     record_retry(ctx.mode, RetryReason::Transport);
+                    slot = state
+                        .upstream_http2_pool
+                        .pick_slot(BYPASS_CONTRACT_ID, bypass_addr)
+                        .await
+                        .map_err(|e| format!("upstream HTTP/2 request failed: {e}"))?;
                     continue;
                 }
                 return Err(format!("upstream HTTP/2 request failed: {error}"));
@@ -374,35 +306,27 @@ async fn invoke_bypass(
     }
 }
 
-/// bypass 报 `CONFIG_CACHE_MISS`：作废发送缓存并改为携带全量配置。
-fn force_full_config(
-    state: &ProxyState,
-    channel: &CandidateChannel,
-    request: &mut upstream_proto::InvokeRequest,
-) -> Result<(), String> {
-    let spec = mazbri_core::parse_channel_config_egress(&channel.channel_config)
-        .map_err(|e| e.to_string())?;
-    request.egress_spec_json = serde_json::to_string(&spec).unwrap_or_else(|_| "{}".into());
-    request.supplier_config_json =
-        serde_json::to_string(&channel.supplier_config).unwrap_or_else(|_| "{}".into());
-    state
-        .supplier_config_send_cache
-        .invalidate(&format!("egress:{}", channel.channel_id));
-    state
-        .supplier_config_send_cache
-        .invalidate(&format!("supplier:{}", channel.supplier_code));
-    Ok(())
+fn upstream_request_id_of(meta: Option<&upstream_proto::InvokeUpstreamMeta>) -> String {
+    meta.map_or_default(|m| m.upstream_request_id.clone())
 }
 
-fn upstream_request_id_of(response: &upstream_proto::InvokeResponse) -> String {
-    response
-        .upstream_meta
-        .as_ref()
-        .map_or_default(|m| m.upstream_request_id.clone())
+fn upstream_wire_duration_of(meta: Option<&upstream_proto::InvokeUpstreamMeta>) -> Duration {
+    let Some(m) = meta else {
+        return Duration::ZERO;
+    };
+    if m.upstream_wire_us > 0 {
+        Duration::from_micros(m.upstream_wire_us)
+    } else {
+        Duration::from_millis(m.upstream_wire_ms)
+    }
 }
 
-fn invoke_response_to_upstream(response: &upstream_proto::InvokeResponse) -> UpstreamResponse {
-    if let Some(ref biz) = response.biz_error {
+fn invoke_response_to_upstream(response: upstream_proto::InvokeResponse) -> UpstreamResponse {
+    let meta = response.upstream_meta.as_ref();
+    let upstream_request_id = upstream_request_id_of(meta);
+    let wire_duration = upstream_wire_duration_of(meta);
+
+    if let Some(biz) = response.biz_error {
         let fallback = || {
             serde_json::json!({
                 "code": biz.code,
@@ -418,37 +342,35 @@ fn invoke_response_to_upstream(response: &upstream_proto::InvokeResponse) -> Ups
         return UpstreamResponse {
             status: 400,
             body: ProxyBody::JsonValue(body),
-            error: biz.message.clone(),
+            error: biz.message,
             content_type: Some("application/json".into()),
             body_bytes_len: bytes_len,
-            upstream_wire_ms: 0,
-            upstream_request_id: upstream_request_id_of(response),
+            upstream_wire_duration: wire_duration,
+            upstream_request_id,
         };
     }
-    let payload = if response.payload_json.is_empty() {
-        serde_json::Value::Object(serde_json::Map::default())
-    } else {
-        serde_json::from_str(&response.payload_json)
-            .unwrap_or(serde_json::Value::String(response.payload_json.clone()))
-    };
-    let status = response
-        .upstream_meta
-        .as_ref()
+
+    let status = meta
         .map(|m| u16::saturating_from(m.status))
         .filter(|s| *s > 0)
         .unwrap_or(200);
-    let upstream_wire_ms = response
-        .upstream_meta
-        .as_ref()
-        .map_or(0, |m| m.upstream_wire_ms);
+    let body_bytes_len = response.payload_json.len() as u64;
+    let body = if response.payload_json.is_empty() {
+        ProxyBody::JsonRawStr(Arc::from("{}"))
+    } else if serde_json::from_str::<&RawValue>(&response.payload_json).is_ok() {
+        ProxyBody::JsonRawStr(Arc::from(response.payload_json))
+    } else {
+        ProxyBody::JsonValue(serde_json::Value::String(response.payload_json))
+    };
+
     UpstreamResponse {
         status,
-        body: ProxyBody::JsonValue(payload),
+        body,
         error: String::new(),
         content_type: Some("application/json".into()),
-        body_bytes_len: response.payload_json.len() as u64,
-        upstream_wire_ms,
-        upstream_request_id: upstream_request_id_of(response),
+        body_bytes_len,
+        upstream_wire_duration: wire_duration,
+        upstream_request_id,
     }
 }
 
@@ -460,11 +382,15 @@ async fn execute_plain_request(
     ctx: AttemptCtx<'_>,
 ) -> Result<UpstreamResponse, String> {
     let mut attempt = 0u32;
+    let mut next_request = Some(request.clone());
     loop {
+        let req_to_send = next_request.take().unwrap_or_else(|| request.clone());
+        let call_started = Instant::now();
         let response = state
             .upstream_http2_pool
-            .execute_request(contract_id, addr, request.clone())
+            .execute_request(contract_id, addr, req_to_send)
             .await;
+        let wire_duration = call_started.elapsed();
         match response {
             Ok(response) => {
                 if !response.success {
@@ -487,7 +413,7 @@ async fn execute_plain_request(
                     error: String::new(),
                     content_type,
                     body_bytes_len: data.body_bytes_len,
-                    upstream_wire_ms: 0,
+                    upstream_wire_duration: wire_duration,
                     upstream_request_id: String::new(),
                 });
             }
@@ -508,12 +434,15 @@ async fn execute_plain_request(
         }
     }
 }
+
 pub(super) fn map_proto_upstream_body(body: upstream_proto::UpstreamResponseBody) -> ProxyBody {
     match body.kind {
         Some(upstream_proto::upstream_response_body::Kind::JsonValue(value)) => {
-            ProxyBody::JsonValue(
-                serde_json::from_str(&value).unwrap_or(serde_json::Value::String(value)),
-            )
+            if serde_json::from_str::<&RawValue>(&value).is_ok() {
+                ProxyBody::JsonRawStr(Arc::from(value))
+            } else {
+                ProxyBody::JsonValue(serde_json::Value::String(value))
+            }
         }
         Some(upstream_proto::upstream_response_body::Kind::JsonRaw(raw)) => {
             ProxyBody::JsonRaw(Arc::from(raw.into_boxed_slice()))
@@ -525,35 +454,17 @@ pub(super) fn map_proto_upstream_body(body: upstream_proto::UpstreamResponseBody
         None => ProxyBody::Empty,
     }
 }
-pub(super) fn proxy_body_to_json_value(body: &ProxyBody) -> serde_json::Value {
-    match body {
-        ProxyBody::Empty => serde_json::Value::Null,
-        ProxyBody::JsonValue(value) => value.clone(),
-        ProxyBody::JsonRaw(raw) => {
-            serde_json::from_slice::<serde_json::Value>(raw).unwrap_or_else(|_| {
-                serde_json::json!({
-                    "raw": String::from_utf8_lossy(raw),
-                    "body_encoding": "json_raw_invalid"
-                })
-            })
-        }
-        ProxyBody::Text(text) => serde_json::Value::String(text.clone()),
-        ProxyBody::Binary(bytes) => serde_json::Value::String(STANDARD.encode(bytes)),
-    }
-}
+
 pub(super) fn proxy_body_to_upstream_body_proto(
     body: &GatewayRequestBody,
 ) -> upstream_proto::UpstreamBody {
-    match body {
-        GatewayRequestBody::Json(value) => upstream_proto::UpstreamBody {
-            kind: Some(upstream_proto::upstream_body::Kind::Json(value.to_string())),
-        },
-        GatewayRequestBody::Raw(value) => upstream_proto::UpstreamBody {
-            kind: Some(upstream_proto::upstream_body::Kind::Raw(value.clone())),
-        },
-        GatewayRequestBody::Empty => upstream_proto::UpstreamBody { kind: None },
+    upstream_proto::UpstreamBody {
+        kind: Some(upstream_proto::upstream_body::Kind::Json(
+            body.as_raw_json_str().to_string(),
+        )),
     }
 }
+
 pub(super) fn sanitize_client_ip_headers(
     headers: HashMap<String, String>,
 ) -> HashMap<String, String> {
@@ -562,30 +473,36 @@ pub(super) fn sanitize_client_ip_headers(
         .filter(|(key, _)| !is_client_ip_header(key))
         .collect()
 }
+
 pub(super) fn is_client_ip_header(header_name: &str) -> bool {
-    matches!(
-        header_name.to_ascii_lowercase().as_str(),
-        "forwarded"
-            | "forwarded-for"
-            | "x-client-ip"
-            | "x-cluster-client-ip"
-            | "x-forwarded"
-            | "x-forwarded-for"
-            | "x-forwarded-client-ip"
-            | "x-forwarded-for-original"
-            | "x-original-forwarded-for"
-            | "x-proxy-user-ip"
-            | "x-real-ip"
-            | "x-remote-ip"
-            | "true-client-ip"
-            | "cf-connecting-ip"
-            | "fastly-client-ip"
-    )
+    const BLOCKED: &[&str] = &[
+        "forwarded",
+        "forwarded-for",
+        "x-client-ip",
+        "x-cluster-client-ip",
+        "x-forwarded",
+        "x-forwarded-for",
+        "x-forwarded-client-ip",
+        "x-forwarded-for-original",
+        "x-original-forwarded-for",
+        "x-proxy-user-ip",
+        "x-real-ip",
+        "x-remote-ip",
+        "true-client-ip",
+        "cf-connecting-ip",
+        "fastly-client-ip",
+    ];
+    BLOCKED
+        .iter()
+        .any(|blocked| header_name.eq_ignore_ascii_case(blocked))
 }
 
 #[cfg(test)]
 mod internal_retries_tests {
-    use super::*;
+    use super::{
+        Duration, ProxyBody, RetryReason, invoke_response_to_upstream, record_internal_retries,
+        record_retry, upstream_proto,
+    };
     use crate::gateway::retry_ledger::scope_retry_ledger;
 
     #[tokio::test]
@@ -599,5 +516,32 @@ mod internal_retries_tests {
             ledger.reasons(),
             vec!["auth_rejected:jsonrpc_code", "config_cache_miss"]
         );
+    }
+
+    #[test]
+    fn invoke_response_to_upstream_preserves_raw_json_and_wire_us() {
+        let resp = upstream_proto::InvokeResponse {
+            success: true,
+            error: String::new(),
+            biz_error: None,
+            payload_json: r#"{"hello":"world"}"#.into(),
+            upstream_meta: Some(upstream_proto::InvokeUpstreamMeta {
+                status: 201,
+                upstream_wire_ms: 0,
+                upstream_wire_us: 750,
+                upstream_request_id: "up-1".into(),
+                ..Default::default()
+            }),
+            internal_retries: 0,
+            retry_reasons: Vec::new(),
+        };
+        let upstream = invoke_response_to_upstream(resp);
+        assert_eq!(upstream.status, 201);
+        assert_eq!(upstream.upstream_wire_duration, Duration::from_micros(750));
+        assert_eq!(upstream.upstream_request_id, "up-1");
+        match upstream.body {
+            ProxyBody::JsonRawStr(s) => assert_eq!(s.as_ref(), r#"{"hello":"world"}"#),
+            other => panic!("expected JsonRawStr, got {other:?}"),
+        }
     }
 }

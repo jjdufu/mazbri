@@ -78,9 +78,8 @@ struct FetchedResponse {
     from_cbpro_fallback: bool,
     cache_key: String,
     cache_lookup_ms: u64,
-    /// Wall time of the whole `fetch_response` upstream path (cache miss → bypass hop).
-    fetch_wall_ms: u64,
-    /// Full-precision wall duration of `fetch_response` for `OTel` upstream span.
+    cache_lookup_elapsed: Duration,
+    /// Full-precision wall duration of `fetch_response` for `OTel` upstream span and hop calculation.
     fetch_wall_duration: Duration,
 }
 
@@ -222,16 +221,22 @@ fn record_fetched_timing_and_cache(
     timing: &mut GatewayRequestTiming,
 ) {
     timing.cache_lookup_ms = fetched.cache_lookup_ms;
-    // New definition: upstream_ms is pure wire time from bypass (0 on cache/CBPro).
-    timing.upstream_ms = if fetched.from_cache || fetched.from_cbpro_fallback {
-        0
+    let live_upstream = !(fetched.from_cache || fetched.from_cbpro_fallback);
+    let wire_duration = if live_upstream {
+        fetched.response.upstream_wire_duration
     } else {
-        fetched.response.upstream_wire_ms
+        Duration::ZERO
     };
-    timing.bypass_hop_ms = fetched
-        .fetch_wall_ms
-        .saturating_sub(timing.cache_lookup_ms)
-        .saturating_sub(timing.upstream_ms);
+    timing.upstream_ms = mazbri_core::num::millis_u64(wire_duration);
+    let hop_duration = if live_upstream {
+        fetched
+            .fetch_wall_duration
+            .saturating_sub(fetched.cache_lookup_elapsed)
+            .saturating_sub(wire_duration)
+    } else {
+        Duration::ZERO
+    };
+    timing.bypass_hop_ms = mazbri_core::num::millis_u64(hop_duration);
     log_upstream_stage(ctx, timing.upstream_ms, fetched);
     spawn_cache_populate(ctx, fetched, cache_enabled);
 }
@@ -549,7 +554,7 @@ async fn fetch_response(
             from_cbpro_fallback: false,
             cache_key,
             cache_lookup_ms,
-            fetch_wall_ms: mazbri_core::num::millis_u64(fetch_wall_duration),
+            cache_lookup_elapsed,
             fetch_wall_duration,
         });
     }
@@ -573,7 +578,7 @@ async fn fetch_response(
                 from_cbpro_fallback: resp.from_cbpro_fallback,
                 cache_key,
                 cache_lookup_ms,
-                fetch_wall_ms: mazbri_core::num::millis_u64(fetch_wall_duration),
+                cache_lookup_elapsed,
                 fetch_wall_duration,
             })
         }
@@ -779,21 +784,20 @@ fn finish_request(ctx: &HandlerCtx<'_>, done: &mut CompletedRequest<'_>) {
     // 仅平台依赖等待（限流/余额/产品），不含上游出站等待
     let dependency_wait_ms =
         timing.ratelimit_ms + timing.balance_check_ms + timing.product_detail_lookup_ms;
-    // 网关本地段 = 总耗时 − 上游通道等待（上游业务 RTT 不计入 platform 验收）
-    let internal_ms = customer_total_ms.saturating_sub(timing.upstream_ms);
+    let live_upstream = !(fetched.from_cache || fetched.from_cbpro_fallback);
+    let wire_duration = if live_upstream {
+        fetched.response.upstream_wire_duration
+    } else {
+        Duration::ZERO
+    };
+    let internal_duration = elapsed.saturating_sub(wire_duration);
+    // 网关本地段 = 总耗时 Duration − 上游网络耗时 Duration（先减 Duration 再转毫秒，避免截断偏差）
+    let internal_ms = mazbri_core::num::millis_u64(internal_duration);
     let upstream_mode = fetched
         .upstream_route
         .as_ref()
         .map_or("unknown", |r| r.upstream_mode.as_str());
-    API_PROXY_DURATION_SECONDS
-        .with_label_values(&[&req.product_id, &req.method, upstream_mode])
-        .observe(elapsed.as_secs_f64());
-    GATEWAY_PLATFORM_LOCAL_SECONDS
-        .with_label_values(&[&req.product_id])
-        .observe(mazbri_core::num::u64_to_f64(internal_ms) / 1000.0);
-    GATEWAY_UPSTREAM_WAIT_SECONDS
-        .with_label_values(&[&req.product_id, upstream_mode])
-        .observe(mazbri_core::num::u64_to_f64(timing.upstream_ms) / 1000.0);
+    observe_proxy_histograms(req, upstream_mode, elapsed, internal_duration, wire_duration);
     let stage_ids = super::stage_log::stage_span("platform_summary", elapsed)
         .product(&req.product_id)
         .tenant(&ctx.claims.tenant_code)
@@ -841,6 +845,24 @@ fn finish_request(ctx: &HandlerCtx<'_>, done: &mut CompletedRequest<'_>) {
         },
         billing_fields,
     );
+}
+
+fn observe_proxy_histograms(
+    req: &GatewayRequest,
+    upstream_mode: &str,
+    elapsed: Duration,
+    internal_duration: Duration,
+    wire_duration: Duration,
+) {
+    API_PROXY_DURATION_SECONDS
+        .with_label_values(&[&req.product_id, &req.method, upstream_mode])
+        .observe(elapsed.as_secs_f64());
+    GATEWAY_PLATFORM_LOCAL_SECONDS
+        .with_label_values(&[&req.product_id])
+        .observe(internal_duration.as_secs_f64());
+    GATEWAY_UPSTREAM_WAIT_SECONDS
+        .with_label_values(&[&req.product_id, upstream_mode])
+        .observe(wire_duration.as_secs_f64());
 }
 
 /// Builds the request's usage event, enqueues it for background batch produce when billable,

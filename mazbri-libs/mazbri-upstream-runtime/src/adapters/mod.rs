@@ -1,7 +1,7 @@
 //! Closed adapter set. Each adapter maps tenant JSON → upstream wire → tenant JSON.
 
 mod graphql;
-mod grpc;
+pub(crate) mod grpc;
 mod crypto_wire;
 mod http_envelope;
 mod http_json;
@@ -17,16 +17,17 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use crate::auth::AppliedAuth;
-use crate::http_call::{HttpCall, auth_only_response, send_http_with_digest};
+use crate::http_call::{HttpCall, auth_only_response, send_http_with_digest_timed};
 use crate::ssrf::SsrfChecker;
 use crate::types::{
     AuthRejectTrigger, AuthRejection, BizError, ExecuteError, ExecuteMode, InvokeInput,
-    OutboundResponse,
+    OutboundResponse, WireClock,
 };
 use mazbri_core::json_path::extract_by_path;
 
 pub struct AdapterCtx<'a> {
     pub client: &'a Client,
+    pub h2c_client: &'a Client,
     pub ssrf: &'a SsrfChecker,
     pub input: &'a InvokeInput,
     pub base_url: &'a str,
@@ -46,6 +47,8 @@ pub struct AdapterCtx<'a> {
     pub observer: &'a dyn crate::observe::RuntimeObserver,
     /// 本次 invoke 的内部重试记录。
     pub retry_log: &'a crate::observe::RetryLog,
+    /// 本次 invoke 全部外部网络 I/O 耗时累加器。
+    pub wire_clock: &'a WireClock,
 }
 
 impl AdapterCtx<'_> {
@@ -53,11 +56,23 @@ impl AdapterCtx<'_> {
     pub(crate) fn is_reject_status(&self, status: u16) -> bool {
         self.invalidation.http_status.contains(&status)
     }
+
+    /// 是否需要保留 `serde_json::Value` 详细阶段快照（非生产模式或显式开启 `collect_trace`）。
+    pub(crate) fn trace_enabled(&self) -> bool {
+        self.input.options.collect_trace || !matches!(self.input.mode, ExecuteMode::Production)
+    }
+
+    /// 统一检测是否仍需读取原始 `response.body`（如配置了 `body_match` 认证失效规则）。
+    pub(crate) fn needs_raw_body_for_invalidation(&self) -> bool {
+        self.auth.token.is_some() && !self.invalidation.body_match.is_empty()
+    }
 }
 
 pub struct AdapterOutcome {
     pub response: OutboundResponse,
     pub payload: serde_json::Value,
+    /// 生产直通模式下的已校验原始 JSON 字符串（非 `None` 时优先直传，省去二次序列化）。
+    pub raw_payload_json: Option<String>,
     pub biz_error: Option<BizError>,
     /// 按认证失效规则判定的「认证被拒」；由 [`invoke_adapter`] 统一填写（WS 回复前关闭由适配器填写）。
     pub auth_rejection: Option<AuthRejection>,
@@ -69,6 +84,7 @@ impl AdapterOutcome {
         Self {
             response,
             payload: serde_json::Value::Null,
+            raw_payload_json: None,
             biz_error: None,
             auth_rejection: None,
         }
@@ -225,7 +241,31 @@ pub async fn dispatch_http(
         return Ok(auth_only_response(&call));
     }
     let digest = crate::auth::digest_attempt_from(&ctx.input.spec, &ctx.input.credentials);
-    send_http_with_digest(ctx.client, ctx.ssrf, call, digest).await
+    send_http_with_digest_timed(ctx.client, ctx.ssrf, call, digest, Some(ctx.wire_clock)).await
+}
+
+/// 判断是否无需对响应 JSON 做 `ok` 断言或 `unwrap` 路径提取，可走原始 JSON 透传。
+#[inline]
+pub(crate) fn can_passthrough_raw_json(ctx: &AdapterCtx<'_>, spec: &ChannelEgressSpec) -> bool {
+    !ctx.trace_enabled()
+        && spec
+            .response
+            .as_ref()
+            .is_none_or(|r| r.ok.is_none() && r.unwrap.is_none())
+}
+
+/// 对原始字节流尝试零 DOM 语法校验并提取 JSON 文本；非合法 JSON 时返回 `None`。
+pub(crate) fn try_take_valid_raw_json(
+    response: &mut OutboundResponse,
+    keep_body_copy: bool,
+) -> Option<String> {
+    let raw = serde_json::from_slice::<&serde_json::value::RawValue>(&response.body).ok()?;
+    if keep_body_copy {
+        Some(raw.get().to_owned())
+    } else {
+        let bytes = std::mem::take(&mut response.body);
+        String::from_utf8(bytes).ok()
+    }
 }
 
 pub async fn invoke_adapter(
@@ -531,11 +571,12 @@ mod tests {
             channel_id: "c".into(),
             request_id: request_id.into(),
             payload: serde_json::json!({}),
-            spec: ChannelEgressSpec {
+            spec: std::sync::Arc::new(ChannelEgressSpec {
                 adapter: ADAPTER_HTTP_JSON.into(),
                 base_url: "http://127.0.0.1".into(),
                 ..Default::default()
-            },
+            }),
+            spec_validated: false,
             config: None,
             timeout: Duration::from_secs(2),
             mode: ExecuteMode::Business,
@@ -543,6 +584,7 @@ mod tests {
             credentials: HashMap::new(),
             pipeline_keys: None,
             artifact_bytes: None,
+            descriptor_pool: None,
             cache_key: None,
         }
     }
@@ -565,11 +607,13 @@ mod tests {
         let input = invoke_input(request_id);
         let auth = auth_with(HashMap::new(), vec![]);
         let pipeline_keys = crate::crypto_pipeline::PipelineKeys::empty();
-        let registry = mazbri_crypto::AlgorithmRegistry::default_registry();
+        let registry = mazbri_crypto::AlgorithmRegistry::global();
         let ws_pool = crate::ws_pool::WsPool::new(crate::ws_pool::WsPoolConfig::default());
         let invalidation = mazbri_core::AuthInvalidationSpec::default();
+        let wire_clock = WireClock::new();
         let ctx = AdapterCtx {
             client: &client,
+            h2c_client: &client,
             ssrf: &ssrf,
             input: &input,
             base_url: "http://127.0.0.1",
@@ -577,11 +621,12 @@ mod tests {
             timeout: Duration::from_secs(2),
             ws_pool: &ws_pool,
             pipeline_keys: &pipeline_keys,
-            registry: &registry,
+            registry,
             invalidation: &invalidation,
             ws_stale_retry: None,
             observer: &crate::observe::NoopObserver,
             retry_log: &crate::observe::RetryLog::default(),
+            wire_clock: &wire_clock,
         };
         let url = format!("http://{addr}/");
         dispatch_http(

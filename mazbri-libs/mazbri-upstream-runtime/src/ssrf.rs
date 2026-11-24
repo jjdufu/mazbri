@@ -1,8 +1,9 @@
 //! SSRF checker: preflight URL validation + connect-time DNS filter (TOCTOU mitigation).
 //!
-//! Preflight (`validate_url`) rejects private hosts early.\
-//! `SsrfSafeResolver` is installed on the reqwest client so **connect-path DNS** also
-//! drops blocked IPs — narrowing the classic resolve-then-connect rebinding window.
+//! Preflight (`validate_url_syntax_and_literal` on data plane, `validate_url` on admin plane)
+//! rejects private hosts early.\
+//! `SsrfSafeResolver` is installed on outbound HTTP/h2c clients and `resolve_checked_socket_addrs`
+//! is used by `WsPool` so **connect-path DNS** drops blocked IPs across all protocols.
 //!
 //! # Address policy
 //!
@@ -73,6 +74,11 @@ pub struct SsrfChecker {
     allow_private: bool,
 }
 
+enum ParsedTargetHost {
+    LiteralIp,
+    Domain { host: String, port: u16 },
+}
+
 impl SsrfChecker {
     #[must_use]
     pub fn new() -> Self {
@@ -82,11 +88,6 @@ impl SsrfChecker {
     }
 
     /// Build a checker with an explicit private-network policy.
-    ///
-    /// `true` allows private (RFC1918 / IPv6 ULA) and loopback targets; link-local,
-    /// unspecified and cloud metadata endpoints are still blocked.
-    /// Production code should derive this from [`SsrfConfig`] (`[ssrf].allow_private_network`,
-    /// default `false`) rather than hardcoding `true`; tests / local mocks may pass `true`.
     #[must_use]
     pub fn with_allow_private(allow_private: bool) -> Self {
         Self { allow_private }
@@ -111,32 +112,13 @@ impl SsrfChecker {
         builder.dns_resolver(self.dns_resolver())
     }
 
-    /// # Errors
-    ///
-    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-    pub async fn validate_url(&self, raw_url: &str) -> Result<(), String> {
-        let url = Url::parse(raw_url).map_err(|e| format!("Invalid URL structure: {e}"))?;
-        let scheme = url.scheme();
-        if scheme != "http" && scheme != "https" {
-            return Err(format!("URL scheme must be http/https, got '{scheme}'"));
-        }
-        let host = url
-            .host_str()
-            .ok_or_else(|| "Missing host string in URL".to_string())?
-            .to_string();
-
-        if is_forbidden_metadata_host(&host) {
+    fn check_host_policy(&self, host: &str) -> Result<Option<IpAddr>, String> {
+        if is_forbidden_metadata_host(host) {
             return Err(format!("SSRF Violation: forbidden host '{host}'"));
         }
-
-        if !self.allow_private
-            && (host.eq_ignore_ascii_case("localhost") || host.ends_with(".localhost"))
-        {
+        if !self.allow_private && is_localhost_name(host) {
             return Err(format!("SSRF Violation: forbidden host '{host}'"));
         }
-
-        // Literal IP in URL: no DNS, check immediately.
-        // `host_str()` keeps IPv6 brackets (`[::1]`), strip them before parsing.
         let literal = host.trim_start_matches('[').trim_end_matches(']');
         if let Ok(ip) = literal.parse::<IpAddr>() {
             if is_ip_denied(ip, self.allow_private) {
@@ -144,22 +126,73 @@ impl SsrfChecker {
                     "SSRF Violation: Target IP {ip} resides in internal private subnet"
                 ));
             }
-            return Ok(());
+            return Ok(Some(ip));
         }
+        Ok(None)
+    }
 
+    fn parse_http_url(&self, raw_url: &str) -> Result<ParsedTargetHost, String> {
+        let url = Url::parse(raw_url).map_err(|e| format!("Invalid URL structure: {e}"))?;
+        let scheme = url.scheme();
+        if scheme != "http" && scheme != "https" {
+            return Err(format!("URL scheme must be http/https, got '{scheme}'"));
+        }
+        let host = url
+            .host_str()
+            .ok_or_else(|| "Missing host string in URL".to_string())?;
+        if self.check_host_policy(host)?.is_some() {
+            return Ok(ParsedTargetHost::LiteralIp);
+        }
         let port = url
             .port()
             .unwrap_or(if scheme == "https" { 443 } else { 80 });
-        let lookup_target = format!("{host}:{port}");
+        Ok(ParsedTargetHost::Domain {
+            host: host.to_string(),
+            port,
+        })
+    }
 
-        let ips = tokio::task::spawn_blocking(move || lookup_target.to_socket_addrs())
-            .await
-            .map_err(|e| format!("Task execution failed: {e}"))?
-            .map_err(|e| format!("DNS resolution failed for '{host}': {e}"))?;
+    /// 纯内存 URL 语法、元数据主机名、`localhost` 策略与字面量 IP 校验（零 DNS 查询）。
+    ///
+    /// 域名目标的 DNS 解析与私网拦截由连接建立期的 [`SsrfSafeResolver`] 或
+    /// [`Self::resolve_checked_socket_addrs`] 完成。
+    ///
+    /// # Errors
+    ///
+    /// URL 语法非法、scheme 非 `http`/`https`、命中禁止主机名或字面量私网 IP 时返回错误。
+    pub fn validate_url_syntax_and_literal(&self, raw_url: &str) -> Result<(), String> {
+        let _ = self.parse_http_url(raw_url)?;
+        Ok(())
+    }
 
-        let mut any = false;
-        for socket_addr in ips {
-            any = true;
+    /// 连接建立期主机解析与严格 SSRF 校验：若任一解析出的地址命中拒绝策略，整单拒绝。
+    ///
+    /// # Errors
+    ///
+    /// 主机命中黑名单、DNS 解析失败或解析结果含被禁地址时返回带 `SSRF Violation:` 标识的错误。
+    pub async fn resolve_checked_socket_addrs(
+        &self,
+        host: &str,
+        port: u16,
+    ) -> Result<Vec<SocketAddr>, String> {
+        if let Some(ip) = self.check_host_policy(host)? {
+            return Ok(vec![SocketAddr::new(ip, port)]);
+        }
+        let host_owned = host.to_string();
+        let host_for_lookup = host_owned.clone();
+        let resolved = tokio::task::spawn_blocking(move || {
+            (host_for_lookup.as_str(), port)
+                .to_socket_addrs()
+                .map(std::iter::Iterator::collect::<Vec<_>>)
+        })
+        .await
+        .map_err(|e| format!("Task execution failed: {e}"))?
+        .map_err(|e| format!("DNS resolution failed for '{host_owned}': {e}"))?;
+
+        if resolved.is_empty() {
+            return Err(format!("DNS resolution returned no addresses for '{host_owned}'"));
+        }
+        for socket_addr in &resolved {
             let ip = socket_addr.ip();
             if is_ip_denied(ip, self.allow_private) {
                 return Err(format!(
@@ -167,11 +200,43 @@ impl SsrfChecker {
                 ));
             }
         }
-        if !any {
-            return Err(format!("DNS resolution returned no addresses for '{host}'"));
-        }
-        Ok(())
+        Ok(resolved)
     }
+
+    /// 完整 URL + 同步 DNS 预检（管理面保存/探测 URL 时使用）。
+    ///
+    /// # Errors
+    ///
+    /// URL 非法、DNS 解析失败或目标地址被 SSRF 策略拦截时返回错误。
+    pub async fn validate_url(&self, raw_url: &str) -> Result<(), String> {
+        match self.parse_http_url(raw_url)? {
+            ParsedTargetHost::LiteralIp => Ok(()),
+            ParsedTargetHost::Domain { host, port } => {
+                let _ = self.resolve_checked_socket_addrs(&host, port).await?;
+                Ok(())
+            }
+        }
+    }
+}
+
+/// 从传输层错误链中提取连接期 `SsrfSafeResolver` 产生的 SSRF 拦截原因。
+#[must_use]
+pub fn extract_ssrf_error(err: &(dyn std::error::Error + 'static)) -> Option<String> {
+    let mut current: Option<&(dyn std::error::Error + 'static)> = Some(err);
+    while let Some(source) = current {
+        let msg = source.to_string();
+        if msg.contains("SSRF Violation:") || msg.contains("SSRF:") {
+            return Some(msg);
+        }
+        current = source.source();
+    }
+    let dbg = format!("{err:?}");
+    if let Some(idx) = dbg.find("SSRF Violation:") {
+        let tail = &dbg[idx..];
+        let clean = tail.split(['"', ')']).next().unwrap_or(tail);
+        return Some(clean.to_string());
+    }
+    None
 }
 
 /// Connect-time DNS resolver that never hands blocked IPs to the TCP stack.
@@ -182,42 +247,15 @@ pub struct SsrfSafeResolver {
 
 impl Resolve for SsrfSafeResolver {
     fn resolve(&self, name: Name) -> Resolving {
-        let allow_private = self.allow_private;
+        let checker = SsrfChecker::with_allow_private(self.allow_private);
         let host = name.as_str().to_string();
         Box::pin(async move {
-            // Literal IP hostnames skip system DNS.
-            if let Ok(ip) = host.parse::<IpAddr>() {
-                if is_ip_denied(ip, allow_private) {
-                    return Err(format!("SSRF: blocked connect to private/special IP {ip}").into());
-                }
-                let addrs: Addrs = Box::new(std::iter::once(SocketAddr::new(ip, 0)));
-                return Ok(addrs);
-            }
-
-            let host_for_lookup = host.clone();
-            let resolved = tokio::task::spawn_blocking(move || {
-                (host_for_lookup.as_str(), 0u16)
-                    .to_socket_addrs()
-                    .map(std::iter::Iterator::collect::<Vec<_>>)
-            })
-            .await
-            .map_err(|e| format!("SSRF DNS task failed for '{host}': {e}"))?
-            .map_err(|e| format!("SSRF DNS resolution failed for '{host}': {e}"))?;
-
-            let filtered: Vec<SocketAddr> = resolved
-                .into_iter()
-                .filter(|addr| !is_ip_denied(addr.ip(), allow_private))
-                .collect();
-
-            if filtered.is_empty() {
-                return Err(format!(
-                    "SSRF: no allowed addresses after filtering private IPs for '{host}'"
-                )
-                .into());
-            }
-
-            let addrs: Addrs = Box::new(filtered.into_iter());
-            Ok(addrs)
+            let addrs = checker
+                .resolve_checked_socket_addrs(&host, 0)
+                .await
+                .map_err( Box::<dyn std::error::Error + Send + Sync>::from )?;
+            let iter: Addrs = Box::new(addrs.into_iter());
+            Ok(iter)
         })
     }
 }
@@ -249,6 +287,15 @@ const AWS_METADATA_V6: Ipv6Addr = Ipv6Addr::new(0xfd00, 0x0ec2, 0, 0, 0, 0, 0, 0
 /// Hostnames that always resolve to a cloud metadata service.
 fn is_forbidden_metadata_host(host: &str) -> bool {
     host.eq_ignore_ascii_case("metadata.google.internal")
+}
+
+fn is_localhost_name(host: &str) -> bool {
+    if host.eq_ignore_ascii_case("localhost") {
+        return true;
+    }
+    host.len() > ".localhost".len()
+        && host.as_bytes()[host.len() - ".localhost".len()..]
+            .eq_ignore_ascii_case(b".localhost")
 }
 
 /// Addresses that stay blocked even when `allow_private_network = true`:
@@ -356,6 +403,32 @@ mod tests {
         }
     }
 
+    #[test]
+    fn syntax_and_literal_check_is_zero_dns_and_blocks_private_literals() {
+        let c = SsrfChecker::new();
+        for u in [
+            "http://127.0.0.1:8080/x",
+            "http://10.0.0.5/api",
+            "https://192.168.1.1/",
+            "http://[::1]:9000/",
+            "http://localhost:8080/",
+            "http://API.LOCALHOST/",
+            "http://metadata.google.internal/computeMetadata/v1/",
+            "ftp://example.com/",
+        ] {
+            assert!(
+                c.validate_url_syntax_and_literal(u).is_err(),
+                "{u} must be blocked synchronously"
+            );
+        }
+        // Non-existent domain passes pure syntax check without triggering DNS failure.
+        assert!(
+            c.validate_url_syntax_and_literal("https://nonexistent.invalid.example/v1")
+                .is_ok()
+        );
+        assert!(c.validate_url_syntax_and_literal("http://8.8.8.8/").is_ok());
+    }
+
     #[tokio::test]
     async fn validate_url_default_blocks_private_literals_and_localhost() {
         let c = SsrfChecker::new();
@@ -399,13 +472,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn resolver_respects_policy_for_literal_ips() {
+    async fn resolver_respects_policy_for_literal_ips_and_metadata_host() {
         let deny = SsrfChecker::new().dns_resolver();
         let allow = SsrfChecker::with_allow_private(true).dns_resolver();
         let name = |s: &str| s.parse::<Name>().unwrap();
         assert!(deny.resolve(name("127.0.0.1")).await.is_err());
+        assert!(deny.resolve(name("localhost")).await.is_err());
         assert!(allow.resolve(name("127.0.0.1")).await.is_ok());
         assert!(allow.resolve(name("10.0.0.1")).await.is_ok());
         assert!(allow.resolve(name("169.254.169.254")).await.is_err());
+        assert!(
+            allow
+                .resolve(name("metadata.google.internal"))
+                .await
+                .is_err()
+        );
     }
 }

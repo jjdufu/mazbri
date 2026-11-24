@@ -199,9 +199,8 @@ pub fn wrap_new_tenant_key(
     integrity_key: &[u8],
     wrapping_key_id: &str,
 ) -> Result<WrappedTenantKey, TenantKeyError> {
-    let registry = AlgorithmRegistry::default_registry();
     wrap_new_tenant_key_with_registry(
-        &registry,
+        AlgorithmRegistry::global(),
         tenant_id,
         key_version,
         master_key,
@@ -264,9 +263,8 @@ pub fn unwrap_tenant_key(
     key_version: &str,
     master_key: &[u8],
 ) -> Result<Vec<u8>, TenantKeyError> {
-    let registry = AlgorithmRegistry::default_registry();
     unwrap_tenant_key_with_registry(
-        &registry,
+        AlgorithmRegistry::global(),
         encrypted_secret_key,
         tenant_id,
         key_version,
@@ -318,10 +316,14 @@ pub fn verify_secret_key_digest(
     tenant_secret_key: &[u8],
     digest: &str,
 ) -> Result<bool, TenantKeyError> {
-    let registry = AlgorithmRegistry::default_registry();
     Ok(
-        secret_key_digest(&registry, integrity_key, tenant_id, key_version, tenant_secret_key)?
-            == digest,
+        secret_key_digest(
+            AlgorithmRegistry::global(),
+            integrity_key,
+            tenant_id,
+            key_version,
+            tenant_secret_key,
+        )? == digest,
     )
 }
 

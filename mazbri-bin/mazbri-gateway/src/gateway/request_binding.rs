@@ -169,7 +169,6 @@ fn required_binding_headers(headers: &HeaderMap) -> Result<BindingHeaderRefs<'_>
 
 /// 对称 HMAC 留在当前 worker；非对称（含 SM2）走 `spawn_blocking`。
 async fn verify_binding_signature_async(
-    crypto: &TenantCryptoState,
     version: SignatureVersion,
     key: &RequestBindingKey,
     signature_input: &str,
@@ -178,7 +177,7 @@ async fn verify_binding_signature_async(
 ) -> Result<(), RequestBindingError> {
     if version.is_symmetric() {
         return verify_binding_signature(
-            crypto.registry(),
+            AlgorithmRegistry::global(),
             version,
             key,
             signature_input,
@@ -186,14 +185,13 @@ async fn verify_binding_signature_async(
             signature,
         );
     }
-    let registry = crypto.registry().clone();
     let key = key.clone();
     let signature_input = signature_input.to_owned();
     let canonical = canonical.to_owned();
     let signature = signature.to_owned();
     tokio::task::spawn_blocking(move || {
         verify_binding_signature(
-            &registry,
+            AlgorithmRegistry::global(),
             version,
             &key,
             &signature_input,
@@ -292,15 +290,7 @@ pub async fn enforce_request_binding(
     let canonical = canonical_http_binding(method, path_and_query, timestamp, nonce, body);
     let verify_started = Instant::now();
     // 非对称（含 SM2）走 spawn_blocking，避免重 ECC 卡住 tokio worker。
-    verify_binding_signature_async(
-        crypto,
-        version,
-        &key,
-        signature_input,
-        &canonical,
-        signature,
-    )
-    .await?;
+    verify_binding_signature_async(version, &key, signature_input, &canonical, signature).await?;
     let verify_ms = mazbri_core::num::millis_u64(verify_started.elapsed());
     let envelope_nonce_prechecked = consume_request_nonces(
         crypto,
@@ -396,7 +386,7 @@ mod tests {
     /// 客户端（SDK / loadgen 共用的 `RequestSigner`）签名 → gateway 校验，覆盖全部 5 个版本族。
     #[test]
     fn request_signer_interops_with_gateway_for_every_version() {
-        let registry = AlgorithmRegistry::default_registry();
+        let registry = AlgorithmRegistry::global();
         for version in SignatureVersion::ALL {
             let alg = version.default_alg();
             let (client_material, server_material) = if version.is_symmetric() {
@@ -409,7 +399,7 @@ mod tests {
             let headers = signer.sign("POST", PATH, BODY).expect("sign");
             let key = server_key(alg, &server_material);
             verify_binding_signature(
-                &registry,
+                registry,
                 version,
                 &key,
                 &headers.signature_input,
@@ -420,7 +410,7 @@ mod tests {
             let tampered = canonical_http_binding("POST", PATH, headers.timestamp, &headers.nonce, b"{}");
             assert!(
                 verify_binding_signature(
-                    &registry,
+                    registry,
                     version,
                     &key,
                     &headers.signature_input,
@@ -435,7 +425,7 @@ mod tests {
 
     #[test]
     fn rejects_wrong_key_wrong_input_and_wrong_family() {
-        let registry = AlgorithmRegistry::default_registry();
+        let registry = AlgorithmRegistry::global();
         let alg = AlgorithmId::EcdsaP256Sha256;
         let client = generate_sign_keypair(alg).expect("keygen");
         let other = generate_sign_keypair(alg).expect("keygen");
@@ -445,7 +435,7 @@ mod tests {
         let good = server_key(alg, client.public_pem.as_bytes());
         let wrong_key = server_key(alg, other.public_pem.as_bytes());
         let check = |version, key: &RequestBindingKey, input: &str| {
-            verify_binding_signature(&registry, version, key, input, &canonical, &headers.signature)
+            verify_binding_signature(registry, version, key, input, &canonical, &headers.signature)
         };
         assert!(check(SignatureVersion::EcdsaV1, &good, &headers.signature_input).is_ok());
         let err = check(SignatureVersion::EcdsaV1, &wrong_key, &headers.signature_input).unwrap_err();
@@ -467,13 +457,13 @@ mod tests {
 
     #[test]
     fn hmac_key_cannot_verify_asymmetric_claim() {
-        let registry = AlgorithmRegistry::default_registry();
+        let registry = AlgorithmRegistry::global();
         let signer = RequestSigner::new("1", AlgorithmId::HmacSha256, &[9u8; 32]).expect("signer");
         let headers = signer.sign("POST", PATH, BODY).expect("sign");
         let key = server_key(AlgorithmId::HmacSha256, &[8u8; 32]);
         assert!(
             verify_binding_signature(
-                &registry,
+                registry,
                 SignatureVersion::HmacV1,
                 &key,
                 &headers.signature_input,

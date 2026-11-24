@@ -13,21 +13,20 @@ use super::token_bucket::TokenBucket;
 use crate::config::{ChannelRateLimitConfig, ChannelRateLimitMode};
 use dashmap::DashMap;
 use mazbri_core::num::SaturatingFrom;
+use mazbri_routing::{ChannelRateLimitOverrides, RouteRateLimitMode};
 use parking_lot::Mutex;
-use serde_json::Value;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 use tracing::info;
 
-/// Per-request overrides resolved from `channels.config` (+ global defaults).
+/// Per-request overrides resolved from pre-parsed `channels.config` (+ global defaults).
 #[derive(Debug, Clone)]
 pub struct ChannelRateLimitRequest {
     pub channel_id: String,
     pub channel_code: String,
     pub qps_limit: i32,
-    /// Full channel JSON config from route snapshot.
-    pub channel_config: Value,
+    pub overrides: ChannelRateLimitOverrides,
 }
 
 #[derive(Debug, Clone)]
@@ -110,6 +109,7 @@ pub struct ChannelRateLimitEngine {
 }
 
 impl ChannelRateLimitEngine {
+    #[must_use]
     pub fn new(config: ChannelRateLimitConfig) -> Self {
         let bucket_idle_ttl = Duration::from_secs(config.bucket_idle_ttl_secs.max(1));
         info!(
@@ -129,27 +129,30 @@ impl ChannelRateLimitEngine {
         }
     }
 
-    fn resolve_mode(&self, channel_config: &Value) -> ChannelRateLimitMode {
-        channel_config
-            .get("rate_limit_mode")
-            .and_then(Value::as_str)
-            .and_then(ChannelRateLimitMode::parse)
-            .unwrap_or(self.config.default_mode)
+    #[must_use]
+    pub const fn is_enabled(&self) -> bool {
+        self.config.enabled
     }
 
-    fn resolve_max_wait_ms(&self, channel_config: &Value) -> u64 {
-        channel_config
-            .get("rate_limit_max_wait_ms")
-            .and_then(Value::as_u64)
+    const fn resolve_mode(&self, overrides: ChannelRateLimitOverrides) -> ChannelRateLimitMode {
+        match overrides.mode {
+            Some(RouteRateLimitMode::Reject) => ChannelRateLimitMode::Reject,
+            Some(RouteRateLimitMode::Queue) => ChannelRateLimitMode::Queue,
+            None => self.config.default_mode,
+        }
+    }
+
+    fn resolve_max_wait_ms(&self, overrides: ChannelRateLimitOverrides) -> u64 {
+        overrides
+            .max_wait_ms
             .filter(|v| *v > 0)
             .unwrap_or(self.config.max_wait_ms)
             .max(1)
     }
 
-    fn resolve_max_queue_depth(&self, channel_config: &Value) -> u64 {
-        channel_config
-            .get("rate_limit_max_queue_depth")
-            .and_then(Value::as_u64)
+    fn resolve_max_queue_depth(&self, overrides: ChannelRateLimitOverrides) -> u64 {
+        overrides
+            .max_queue_depth
             .filter(|v| *v > 0)
             .unwrap_or(self.config.max_queue_depth)
             .max(1)
@@ -173,7 +176,7 @@ impl ChannelRateLimitEngine {
         spec: BucketSpec,
         now: Instant,
     ) -> Result<(), u64> {
-        let cell = self.load_or_create_bucket(channel_id, &spec.clone(), now);
+        let cell = self.load_or_create_bucket(channel_id, &spec, now);
         let mut guard = cell.lock();
         guard.refresh_if_needed(&spec, now);
         guard.allow_or_retry_after(1, now)
@@ -215,7 +218,7 @@ impl ChannelRateLimitEngine {
     /// Check channel total QPS before an upstream attempt (async: supports queue mode).
     pub async fn check(&self, req: ChannelRateLimitRequest) -> ChannelRateLimitDecision {
         let started_at = Instant::now();
-        let mode = self.resolve_mode(&req.channel_config);
+        let mode = self.resolve_mode(req.overrides);
 
         if !self.config.enabled {
             Self::record_allow(started_at, mode, "disabled", 0);
@@ -275,8 +278,8 @@ impl ChannelRateLimitEngine {
         mode: ChannelRateLimitMode,
         started_at: Instant,
     ) -> ChannelRateLimitDecision {
-        let max_wait = Duration::from_millis(self.resolve_max_wait_ms(&req.channel_config));
-        let max_depth = usize::saturating_from(self.resolve_max_queue_depth(&req.channel_config));
+        let max_wait = Duration::from_millis(self.resolve_max_wait_ms(req.overrides));
+        let max_depth = usize::saturating_from(self.resolve_max_queue_depth(req.overrides));
 
         let depth = self
             .queue_depths
@@ -334,7 +337,6 @@ impl ChannelRateLimitEngine {
                     if remaining.is_zero() {
                         continue;
                     }
-                    // Sleep until next expected token, capped by remaining wait and a small poll.
                     let sleep_ms = retry_after_ms
                         .clamp(1, 50)
                         .min(mazbri_core::num::millis_u64(remaining));
@@ -361,7 +363,6 @@ impl ChannelRateLimitEngine {
             .collect::<Vec<_>>();
         for key in &keys {
             self.buckets.remove(key);
-            // Drop depth counters only when no waiters remain.
             if let Some(entry) = self.queue_depths.get(key)
                 && entry.load(Ordering::Acquire) == 0
             {
@@ -390,14 +391,14 @@ impl ChannelRateLimitEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
+    use serde_json::{Value, json};
 
-    fn req(id: &str, code: &str, qps: i32, config: Value) -> ChannelRateLimitRequest {
+    fn req(id: &str, code: &str, qps: i32, config: &Value) -> ChannelRateLimitRequest {
         ChannelRateLimitRequest {
             channel_id: id.to_string(),
             channel_code: code.to_string(),
             qps_limit: qps,
-            channel_config: config,
+            overrides: ChannelRateLimitOverrides::from_channel_config(config),
         }
     }
 
@@ -405,7 +406,7 @@ mod tests {
     async fn unlimited_when_qps_zero() {
         let engine = ChannelRateLimitEngine::new(ChannelRateLimitConfig::default());
         for _ in 0..100 {
-            let d = engine.check(req("ch-1", "POSTS", 0, Value::Null)).await;
+            let d = engine.check(req("ch-1", "POSTS", 0, &Value::Null)).await;
             assert!(matches!(d, ChannelRateLimitDecision::Allow { .. }));
         }
     }
@@ -421,7 +422,9 @@ mod tests {
         let mut denies = 0u32;
         for _ in 0..10 {
             if matches!(
-                engine.check(req("ch-posts", "POSTS", 5, Value::Null)).await,
+                engine
+                    .check(req("ch-posts", "POSTS", 5, &Value::Null))
+                    .await,
                 ChannelRateLimitDecision::Deny {
                     reason: "channel_qps",
                     ..
@@ -440,8 +443,9 @@ mod tests {
             ..Default::default()
         };
         let engine = ChannelRateLimitEngine::new(cfg);
+        assert!(!engine.is_enabled());
         for _ in 0..50 {
-            let d = engine.check(req("ch-1", "POSTS", 1, Value::Null)).await;
+            let d = engine.check(req("ch-1", "POSTS", 1, &Value::Null)).await;
             assert!(matches!(d, ChannelRateLimitDecision::Allow { .. }));
         }
     }
@@ -457,12 +461,10 @@ mod tests {
         };
         let engine = ChannelRateLimitEngine::new(cfg);
 
-        // Exhaust burst (1).
-        let first = engine.check(req("ch-q", "Q", 1, Value::Null)).await;
+        let first = engine.check(req("ch-q", "Q", 1, &Value::Null)).await;
         assert!(matches!(first, ChannelRateLimitDecision::Allow { .. }));
 
-        // Second must wait ~1s for refill then allow.
-        let second = engine.check(req("ch-q", "Q", 1, Value::Null)).await;
+        let second = engine.check(req("ch-q", "Q", 1, &Value::Null)).await;
         match second {
             ChannelRateLimitDecision::Allow {
                 queue_wait_ms,
@@ -491,60 +493,48 @@ mod tests {
         };
         let engine = Arc::new(ChannelRateLimitEngine::new(cfg));
 
-        // Consume the only token (qps=1).
-        let _ = engine.check(req("ch-full", "F", 1, Value::Null)).await;
+        let _ = engine.check(req("ch-full", "F", 1, &Value::Null)).await;
 
         let e1 = Arc::clone(&engine);
         let e2 = Arc::clone(&engine);
         let e3 = Arc::clone(&engine);
-        let t1 = tokio::spawn(async move { e1.check(req("ch-full", "F", 1, Value::Null)).await });
-        let t2 = tokio::spawn(async move { e2.check(req("ch-full", "F", 1, Value::Null)).await });
-        // Give first two time to enter queue.
-        tokio::time::sleep(Duration::from_millis(30)).await;
-        let third = e3.check(req("ch-full", "F", 1, Value::Null)).await;
+        let t1 = tokio::spawn(async move { e1.check(req("ch-full", "F", 1, &Value::Null)).await });
+        let t2 = tokio::spawn(async move { e2.check(req("ch-full", "F", 1, &Value::Null)).await });
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        let d3 = e3.check(req("ch-full", "F", 1, &Value::Null)).await;
         assert!(
             matches!(
-                third,
+                d3,
                 ChannelRateLimitDecision::Deny {
                     reason: "queue_full",
                     ..
                 }
             ),
-            "expected queue_full, got {third:?}"
+            "expected queue_full, got {d3:?}"
         );
-        // Cancel waiters by dropping (abort tasks).
         t1.abort();
         t2.abort();
-        let _ = t1.await;
-        let _ = t2.await;
     }
 
     #[tokio::test]
-    async fn channel_config_overrides_mode_to_queue() {
+    async fn per_channel_override_switches_mode() {
         let cfg = ChannelRateLimitConfig {
             default_mode: ChannelRateLimitMode::Reject,
             max_wait_ms: 2000,
+            max_queue_depth: 10,
+            burst_multiplier: 1.0,
             ..Default::default()
         };
         let engine = ChannelRateLimitEngine::new(cfg);
-
-        let _ = engine.check(req("ch-ov", "O", 1, Value::Null)).await;
-
-        let override_cfg = json!({
-            "rate_limit_mode": "queue",
-            "rate_limit_max_wait_ms": 2000,
-            "rate_limit_max_queue_depth": 10
-        });
-        let d = engine.check(req("ch-ov", "O", 1, override_cfg)).await;
-        assert!(
-            matches!(
-                d,
-                ChannelRateLimitDecision::Allow {
-                    mode: ChannelRateLimitMode::Queue,
-                    ..
-                }
-            ),
-            "channel override should queue, got {d:?}"
-        );
+        let override_cfg = json!({"rate_limit_mode": "queue", "rate_limit_max_wait_ms": 1500});
+        let _ = engine.check(req("ch-ov", "OV", 1, &override_cfg)).await;
+        let second = engine.check(req("ch-ov", "OV", 1, &override_cfg)).await;
+        assert!(matches!(
+            second,
+            ChannelRateLimitDecision::Allow {
+                mode: ChannelRateLimitMode::Queue,
+                ..
+            }
+        ));
     }
 }

@@ -90,6 +90,9 @@ pub struct ProbeUpstreamMeta {
     pub adapter: String,
     /// 纯上游耗时（reqwest 发送 + 读 body），不含 bypass 内部处理。
     pub upstream_wire_ms: u64,
+    /// 本次调用累计全部外部上游网络 I/O 微秒耗时。
+    #[serde(default)]
+    pub upstream_wire_us: u64,
     pub upstream_request_id: String,
     pub method: String,
     pub path: String,
@@ -182,12 +185,14 @@ impl From<InvokeUpstreamMeta> for ProbeUpstreamMeta {
             method,
             path,
             protocol,
+            upstream_wire_us,
         } = m;
         Self {
             status,
             url,
             adapter,
             upstream_wire_ms,
+            upstream_wire_us,
             upstream_request_id,
             method,
             path,
@@ -272,6 +277,7 @@ mod tests {
                 method: "POST".into(),
                 path: "/x".into(),
                 protocol: "HTTP/1.1".into(),
+                upstream_wire_us: 59_120,
             }),
             internal_retries: 1,
             retry_reasons: vec!["auth_rejected:jsonrpc_code".into()],

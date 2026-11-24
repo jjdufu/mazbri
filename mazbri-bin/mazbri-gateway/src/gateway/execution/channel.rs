@@ -1,30 +1,14 @@
 use super::{
-    API_PROXY_REQUESTS_TOTAL, AttemptCtx, BYPASS_CONTRACT_ID, CBPRO_FALLBACK_TTL_SECS,
-    CandidateChannel, CircuitResult, Deserialize, Duration, FallbackSnapshot, GatewayRequest,
-    InteractionEvent, MazbriClaims, ObservationRequestParts, ProxyError, ProxyState, StoreRequest,
-    SwitchCondition, TimeoutPhase, TraceContext, UpstreamResponse, build_fallback_cache_key,
-    build_observation_request, classify_proxy_result, enqueue_cbpro_observation,
-    execute_http_upstream_request, get_or_create_breaker, info, persist_interaction_event,
-    proxy_body_to_json_value, record_upstream_timeout, warn,
+    API_PROXY_REQUESTS_TOTAL, AttemptCtx, CBPRO_FALLBACK_TTL_SECS, CircuitResult, Duration,
+    FallbackSnapshot, GatewayCandidateChannel, GatewayRequest, MazbriClaims,
+    ObservationRequestParts, ProxyError, ProxyState, StoreRequest, SwitchCondition, TimeoutPhase,
+    TraceContext, UpstreamResponse, build_fallback_cache_key, build_observation_request,
+    classify_proxy_result, debug, enqueue_cbpro_observation, execute_http_upstream_request,
+    get_or_create_breaker, proxy_body_to_json_value, record_upstream_timeout, warn,
 };
 use mazbri_upstream_contracts::UPSTREAM_AUTH_REJECTED_PREFIX;
 use tracing::Instrument;
 
-pub(super) async fn persist_event_best_effort(state: &ProxyState, event: &InteractionEvent) {
-    if let Err(error) = persist_interaction_event(&state.db, event).await {
-        warn!(
-            event_id = % event.id, request_id = % event.request_id, error = % error,
-            "Failed to persist gateway interaction event"
-        );
-    }
-}
-pub(super) fn spawn_persist_event_best_effort(state: &ProxyState, event: &InteractionEvent) {
-    let state = state.clone();
-    let event = event.clone();
-    tokio::spawn(async move {
-        persist_event_best_effort(&state, &event).await;
-    });
-}
 pub(super) fn should_switch(error: &ProxyError, condition: &SwitchCondition) -> bool {
     match error {
         ProxyError::GatewayTimeout(_) => condition.switch_on_timeout,
@@ -35,18 +19,20 @@ pub(super) fn should_switch(error: &ProxyError, condition: &SwitchCondition) -> 
         _ => false,
     }
 }
+
 pub(super) fn should_switch_status(status: u16, condition: &SwitchCondition) -> bool {
     condition.switch_on_status_codes.contains(&status)
 }
+
 /// 一次候选通道尝试：通道与其在本请求内的尝试序号（从 1 起）。
 #[derive(Clone, Copy)]
 pub(super) struct ChannelAttempt<'a> {
-    pub(super) channel: &'a CandidateChannel,
+    pub(super) channel: &'a GatewayCandidateChannel,
     pub(super) order: usize,
 }
 
 impl<'a> ChannelAttempt<'a> {
-    pub(super) fn new(channel: &'a CandidateChannel, order: usize) -> Self {
+    pub(super) fn new(channel: &'a GatewayCandidateChannel, order: usize) -> Self {
         Self { channel, order }
     }
 }
@@ -62,8 +48,8 @@ pub(super) async fn execute_channel_attempt(
     trace_context: &TraceContext,
 ) -> Result<UpstreamResponse, ProxyError> {
     let channel = attempt.channel;
-    let (mode, _contract) = resolve_mode_and_contract_hint(channel);
-    let span = upstream_attempt_span(attempt.order, channel, &mode);
+    let (mode, _contract) = channel.prepared.mode_and_contract_hint();
+    let span = upstream_attempt_span(attempt.order, channel, mode);
     let result = run_channel_attempt(state, req, attempt, claims, request_id, trace_context, mode)
         .instrument(span.clone())
         .await;
@@ -74,7 +60,7 @@ pub(super) async fn execute_channel_attempt(
 /// 一次候选通道尝试的 `upstream.attempt` span（结果由 [`record_attempt_span`] 补写）。
 fn upstream_attempt_span(
     attempt_order: usize,
-    channel: &CandidateChannel,
+    channel: &GatewayCandidateChannel,
     mode: &str,
 ) -> tracing::Span {
     tracing::info_span!(
@@ -115,17 +101,17 @@ async fn run_channel_attempt(
     claims: &MazbriClaims,
     request_id: &str,
     trace_context: &TraceContext,
-    mode: String,
+    mode: &str,
 ) -> Result<UpstreamResponse, ProxyError> {
     let channel = attempt.channel;
     let addr = channel.supplier_upstream_url.as_str();
-    info!(
+    debug!(
         "[{}] Attempting channel {} at {} for tenant [{}] mode={}",
         request_id, channel.channel_id, addr, claims.tenant_code, mode
     );
     let breaker = get_or_create_breaker(state, &req.product_id).await;
-    let product_id = req.product_id.clone();
-    let method = req.method.clone();
+    let product_id = req.product_id.as_str();
+    let method = req.method.as_str();
     let timeout_duration = Duration::from_millis(channel.switch_condition.timeout_ms);
     let timeout_result = tokio::time::timeout(
         timeout_duration,
@@ -137,7 +123,7 @@ async fn run_channel_attempt(
                 claims,
                 AttemptCtx {
                     max_retries: channel.switch_condition.max_retries,
-                    mode: &mode,
+                    mode,
                     attempt_order: u32::try_from(attempt.order).unwrap_or(u32::MAX),
                 },
                 trace_context,
@@ -151,7 +137,7 @@ async fn run_channel_attempt(
             CircuitResult::Success(response) => {
                 let status = response.status.to_string();
                 let result_label = classify_proxy_result(response.status, None);
-                record_proxy_metric(&product_id, &method, &status, &mode, result_label);
+                record_proxy_metric(product_id, method, &status, mode, result_label);
                 Ok(response)
             }
             CircuitResult::Rejected {
@@ -167,7 +153,7 @@ async fn run_channel_attempt(
                     reason = %reason,
                     "circuit_breaker.rejected"
                 );
-                record_proxy_metric(&product_id, &method, "503", &mode, "circuit_open");
+                record_proxy_metric(product_id, method, "503", mode, "circuit_open");
                 Err(ProxyError::CircuitOpen(format!("服务暂时不可用: {reason}")))
             }
             CircuitResult::Failure { error } => {
@@ -176,7 +162,7 @@ async fn run_channel_attempt(
                     request_id, product_id, error
                 );
                 if error.starts_with(UPSTREAM_AUTH_REJECTED_PREFIX) {
-                    record_proxy_metric(&product_id, &method, "502", &mode, "upstream_auth");
+                    record_proxy_metric(product_id, method, "502", mode, "upstream_auth");
                     return Err(ProxyError::UpstreamAuthRejected(error));
                 }
                 let result_label = if error.contains("contract") || error.contains("contract_id") {
@@ -184,7 +170,7 @@ async fn run_channel_attempt(
                 } else {
                     "upstream_error"
                 };
-                record_proxy_metric(&product_id, &method, "502", &mode, result_label);
+                record_proxy_metric(product_id, method, "502", mode, result_label);
                 Err(ProxyError::BadGateway(error))
             }
         }
@@ -198,8 +184,8 @@ async fn run_channel_attempt(
             timeout_ms = channel.switch_condition.timeout_ms,
             "upstream.timeout"
         );
-        record_proxy_metric(&product_id, &method, "504", &mode, "timeout");
-        record_upstream_timeout(&mode, TimeoutPhase::Read);
+        record_proxy_metric(product_id, method, "504", mode, "timeout");
+        record_upstream_timeout(mode, TimeoutPhase::Read);
         Err(ProxyError::GatewayTimeout(format!(
             "channel wait exceeded switch_condition.timeout_ms for product={product_id}"
         )))
@@ -212,37 +198,34 @@ fn record_proxy_metric(product_id: &str, method: &str, status: &str, mode: &str,
         .inc();
 }
 
-/// 从 `channel.supplier_config` 解析 mode / contract 提示（失败时 unknown，正式路径在 execute 内再校验）。
-pub(super) fn resolve_mode_and_contract_hint(channel: &CandidateChannel) -> (String, String) {
-    match mazbri_core::SupplierConfig::deserialize(&channel.supplier_config) {
-        Ok(cfg) if cfg.is_transparent() => {
-            let adapter = mazbri_core::parse_channel_config_egress(&channel.channel_config)
-                .map_or_else(|_| "transparent".to_string(), |s| s.adapter);
-            (adapter, BYPASS_CONTRACT_ID.to_string())
-        }
-        Ok(cfg) if cfg.is_microservice() => {
-            let contract = cfg
-                .contract_id
-                .as_deref()
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-                .unwrap_or("unknown")
-                .to_string();
-            ("microservice".to_string(), contract)
-        }
-        _ => ("unknown".to_string(), "unknown".to_string()),
-    }
-}
-pub(super) async fn store_fallback_snapshot(
+/// 异步保存 `CBPro` 兜底快照（脱离租户响应主路径）。
+pub(super) fn spawn_store_fallback_snapshot(
     state: &ProxyState,
     req: &GatewayRequest,
     claims: &MazbriClaims,
     request_id: &str,
     response: &UpstreamResponse,
 ) {
-    if !(200..300).contains(&response.status) {
+    if !(200..300).contains(&response.status) || state.cbpro_client.is_none() {
         return;
     }
+    let state = state.clone();
+    let req = req.clone();
+    let claims = claims.clone();
+    let request_id = request_id.to_string();
+    let response = response.clone();
+    tokio::spawn(async move {
+        store_fallback_snapshot(&state, &req, &claims, &request_id, &response).await;
+    });
+}
+
+async fn store_fallback_snapshot(
+    state: &ProxyState,
+    req: &GatewayRequest,
+    claims: &MazbriClaims,
+    request_id: &str,
+    response: &UpstreamResponse,
+) {
     let Some(cbpro_client) = state.cbpro_client.as_ref() else {
         return;
     };
@@ -259,8 +242,6 @@ pub(super) async fn store_fallback_snapshot(
         ttl_secs: CBPRO_FALLBACK_TTL_SECS,
         tags: vec![req.method.clone(), req.path.clone()],
     };
-    // Probe connectivity first; if the channel is stale this forces invalidate+reconnect
-    // before the larger store_response payload is sent.
     if let Err(error) = cbpro_client.health_check().await {
         warn!(
             product_id = %req.product_id,
@@ -271,8 +252,6 @@ pub(super) async fn store_fallback_snapshot(
     }
     let store_response = cbpro_client.store_response(request).await;
     if !store_response.success {
-        // Fail-open for the tenant request, but surface store failures at warn so
-        // ops can see snapshot loss (dead tarpc channel, cbpro down, etc.).
         warn!(
             cache_key = %cache_key,
             product_id = %req.product_id,
