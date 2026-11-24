@@ -84,31 +84,48 @@ impl CallbackPayloadContext<'_> {
     }
 }
 
+/// Cached active callback subscription id per `(tenant_id, product_id)`.
+/// Eliminates a PostgreSQL round-trip on every single request when no callback is configured.
+static CALLBACK_SUBSCRIPTION_CACHE: LazyLock<moka::future::Cache<(Uuid, Uuid), Option<Uuid>>> =
+    LazyLock::new(|| {
+        moka::future::Cache::builder()
+            .max_capacity(100_000)
+            .time_to_live(Duration::from_secs(30))
+            .build()
+    });
+
 pub(crate) async fn enqueue_callback_delivery(
     state: &ProxyState,
     product_id: Uuid,
     ctx: CallbackPayloadContext<'_>,
 ) {
-    let subscription =
-        match repository::find_active_subscription(&state.db, ctx.tenant_id, product_id).await {
-            Ok(subscription) => subscription,
-            Err(error) => {
-                warn!(
-                    tenant_id = % ctx.tenant_id, product_id = % ctx.product_code, error = % error,
-                    "Failed to query callback subscription"
-                );
-                return;
-            }
-        };
-    let Some(subscription) = subscription else {
+    let cache_key = (ctx.tenant_id, product_id);
+    let subscription_id = match CALLBACK_SUBSCRIPTION_CACHE
+        .try_get_with(cache_key, async {
+            repository::find_active_subscription(&state.db, ctx.tenant_id, product_id)
+                .await
+                .map(|subscription| subscription.map(|s| s.id))
+        })
+        .await
+    {
+        Ok(id) => id,
+        Err(error) => {
+            warn!(
+                tenant_id = % ctx.tenant_id, product_id = % ctx.product_code, error = % error,
+                "Failed to query callback subscription"
+            );
+            return;
+        }
+    };
+    let Some(subscription_id) = subscription_id else {
         return;
     };
     let payload = ctx.build_payload();
     if let Err(error) =
-        repository::enqueue_callback(&state.db, subscription.id, ctx.request_id, &payload).await
+        repository::enqueue_callback(&state.db, subscription_id, ctx.request_id, &payload).await
     {
         warn!(
-            subscription_id = % subscription.id, request_id = % ctx.request_id, error = %
+            subscription_id = % subscription_id, request_id = % ctx.request_id, error = %
             error, "Failed to enqueue callback delivery"
         );
     }
@@ -454,8 +471,9 @@ pub(crate) fn spawn_post_response_tasks(state: &AppState, args: PostResponseTask
             args.usage_event_produced,
         );
         let ((), billing_record_ms) = tokio::join!(callback_task, billing_task);
-        let post_response_ms = mazbri_core::num::millis_u64(started_at.elapsed());
-        let stage_ids = super::stage_log::stage_span("post_response", post_response_ms)
+        let post_elapsed = started_at.elapsed();
+        let post_response_ms = mazbri_core::num::millis_u64(post_elapsed);
+        let stage_ids = super::stage_log::stage_span("post_response", post_elapsed)
             .product(&args.req.product_id)
             .record_with_parent(&parent);
         stage_log!(

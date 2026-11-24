@@ -418,6 +418,15 @@ fn json_console_layers(
         json_layer(stdout_writer.clone(), true).with_filter(console_debug_filter);
     vec![console_layer_info.boxed(), console_layer_debug.boxed()]
 }
+fn non_blocking_file_writer(
+    writer: DailyRollingWriter,
+) -> (tracing_appender::non_blocking::NonBlocking, WorkerGuard) {
+    tracing_appender::non_blocking::NonBlockingBuilder::default()
+        .buffered_lines_limit(256_000)
+        .lossy(true)
+        .finish(writer)
+}
+
 fn setup_json_layers(
     log_dir: &Path,
     base_name: &str,
@@ -425,7 +434,7 @@ fn setup_json_layers(
     routes: &[LogRoute],
     otlp_tracer: Option<opentelemetry_sdk::trace::Tracer>,
 ) -> Result<Vec<WorkerGuard>> {
-    let (default_writer, default_guard) = tracing_appender::non_blocking(DailyRollingWriter::new(
+    let (default_writer, default_guard) = non_blocking_file_writer(DailyRollingWriter::new(
         log_dir.to_path_buf(),
         base_name.to_string(),
     ));
@@ -456,7 +465,7 @@ fn setup_json_layers(
         vec![default_layer_info.boxed(), default_layer_debug.boxed()];
     for (index, route) in routes.iter().cloned().enumerate() {
         let route_file = route.basename_for(base_name);
-        let (writer, guard) = tracing_appender::non_blocking(DailyRollingWriter::new(
+        let (writer, guard) = non_blocking_file_writer(DailyRollingWriter::new(
             log_dir.to_path_buf(),
             route_file,
         ));
@@ -506,7 +515,7 @@ fn setup_pretty_layers(
         .with_writer(io::stdout)
         .with_target(true)
         .with_filter(env_filter.clone());
-    let (default_writer, default_guard) = tracing_appender::non_blocking(DailyRollingWriter::new(
+    let (default_writer, default_guard) = non_blocking_file_writer(DailyRollingWriter::new(
         log_dir.to_path_buf(),
         base_name.to_string(),
     ));
@@ -525,7 +534,7 @@ fn setup_pretty_layers(
     let mut file_layers: Vec<Box<dyn Layer<Registry> + Send + Sync>> = vec![default_layer.boxed()];
     for (index, route) in routes.iter().cloned().enumerate() {
         let route_file = route.basename_for(base_name);
-        let (writer, guard) = tracing_appender::non_blocking(DailyRollingWriter::new(
+        let (writer, guard) = non_blocking_file_writer(DailyRollingWriter::new(
             log_dir.to_path_buf(),
             route_file,
         ));

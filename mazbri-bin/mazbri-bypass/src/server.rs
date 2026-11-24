@@ -110,6 +110,10 @@ pub async fn serve(
     Server::builder()
         .tls_config(tls_config)
         .map_err(|e| anyhow::anyhow!("failed to configure tonic TLS: {e}"))?
+        .tcp_nodelay(true)
+        .http2_adaptive_window(Some(true))
+        .initial_connection_window_size(Some(4 * 1024 * 1024))
+        .initial_stream_window_size(Some(1024 * 1024))
         .concurrency_limit_per_connection(max_connections as usize)
         .add_service(BypassGrpcServer::new(service))
         .serve(addr)

@@ -15,14 +15,14 @@
 
 use crate::metrics::{SpanDropReason, record_spans_dropped};
 use anyhow::{Context, Result};
-use opentelemetry::trace::TracerProvider as _;
-use opentelemetry::{Array, KeyValue, StringValue, Value};
+use opentelemetry::trace::{Link, SpanKind, TraceContextExt as _, TraceId, TracerProvider as _};
+use opentelemetry::{Array, Context as OtelContext, KeyValue, StringValue, Value};
 use opentelemetry_otlp::{SpanExporter, WithExportConfig};
 use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::error::OTelSdkResult;
 use opentelemetry_sdk::trace::{
-    BatchConfigBuilder, BatchSpanProcessor, RandomIdGenerator, Sampler, SdkTracerProvider,
-    SpanData, SpanLimits, SpanProcessor, Tracer,
+    BatchConfigBuilder, BatchSpanProcessor, RandomIdGenerator, Sampler, SamplingDecision,
+    SamplingResult, SdkTracerProvider, ShouldSample, SpanData, SpanLimits, SpanProcessor, Tracer,
 };
 use opentelemetry_semantic_conventions::resource::SERVICE_NAME;
 use std::sync::Arc;
@@ -179,8 +179,6 @@ pub fn build_otlp_tracer(options: OtlpExportOptions<'_>) -> Result<(Tracer, Otlp
     } else {
         Sampler::TraceIdRatioBased(ratio)
     };
-    let sampler = Sampler::ParentBased(Box::new(root_sampler));
-
     let exporter = SpanExporter::builder()
         .with_http()
         .with_endpoint(endpoint)
@@ -194,9 +192,8 @@ pub fn build_otlp_tracer(options: OtlpExportOptions<'_>) -> Result<(Tracer, Otlp
         )])
         .build();
 
-    let provider = SdkTracerProvider::builder()
+    let provider_builder = SdkTracerProvider::builder()
         .with_span_processor(BoundedSpanProcessor::new(exporter, options.batch))
-        .with_sampler(sampler)
         .with_id_generator(RandomIdGenerator::default())
         .with_span_limits(SpanLimits {
             max_attributes_per_span: MAX_ATTRIBUTES_PER_SPAN,
@@ -204,11 +201,87 @@ pub fn build_otlp_tracer(options: OtlpExportOptions<'_>) -> Result<(Tracer, Otlp
             max_links_per_span: MAX_LINKS_PER_SPAN,
             ..SpanLimits::default()
         })
-        .with_resource(resource)
-        .build();
+        .with_resource(resource);
+    let provider = if options.service_name == "mazbri-gateway" {
+        provider_builder
+            .with_sampler(IngressParentBasedSampler::new(root_sampler))
+            .build()
+    } else {
+        provider_builder
+            .with_sampler(Sampler::ParentBased(Box::new(root_sampler)))
+            .build()
+    };
 
     let tracer = provider.tracer(options.service_name.to_string());
     Ok((tracer, OtlpGuard { provider }))
+}
+
+/// External ingress sampler for `mazbri-gateway`.
+///
+/// External callers (e.g. customer SDKs or load generators) often send `traceparent` with
+/// `sampled=0` (`-00`). Standard `ParentBased` drops 100% of those traces. At the gateway
+/// ingress we preserve the external `trace_id` for correlation, ignore external `sampled=0`
+/// by delegating to the gateway's own `root` sampler, and still obey local parent decisions
+/// so child spans within the gateway stay consistent (and downstream internal services still
+/// follow the gateway's propagated `01`/`00` via standard `ParentBased`).
+#[derive(Debug, Clone)]
+struct IngressParentBasedSampler {
+    root: Sampler,
+}
+
+impl IngressParentBasedSampler {
+    const fn new(root: Sampler) -> Self {
+        Self { root }
+    }
+}
+
+impl ShouldSample for IngressParentBasedSampler {
+    fn should_sample(
+        &self,
+        parent_context: Option<&OtelContext>,
+        trace_id: TraceId,
+        name: &str,
+        span_kind: &SpanKind,
+        attributes: &[KeyValue],
+        links: &[Link],
+    ) -> SamplingResult {
+        if let Some(parent_cx) = parent_context.filter(|cx| cx.has_active_span()) {
+            let parent_span = parent_cx.span();
+            let parent_sc = parent_span.span_context();
+            if parent_sc.is_valid() {
+                if parent_sc.is_remote() {
+                    if parent_sc.is_sampled() {
+                        return SamplingResult {
+                            decision: SamplingDecision::RecordAndSample,
+                            attributes: Vec::new(),
+                            trace_state: parent_sc.trace_state().clone(),
+                        };
+                    }
+                    // Remote parent not sampled (`-00`): re-decide using gateway's root sampler.
+                    return self.root.should_sample(
+                        parent_context,
+                        trace_id,
+                        name,
+                        span_kind,
+                        attributes,
+                        links,
+                    );
+                }
+                let decision = if parent_sc.is_sampled() {
+                    SamplingDecision::RecordAndSample
+                } else {
+                    SamplingDecision::Drop
+                };
+                return SamplingResult {
+                    decision,
+                    attributes: Vec::new(),
+                    trace_state: parent_sc.trace_state().clone(),
+                };
+            }
+        }
+        self.root
+            .should_sample(parent_context, trace_id, name, span_kind, attributes, links)
+    }
 }
 
 /// Batch processor with an observable bound.
@@ -512,6 +585,51 @@ mod tests {
         processor.force_flush().expect("flush");
         assert_eq!(processor.pending.load(Ordering::Acquire), 0);
         processor.shutdown().expect("shutdown");
+    }
+
+    #[test]
+    fn ingress_sampler_resamples_remote_unsampled_but_obeys_local_unsampled() {
+        use opentelemetry::trace::{SpanContext, SpanId, TraceFlags, TraceState};
+
+        let sampler = IngressParentBasedSampler::new(Sampler::AlwaysOn);
+        let trace_id = TraceId::from_hex("70bb9919f6b955c28f65a7fb75531f7c").unwrap();
+        let span_id = SpanId::from_hex("6f66fd7d41a06520").unwrap();
+
+        let remote_unsampled = SpanContext::new(
+            trace_id,
+            span_id,
+            TraceFlags::default(),
+            true,
+            TraceState::default(),
+        );
+        let remote_cx = OtelContext::new().with_remote_span_context(remote_unsampled);
+        let remote_res = sampler.should_sample(
+            Some(&remote_cx),
+            trace_id,
+            "request",
+            &SpanKind::Server,
+            &[],
+            &[],
+        );
+        assert_eq!(remote_res.decision, SamplingDecision::RecordAndSample);
+
+        let local_unsampled = SpanContext::new(
+            trace_id,
+            span_id,
+            TraceFlags::default(),
+            false,
+            TraceState::default(),
+        );
+        let local_cx = OtelContext::new().with_remote_span_context(local_unsampled);
+        let local_res = sampler.should_sample(
+            Some(&local_cx),
+            trace_id,
+            "auth",
+            &SpanKind::Internal,
+            &[],
+            &[],
+        );
+        assert_eq!(local_res.decision, SamplingDecision::Drop);
     }
 
     #[test]

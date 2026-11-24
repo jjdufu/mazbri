@@ -177,8 +177,9 @@ fn log_auth_stage(
     binding_outcome: &crate::gateway::request_binding::RequestBindingOutcome,
     encrypted_request: bool,
 ) {
-    let auth_stage_ms = mazbri_core::num::millis_u64(started_at.elapsed());
-    let stage_ids = crate::gateway::stage_log::stage_span("auth", auth_stage_ms)
+    let auth_elapsed = started_at.elapsed();
+    let auth_stage_ms = mazbri_core::num::millis_u64(auth_elapsed);
+    let stage_ids = crate::gateway::stage_log::stage_span("auth", auth_elapsed)
         .tenant(&claims.tenant_code)
         .record();
     if crate::gateway::stage_log::should_log_stage_info(auth_stage_ms) {
@@ -237,6 +238,7 @@ pub async fn jwt_auth_middleware(
         sig_ok: None,
         key_lookup_ms: None,
         verify_ms: None,
+        envelope_nonce_prechecked: false,
     };
     if parts.uri.path() == "/api/v1/gateway" {
         if !claims.can_invoke() {
@@ -270,6 +272,12 @@ pub async fn jwt_auth_middleware(
             parts.extensions.insert(payload);
         }
         if let Some(tenant_id) = tenant_context.as_ref().map(|ctx| ctx.tenant_id) {
+            let envelope_nonce = match parts.extensions.get::<GatewayRequestPayload>() {
+                Some(GatewayRequestPayload::Encrypted(env)) => {
+                    Some((env.key_version.as_str(), env.nonce.as_str()))
+                }
+                _ => None,
+            };
             binding_outcome = enforce_request_binding(RequestBindingInput {
                 crypto: &state.proxy_state.crypto_state,
                 tenant_id,
@@ -279,9 +287,15 @@ pub async fn jwt_auth_middleware(
                 path_and_query: &path_and_query,
                 headers: &parts.headers,
                 body: &body_bytes,
+                envelope_nonce,
             })
             .await
             .map_err(IntoResponse::into_response)?;
+            if binding_outcome.envelope_nonce_prechecked {
+                parts
+                    .extensions
+                    .insert(crate::crypto::EnvelopeNoncePrechecked);
+            }
             if binding_outcome.kid.is_none() {
                 binding_outcome.kid = Some(kid.clone());
             }
@@ -371,8 +385,9 @@ pub async fn ratelimit_middleware(
                 bandwidth_enabled,
             });
             req.extensions_mut().insert(timing);
-            let rl_ms = mazbri_core::num::millis_u64(stage_start.elapsed());
-            let stage_ids = ratelimit_stage_span(&tenant_context, rl_ms).record();
+            let rl_elapsed = stage_start.elapsed();
+            let rl_ms = mazbri_core::num::millis_u64(rl_elapsed);
+            let stage_ids = ratelimit_stage_span(&tenant_context, rl_elapsed).record();
             if crate::gateway::stage_log::should_log_stage_info(rl_ms) {
                 stage_log!(
                     info, "gateway.stage",
@@ -393,8 +408,9 @@ pub async fn ratelimit_middleware(
             degraded,
             quota,
         } => {
-            let rl_ms = mazbri_core::num::millis_u64(stage_start.elapsed());
-            let stage_ids = ratelimit_stage_span(&tenant_context, rl_ms)
+            let rl_elapsed = stage_start.elapsed();
+            let rl_ms = mazbri_core::num::millis_u64(rl_elapsed);
+            let stage_ids = ratelimit_stage_span(&tenant_context, rl_elapsed)
                 .failed()
                 .record();
             stage_log!(
@@ -417,9 +433,9 @@ pub async fn ratelimit_middleware(
 
 fn ratelimit_stage_span(
     tenant_context: &TenantContext,
-    stage_ms: u64,
+    duration: std::time::Duration,
 ) -> crate::gateway::stage_log::StageSpan {
-    let span = crate::gateway::stage_log::stage_span("ratelimit", stage_ms);
+    let span = crate::gateway::stage_log::stage_span("ratelimit", duration);
     match tenant_context.product_id.as_deref() {
         Some(product_id) => span.product(product_id),
         None => span,

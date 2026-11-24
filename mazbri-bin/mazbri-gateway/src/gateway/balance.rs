@@ -85,8 +85,9 @@ async fn reject_insufficient(
         estimated_cost = % estimated_cost,
         "Balance check rejected request due to insufficient balance"
     );
-    let bal_ms = mazbri_core::num::millis_u64(times.stage_start.elapsed());
-    let stage_ids = super::stage_log::stage_span("balance_check", bal_ms)
+    let bal_elapsed = times.stage_start.elapsed();
+    let bal_ms = mazbri_core::num::millis_u64(bal_elapsed);
+    let stage_ids = super::stage_log::stage_span("balance_check", bal_elapsed)
         .product(product_id)
         .failed()
         .record();
@@ -120,8 +121,9 @@ fn log_infra_failure(
         tenant_id = % tenant_context.tenant_id, product_id = % product_id, error = % error,
         fail_open, "Balance check infra failure (timeout/pool/billing)"
     );
-    let bal_ms = mazbri_core::num::millis_u64(times.stage_start.elapsed());
-    let stage_ids = super::stage_log::stage_span("balance_check", bal_ms)
+    let bal_elapsed = times.stage_start.elapsed();
+    let bal_ms = mazbri_core::num::millis_u64(bal_elapsed);
+    let stage_ids = super::stage_log::stage_span("balance_check", bal_elapsed)
         .product(product_id)
         .failed()
         .record();
@@ -149,8 +151,9 @@ fn estimate_cost(
 }
 
 fn log_allowed(product_id: &str, cache_source: &'static str, times: &StageTimes) {
-    let bal_ms = mazbri_core::num::millis_u64(times.stage_start.elapsed());
-    let stage_ids = super::stage_log::stage_span("balance_check", bal_ms)
+    let bal_elapsed = times.stage_start.elapsed();
+    let bal_ms = mazbri_core::num::millis_u64(bal_elapsed);
+    let stage_ids = super::stage_log::stage_span("balance_check", bal_elapsed)
         .product(product_id)
         .record();
     if super::stage_log::should_log_stage_info(bal_ms) {

@@ -240,7 +240,8 @@ fn init_client_pools(
     drop(tarpc_pool.spawn_cleanup_task());
     tracing::info!("TarpcClientPool background cleanup task started");
     let upstream_http2_pool =
-        UpstreamHttp2ClientPool::new(client_cert, config.tarpc.client_ttl_secs);
+        UpstreamHttp2ClientPool::new(client_cert, config.tarpc.client_ttl_secs)
+            .with_channels_per_endpoint(config.tarpc.upstream_h2_channels);
     drop(upstream_http2_pool.spawn_cleanup_task());
     tracing::info!("UpstreamHttp2ClientPool background cleanup task started");
     Ok((tarpc_pool, upstream_http2_pool))

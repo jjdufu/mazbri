@@ -4,14 +4,21 @@ use serde::Deserialize;
 pub struct TarpcConfig {
     #[serde(default = "default_client_ttl_secs")]
     pub client_ttl_secs: u64,
+    /// Per-endpoint HTTP/2 mTLS channel count for upstream bypass calls (default 16).
+    #[serde(default = "default_upstream_h2_channels")]
+    pub upstream_h2_channels: usize,
 }
 fn default_client_ttl_secs() -> u64 {
     300
+}
+fn default_upstream_h2_channels() -> usize {
+    16
 }
 impl Default for TarpcConfig {
     fn default() -> Self {
         Self {
             client_ttl_secs: default_client_ttl_secs(),
+            upstream_h2_channels: default_upstream_h2_channels(),
         }
     }
 }

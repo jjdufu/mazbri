@@ -176,7 +176,7 @@ impl RedisClient {
         } else {
             let client = Arc::new(redis::Client::open(url_str.as_str())?);
             let manager_config = manager_config(connect_timeout, command_timeout);
-            let pool_size = config.pool_max_size.clamp(1, 8);
+            let pool_size = config.pool_max_size.clamp(1, 256);
             let mut managers = Vec::with_capacity(pool_size);
             for _ in 0..pool_size {
                 let manager = timeout(
@@ -305,6 +305,28 @@ impl RedisClient {
         self.set_nx_ex(&key, b"1", ttl_seconds).await
     }
 
+    /// Coalesced single-RTT check & consume for both gateway request-binding nonce and
+    /// transport-envelope nonce via Redis pipeline. Returns `(binding_inserted, envelope_inserted)`.
+    ///
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+    pub async fn set_binding_and_envelope_nonces_if_absent(
+        &self,
+        prefix: &str,
+        tenant_id: Uuid,
+        binding_nonce: &str,
+        key_version: &str,
+        envelope_nonce: &str,
+        ttl_seconds: i32,
+    ) -> Result<(bool, bool)> {
+        let ttl_seconds = usize::saturating_from(ttl_seconds.max(1));
+        let binding_key = gateway_binding_nonce_key(prefix, tenant_id, binding_nonce);
+        let envelope_key = self.nonce_key(tenant_id, key_version, envelope_nonce);
+        self.set_nx_ex_pair(&binding_key, &envelope_key, ttl_seconds)
+            .await
+    }
+
     #[must_use]
     pub fn fallback_key(&self, cache_key: &str) -> String {
         fallback_key(&self.key_prefix, cache_key)
@@ -407,6 +429,35 @@ impl RedisClient {
                 .query_async(&mut conn)
                 .await?;
             Ok(result.is_some())
+        })
+        .await
+    }
+
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+    pub async fn set_nx_ex_pair(
+        &self,
+        key1: &str,
+        key2: &str,
+        ttl_secs: usize,
+    ) -> Result<(bool, bool)> {
+        self.run("SET NX EX", |mut conn| async move {
+            let mut pipe = redis::pipe();
+            pipe.cmd("SET")
+                .arg(key1)
+                .arg(b"1")
+                .arg("NX")
+                .arg("EX")
+                .arg(ttl_secs)
+                .cmd("SET")
+                .arg(key2)
+                .arg(b"1")
+                .arg("NX")
+                .arg("EX")
+                .arg(ttl_secs);
+            let (r1, r2): (Option<String>, Option<String>) = pipe.query_async(&mut conn).await?;
+            Ok((r1.is_some(), r2.is_some()))
         })
         .await
     }

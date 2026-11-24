@@ -28,6 +28,8 @@ pub struct RequestBindingOutcome {
     pub key_lookup_ms: Option<u64>,
     /// 绑定验签耗时（非对称走 `spawn_blocking`）；跳过绑定时为 `None`。
     pub verify_ms: Option<u64>,
+    /// 加密信封 nonce 是否已与绑定 nonce 在同一次 Redis pipeline 中联合校验并消费。
+    pub envelope_nonce_prechecked: bool,
 }
 
 #[derive(Debug)]
@@ -213,6 +215,9 @@ pub struct RequestBindingInput<'a> {
     pub path_and_query: &'a str,
     pub headers: &'a HeaderMap,
     pub body: &'a [u8],
+    /// Optional `(key_version, envelope_nonce)` from an already-parsed encrypted envelope,
+    /// enabling a single-RTT Redis pipeline for both nonces.
+    pub envelope_nonce: Option<(&'a str, &'a str)>,
 }
 
 /// # Errors
@@ -233,6 +238,7 @@ pub async fn enforce_request_binding(
         path_and_query,
         headers,
         body,
+        envelope_nonce,
     } = input;
     let profile = crypto
         .profile(tenant_id)
@@ -252,6 +258,7 @@ pub async fn enforce_request_binding(
             sig_ok: None,
             key_lookup_ms: None,
             verify_ms: None,
+            envelope_nonce_prechecked: false,
         });
     }
     let hdrs = required_binding_headers(headers)?;
@@ -295,13 +302,33 @@ pub async fn enforce_request_binding(
     )
     .await?;
     let verify_ms = mazbri_core::num::millis_u64(verify_started.elapsed());
-    let inserted = crypto
-        .consume_binding_nonce(nonce_prefix, tenant_id, nonce, profile.nonce_ttl_seconds)
-        .await
-        .map_err(|_| RequestBindingError::nonce())?;
-    if !inserted {
-        return Err(RequestBindingError::nonce());
-    }
+    let envelope_nonce_prechecked =
+        if let Some((key_version, env_nonce)) = envelope_nonce.filter(|_| profile.encryption_mode != "none") {
+            let (binding_ok, envelope_ok) = crypto
+                .consume_binding_and_envelope_nonces(
+                    nonce_prefix,
+                    tenant_id,
+                    nonce,
+                    key_version,
+                    env_nonce,
+                    profile.nonce_ttl_seconds,
+                )
+                .await
+                .map_err(|_| RequestBindingError::nonce())?;
+            if !binding_ok || !envelope_ok {
+                return Err(RequestBindingError::nonce());
+            }
+            true
+        } else {
+            let inserted = crypto
+                .consume_binding_nonce(nonce_prefix, tenant_id, nonce, profile.nonce_ttl_seconds)
+                .await
+                .map_err(|_| RequestBindingError::nonce())?;
+            if !inserted {
+                return Err(RequestBindingError::nonce());
+            }
+            false
+        };
     GATEWAY_REQUEST_BINDING_TOTAL
         .with_label_values(&["ok"])
         .inc();
@@ -316,6 +343,7 @@ pub async fn enforce_request_binding(
         sig_ok: Some(true),
         key_lookup_ms: Some(key_lookup_ms),
         verify_ms: Some(verify_ms),
+        envelope_nonce_prechecked,
     })
 }
 
