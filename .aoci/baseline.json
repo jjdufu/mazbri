@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created_at": "2026-11-24T21:41:22Z",
-  "updated_at": "2026-11-25T00:08:12Z",
+  "updated_at": "2026-11-25T05:41:41Z",
   "files": {
     ".agents/skills/mz-rt-pr/SKILL.md": {
       "role": "index",
@@ -77,9 +77,9 @@
     },
     "aoci.code.txt": {
       "role": "index",
-      "sha256": "c1e92405403c9587afcdabbb1ca5b1122fc3a92160cdcf1cbfaeb39629707706",
-      "size": 741287,
-      "normalized_sha256": "c1e92405403c9587afcdabbb1ca5b1122fc3a92160cdcf1cbfaeb39629707706"
+      "sha256": "baa557d5eaa2f95e5d7122596065aed60acbdcd621e9d4cbe9777a5a2e875e8f",
+      "size": 746364,
+      "normalized_sha256": "baa557d5eaa2f95e5d7122596065aed60acbdcd621e9d4cbe9777a5a2e875e8f"
     },
     "aoci.meta.txt": {
       "role": "index",
@@ -125,9 +125,9 @@
     },
     "docs/README.md": {
       "role": "index",
-      "sha256": "5e47deeff9f77d7421e3b0e84cd8c2cd07390fb5982e498b443e4688c4460f59",
-      "size": 2657,
-      "normalized_sha256": "5e47deeff9f77d7421e3b0e84cd8c2cd07390fb5982e498b443e4688c4460f59"
+      "sha256": "cb7e1c5fb858ad9567bee85d06e51582502ff3f430c5559fdfdb293c0590b97f",
+      "size": 4229,
+      "normalized_sha256": "cb7e1c5fb858ad9567bee85d06e51582502ff3f430c5559fdfdb293c0590b97f"
     },
     "docs/architecture/crypto-platform.md": {
       "role": "index",
@@ -140,6 +140,60 @@
       "sha256": "b5fbd5c456c9b4e1914f587870aa25972812058f84b1e1c25b6335497212d7c4",
       "size": 7343,
       "normalized_sha256": "b5fbd5c456c9b4e1914f587870aa25972812058f84b1e1c25b6335497212d7c4"
+    },
+    "docs/audit-remediation-plan/00-overview-and-first-principles.md": {
+      "role": "index",
+      "sha256": "1d94280e85ec89576a2bee59fa475d37dbff8cdacaaf7705f27bab65f7c4e2e0",
+      "size": 17519,
+      "normalized_sha256": "1d94280e85ec89576a2bee59fa475d37dbff8cdacaaf7705f27bab65f7c4e2e0"
+    },
+    "docs/audit-remediation-plan/01-step01-runtime-panic-and-clock-safety.md": {
+      "role": "index",
+      "sha256": "73fe28ab1014af37d913f93c0226cf8722ea06aabb6533f770938f79ed011fbf",
+      "size": 16892,
+      "normalized_sha256": "73fe28ab1014af37d913f93c0226cf8722ea06aabb6533f770938f79ed011fbf"
+    },
+    "docs/audit-remediation-plan/02-step02-trust-boundary-ssrf-and-proxy-hardening.md": {
+      "role": "index",
+      "sha256": "ed171a3390697c80e75f24f818afb389e025f2914b9fc658a97d2f9ad5c459eb",
+      "size": 19535,
+      "normalized_sha256": "ed171a3390697c80e75f24f818afb389e025f2914b9fc658a97d2f9ad5c459eb"
+    },
+    "docs/audit-remediation-plan/03-step03-dataplane-tenant-isolation-and-encrypted-gate.md": {
+      "role": "index",
+      "sha256": "5afc7ceabdeb1c2b5528dcdf339ad979e30015a6bbc7136bde51a2be7ce106a3",
+      "size": 17846,
+      "normalized_sha256": "5afc7ceabdeb1c2b5528dcdf339ad979e30015a6bbc7136bde51a2be7ce106a3"
+    },
+    "docs/audit-remediation-plan/04-step04-crypto-domain-separation-and-mtls-lifecycle.md": {
+      "role": "index",
+      "sha256": "1e98d89760d533619ee199b363b194f8bbf498dca2ab170b8afba139f682f335",
+      "size": 23836,
+      "normalized_sha256": "1e98d89760d533619ee199b363b194f8bbf498dca2ab170b8afba139f682f335"
+    },
+    "docs/audit-remediation-plan/05-step05-async-cancellation-resilience-and-caching.md": {
+      "role": "index",
+      "sha256": "a668e3944a3027888cc4f237af7c2323a87521f67519bcdd631a9966aae9c462",
+      "size": 18802,
+      "normalized_sha256": "a668e3944a3027888cc4f237af7c2323a87521f67519bcdd631a9966aae9c462"
+    },
+    "docs/audit-remediation-plan/06-step06-billing-ledger-fencing-and-reconciliation.md": {
+      "role": "index",
+      "sha256": "7cd91f365766ca191275420db1f185614b23dd12c186cca688cd4834c8411865",
+      "size": 18074,
+      "normalized_sha256": "7cd91f365766ca191275420db1f185614b23dd12c186cca688cd4834c8411865"
+    },
+    "docs/audit-remediation-plan/07-step07-control-plane-rbac-session-and-transactions.md": {
+      "role": "index",
+      "sha256": "3846e43446a033cd24a2528fb08ea1ae9094d68cf69f507a2b8ca02435e12570",
+      "size": 18499,
+      "normalized_sha256": "3846e43446a033cd24a2528fb08ea1ae9094d68cf69f507a2b8ca02435e12570"
+    },
+    "docs/audit-remediation-plan/08-step08-observability-frontend-hygiene-and-ci-cd.md": {
+      "role": "index",
+      "sha256": "3cdc1aadef470fc53e1a8ae1cd3bfa0694c867d77f777d0f106a350a84fca77d",
+      "size": 19081,
+      "normalized_sha256": "3cdc1aadef470fc53e1a8ae1cd3bfa0694c867d77f777d0f106a350a84fca77d"
     },
     "docs/performance/gateway-bypass-latency-optimization.md": {
       "role": "index",
