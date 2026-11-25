@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.5](https://github.com/jjdufu/mazbri/compare/v0.6.4...v0.6.5) (2026-11-25)
+
+
+### Bug Fixes
+
+* **security:** 完成全仓代码审计八步第一性原理治理、Redis 连接池保活与 AOCI 认知基线 ([#92](https://github.com/jjdufu/mazbri/issues/92)) ([1493f2f](https://github.com/jjdufu/mazbri/commit/1493f2fa62bd27d17309fdcdad09221fe5d19db3))
+
 ## [0.6.4](https://github.com/jjdufu/mazbri/compare/v0.6.3...v0.6.4) (2026-11-24)
 
 
