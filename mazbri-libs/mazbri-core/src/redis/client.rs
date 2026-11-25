@@ -203,12 +203,55 @@ impl RedisClient {
             }
         };
 
+        let inner = Arc::new(inner);
+        Self::spawn_keepalive(&inner, command_timeout);
+
         Ok(Self {
-            inner: Arc::new(inner),
+            inner,
             key_prefix: Arc::from(config.key_prefix.as_str()),
             connect_timeout,
             command_timeout,
         })
+    }
+
+    fn spawn_keepalive(inner: &Arc<InnerClient>, command_timeout: Duration) {
+        const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(30);
+        if matches!(&**inner, InnerClient::Standalone { managers, .. } if managers.is_empty()) {
+            return;
+        }
+        let weak = Arc::downgrade(inner);
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(KEEPALIVE_INTERVAL);
+            ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            // Skip immediate tick right after initial connect.
+            ticker.tick().await;
+            loop {
+                ticker.tick().await;
+                let Some(inner) = weak.upgrade() else {
+                    break;
+                };
+                match &*inner {
+                    InnerClient::Standalone { managers, .. } => {
+                        for manager in managers.iter() {
+                            let mut conn = manager.clone();
+                            let _ = timeout(
+                                command_timeout,
+                                redis::cmd("PING").query_async::<String>(&mut conn),
+                            )
+                            .await;
+                        }
+                    }
+                    InnerClient::Cluster { connection, .. } => {
+                        let mut conn = connection.clone();
+                        let _ = timeout(
+                            command_timeout,
+                            redis::cmd("PING").query_async::<String>(&mut conn),
+                        )
+                        .await;
+                    }
+                }
+            }
+        });
     }
 
     #[must_use]
@@ -440,7 +483,7 @@ impl RedisClient {
         result
     }
 
-    /// Stateful / mutating command execution (`SET NX EX`, `EVAL`, `DEL`, `PUBLISH`, etc.):
+    /// Stateful / non-idempotent command execution (`SET NX EX`, `EVAL`, `PUBLISH`, etc.):
     /// never auto-retries after sending on wire so non-idempotent commands cannot execute twice.
     async fn run_once<T, F, Fut>(&self, op: &'static str, f: F) -> Result<T>
     where
@@ -477,8 +520,9 @@ impl RedisClient {
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn set_ex_bytes(&self, key: &str, value: &[u8], ttl_secs: usize) -> Result<()> {
-        self.run_once("SET EX", |mut conn| async move {
-            let _: () = conn.set_ex(key, value, ttl_secs as u64).await?;
+        let ttl_u64 = ttl_secs as u64;
+        self.run_idempotent("SET EX", |mut conn| async move {
+            let _: () = conn.set_ex(key, value, ttl_u64).await?;
             Ok(())
         })
         .await
@@ -535,7 +579,7 @@ impl RedisClient {
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn del(&self, key: &str) -> Result<u64> {
-        self.run_once("DEL", |mut conn| async move { conn.del(key).await })
+        self.run_idempotent("DEL", |mut conn| async move { conn.del(key).await })
             .await
     }
 
@@ -791,7 +835,7 @@ impl RedisClient {
         if keys.is_empty() {
             return Ok(0);
         }
-        self.run_once("DEL", |mut conn| async move {
+        self.run_idempotent("DEL", |mut conn| async move {
             redis::cmd("DEL").arg(keys).query_async(&mut conn).await
         })
         .await
