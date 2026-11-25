@@ -72,7 +72,8 @@ pub struct SetTenantEnabledRequest {
     pub reason: Option<String>,
 }
 /// API key scope（存储与 JWT 统一使用 `api:*` 字面量）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, serde::Serialize, TS)]
+#[ts(export_to = "auth.ts")]
 pub enum ApiScope {
     #[serde(rename = "api:read")]
     Read,
@@ -91,12 +92,16 @@ impl ApiScope {
         }
     }
 }
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, TS)]
+#[ts(export_to = "auth.ts")]
 #[serde(deny_unknown_fields)]
 pub struct CreateApiKeyRequest {
+    #[ts(as = "Vec<ApiScope>")]
     pub scopes: BoundedVec<ApiScope, { limits::MAX_API_KEY_SCOPES }>,
+    #[ts(type = "number | null")]
     pub expires_at: Option<i64>,
     #[serde(default)]
+    #[ts(type = "number | null")]
     pub expires_days: Option<i64>,
 }
 
@@ -105,6 +110,7 @@ pub struct CreateApiKeyRequest {
 #[serde(deny_unknown_fields)]
 pub struct UpdateApiKeyRequest {
     #[serde(default = "default_renewal_days")]
+    #[ts(type = "number | null")]
     pub expires_days: Option<i64>,
 }
 impl UpdateApiKeyRequest {
@@ -324,6 +330,7 @@ pub struct LoginResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub token: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(type = "number | null")]
     pub expires_in: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub refresh_token: Option<String>,

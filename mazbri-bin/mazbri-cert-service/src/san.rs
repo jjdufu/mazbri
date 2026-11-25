@@ -123,7 +123,15 @@ impl SanPolicy {
         let extra_sans = cfg
             .extra_sans
             .iter()
-            .map(|s| validate_dns_name(s))
+            .map(|s| {
+                let normalized = validate_dns_name(s)?;
+                if let Ok(other_svc) = normalized.parse::<ServiceName>()
+                    && other_svc != ServiceName::Gateway
+                {
+                    return Err(SanError::InvalidDnsName(s.clone()));
+                }
+                Ok(normalized)
+            })
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
             resolved,
@@ -149,9 +157,11 @@ impl SanPolicy {
                 vec![name.to_owned(), format!("{}.{suffix}", svc.short())]
             }
         };
-        for extra in &self.extra_sans {
-            if !out.contains(extra) {
-                out.push(extra.clone());
+        if svc == ServiceName::Gateway {
+            for extra in &self.extra_sans {
+                if !out.contains(extra) {
+                    out.push(extra.clone());
+                }
             }
         }
         out
@@ -267,14 +277,22 @@ mod tests {
     }
 
     #[test]
-    fn extra_sans_appended_dedup_and_validated() -> Result<(), SanError> {
+    fn extra_sans_appended_only_for_gateway_dedup_and_validated() -> Result<(), SanError> {
         let mut c = cfg(SanMode::Compose);
-        c.extra_sans = vec!["Edge.Example.com".into(), "mazbri-cert".into()];
+        c.extra_sans = vec!["Edge.Example.com".into(), "mazbri-gateway".into()];
         let p = SanPolicy::from_config(&c, &no_env())?;
         assert_eq!(
-            p.sans_for(ServiceName::Cert),
-            vec!["mazbri-cert", "edge.example.com"]
+            p.sans_for(ServiceName::Gateway),
+            vec!["mazbri-gateway", "edge.example.com"]
         );
+        assert_eq!(p.sans_for(ServiceName::Auth), vec!["mazbri-auth"]);
+        assert_eq!(p.sans_for(ServiceName::Cbpro), vec!["mazbri-cbpro"]);
+        assert_eq!(p.sans_for(ServiceName::Billing), vec!["mazbri-billing"]);
+        c.extra_sans = vec!["mazbri-cbpro".into()];
+        assert!(matches!(
+            SanPolicy::from_config(&c, &no_env()),
+            Err(SanError::InvalidDnsName(_))
+        ));
         c.extra_sans = vec!["bad_name".into()];
         assert!(matches!(
             SanPolicy::from_config(&c, &no_env()),

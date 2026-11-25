@@ -162,14 +162,22 @@ impl BillingReconciliationSettingsCache {
         &self,
         mut settings: BillingReconciliationRuntimeSettings,
     ) -> Result<BillingReconciliationRuntimeSettings, String> {
-        settings.schedule.interval_secs = settings.schedule.interval_secs.max(60);
-        settings.default_scope_type = settings.default_scope_type.trim().to_string();
-        settings.alert.webhook_url = settings.alert.webhook_url.trim().to_string();
-        settings.validate()?;
-
-        // Preserve last_scheduled_run_at from DB (client cannot forge run history).
+        // Preserve last_scheduled_run_at from DB (client cannot forge run history)
+        // and preserve existing webhook_url when client submits unchanged masked placeholder.
         let existing = self.get().await;
         settings.last_scheduled_run_at = existing.last_scheduled_run_at;
+        settings.schedule.interval_secs = settings.schedule.interval_secs.max(60);
+        settings.default_scope_type = settings.default_scope_type.trim().to_string();
+        let raw_webhook = settings.alert.webhook_url.trim().to_string();
+        if crate::middleware::role_projection::is_masked_webhook_url(
+            &raw_webhook,
+            &existing.alert.webhook_url,
+        ) {
+            settings.alert.webhook_url = existing.alert.webhook_url;
+        } else {
+            settings.alert.webhook_url = raw_webhook;
+        }
+        settings.validate()?;
 
         let value = serde_json::to_value(&settings).map_err(|e| e.to_string())?;
         sqlx::query(

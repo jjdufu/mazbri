@@ -62,6 +62,15 @@ impl super::super::repository::ConfigRepository {
         .bind(service_name)
         .fetch_one(&*self.db)
         .await?;
-        Ok(version.unwrap_or(0))
+        if let Some(v) = version {
+            return Ok(v);
+        }
+        let exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM config_entries WHERE service_name = $1)",
+        )
+        .bind(service_name)
+        .fetch_one(&*self.db)
+        .await?;
+        Ok(i32::from(exists))
     }
 }

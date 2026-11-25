@@ -2,8 +2,13 @@ use crate::audit::{AuditAction, AuditLogRequest, AuditResourceType, AuditService
 use crate::error::ApiError;
 use crate::handlers::types::ListParams;
 use crate::repositories::supplier as repo;
-use crate::services::upstream_connector::guard_supplier_tls_privilege;
+use crate::services::ssrf;
+use crate::services::upstream_connector::{
+    guard_supplier_origin_pinning, guard_supplier_tls_privilege,
+    reject_client_enc_in_supplier_config,
+};
 use mazbri_core::{SupplierConfig, mask_config_credentials, merge_auth_credentials};
+use mazbri_upstream_runtime::SsrfChecker;
 use sqlx::PgPool;
 use tracing::info;
 
@@ -153,7 +158,7 @@ pub async fn list_suppliers(
         .as_ref()
         .map(|s| s.trim())
         .filter(|s| !s.is_empty())
-        .map(|s| format!("%{s}%"));
+        .map(mazbri_core::config::contains_ilike_pattern);
     let search_ref = search_pattern.as_deref();
     let filters = crate::list_query::parse_and_validate_filters(
         params.filters.as_deref(),
@@ -207,11 +212,36 @@ pub async fn list_suppliers(
     ))
 }
 
+async fn validate_transparent_supplier_ssrf(
+    checker: &SsrfChecker,
+    cfg: &SupplierConfig,
+    upstream_url: &str,
+) -> Result<(), ApiError> {
+    if !cfg.is_transparent() {
+        return Ok(());
+    }
+    ssrf::validate_public_http_url(checker, upstream_url)
+        .await
+        .map_err(|e| ApiError::validation(format!("UPSTREAM_SSRF_BLOCKED: {e}")))?;
+    if let Some(ref auth) = cfg.auth_flow
+        && auth.enabled
+        && !auth.token_url.trim().is_empty()
+    {
+        ssrf::validate_public_http_url(checker, &auth.token_url)
+            .await
+            .map_err(|e| {
+                ApiError::validation(format!("UPSTREAM_SSRF_BLOCKED (auth_flow.token_url): {e}"))
+            })?;
+    }
+    Ok(())
+}
+
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn create_supplier(
     pool: &PgPool,
+    ssrf_checker: &SsrfChecker,
     audit: &AuditService,
     payload: &CreateSupplierRequest,
     actor: SupplierActorCtx<'_>,
@@ -222,10 +252,12 @@ pub async fn create_supplier(
     );
     payload.validate()?;
     if let Some(ref raw_cfg) = payload.config {
+        reject_client_enc_in_supplier_config(raw_cfg)?;
         guard_supplier_tls_privilege(raw_cfg, None, actor.is_super_admin)?;
     }
 
     let parsed = payload.parse_config()?;
+    validate_transparent_supplier_ssrf(ssrf_checker, &parsed, &payload.upstream_url).await?;
     let config_val = parsed
         .to_json_value()
         .map_err(|e| ApiError::validation(e.to_string()))?;
@@ -299,6 +331,7 @@ pub async fn get_supplier(pool: &PgPool, id: &str) -> Result<serde_json::Value, 
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn update_supplier(
     pool: &PgPool,
+    ssrf_checker: &SsrfChecker,
     audit: &AuditService,
     id: &str,
     payload: &UpdateSupplierRequest,
@@ -308,6 +341,9 @@ pub async fn update_supplier(
     let supplier_id = uuid::Uuid::parse_str(id)
         .map_err(|e| ApiError::validation(format!("供应商 ID 格式无效: {e}")))?;
     payload.validate()?;
+    if let Some(ref raw_cfg) = payload.config {
+        reject_client_enc_in_supplier_config(raw_cfg)?;
+    }
 
     let old = repo::find_by_id(pool, supplier_id)
         .await
@@ -319,23 +355,32 @@ pub async fn update_supplier(
         .as_deref()
         .unwrap_or(old.upstream_url.as_str());
 
+    guard_supplier_origin_pinning(
+        effective_upstream_url,
+        payload.config.as_ref(),
+        &old.upstream_url,
+        &old.config,
+    )?;
+
     let mut updated_config = None;
     if let Some(new_cfg) = payload.config.clone() {
         let mut merged = new_cfg;
         merge_auth_credentials(&mut merged, &old.config);
         guard_supplier_tls_privilege(&merged, Some(&old.config), actor.is_super_admin)?;
         let parsed = parse_and_validate_supplier_config(&merged, effective_upstream_url)?;
+        validate_transparent_supplier_ssrf(ssrf_checker, &parsed, effective_upstream_url).await?;
         let config_val = parsed
             .to_json_value()
             .map_err(|e| ApiError::validation(e.to_string()))?;
         updated_config = Some(config_val);
     } else if payload.upstream_url.is_some() {
-        let existing = SupplierConfig::parse_and_validate(&old.config).map_err(|e| {
-            ApiError::validation(format!("现有 config 不合法，请先修复 config: {e}"))
-        })?;
+        let existing = SupplierConfig::parse_and_validate(&old.config)
+            .map_err(|e| ApiError::validation(format!("现有 config 不合法，请先修复 config: {e}")))?
+            .normalize_disabled_sections();
         existing
             .validate_upstream_url_for_type(effective_upstream_url)
             .map_err(|e| ApiError::validation(e.to_string()))?;
+        validate_transparent_supplier_ssrf(ssrf_checker, &existing, effective_upstream_url).await?;
     }
 
     let row = repo::update_supplier(

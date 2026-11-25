@@ -36,6 +36,9 @@ uuid = { workspace = true }
 urlencoding = "2"
 
 url = "2"
+arc-swap = { workspace = true }
+zeroize = { workspace = true }
+x509-parser = { workspace = true }
 
 [lints]
 workspace = true

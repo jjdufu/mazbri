@@ -79,14 +79,17 @@ pub async fn enable(params: EnableParams<'_>) -> axum::response::Response {
     };
     let changed_at =
         chrono::DateTime::from_timestamp(issued_at, 0).unwrap_or_else(chrono::Utc::now);
-    if let Err(response) = commit_voluntary_enable(pool, user_id, step_at, changed_at).await {
-        return *response;
-    }
+    let new_epoch = match commit_voluntary_enable(pool, user_id, step_at, changed_at).await {
+        Ok(epoch) => epoch,
+        Err(response) => return *response,
+    };
+    crate::middleware::auth::invalidate_admin_subject_state(redis, user_id).await;
     finish_enabled_session(FinishEnable {
         pool,
         redis,
         audit,
         claims,
+        auth_epoch: new_epoch,
         jwt_secret,
         access_ttl_fallback,
         old_refresh: &rotation.old_refresh,
@@ -105,6 +108,7 @@ struct FinishEnable<'a> {
     redis: &'a mazbri_core::redis::RedisClient,
     audit: &'a AuditService,
     claims: &'a crate::middleware::auth::AdminClaims,
+    auth_epoch: i64,
     jwt_secret: &'a str,
     access_ttl_fallback: u64,
     old_refresh: &'a crate::middleware::auth::AdminClaims,
@@ -120,6 +124,7 @@ async fn finish_enabled_session(params: FinishEnable<'_>) -> axum::response::Res
     let resigned = match resign_bound_session(
         params.pool,
         params.claims,
+        params.auth_epoch,
         params.jwt_secret,
         params.access_ttl_fallback,
         params.sxp,

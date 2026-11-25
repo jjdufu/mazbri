@@ -292,9 +292,10 @@ export function createDraft(
   });
 }
 
-export function getDraft(id: string) {
+export function getDraft(id: string, opts?: ConnectorRequestOpts) {
   return request.get<ConnectorDraft>({
     url: `${BASE}/drafts/${id}`,
+    ...withConnectorOpts(opts),
   });
 }
 
@@ -362,9 +363,10 @@ export function runDraft(
   });
 }
 
-export function listRuns(id: string) {
+export function listRuns(id: string, opts?: ConnectorRequestOpts) {
   return request.get<ConnectorRun[]>({
     url: `${BASE}/drafts/${id}/runs`,
+    ...withConnectorOpts(opts),
   });
 }
 
@@ -436,18 +438,23 @@ export function importOpenApi(data: {
 
 export function draftFromSupplier(
   supplierId: string,
-  opts?: { force_resync?: boolean },
+  opts?: { force_resync?: boolean; signal?: AbortSignal },
 ) {
   return request.post<ConnectorDraft>({
     url: `${BASE}/drafts/from-supplier/${supplierId}`,
     params: opts?.force_resync ? { force_resync: true } : undefined,
     data: opts?.force_resync ? { force_resync: true } : undefined,
+    signal: opts?.signal,
   });
 }
 
-export function previewDraftFromSupplier(supplierId: string) {
+export function previewDraftFromSupplier(
+  supplierId: string,
+  opts?: ConnectorRequestOpts,
+) {
   return request.get<ConnectorDraft>({
     url: `${BASE}/drafts/from-supplier/${supplierId}`,
+    ...withConnectorOpts(opts),
   });
 }
 

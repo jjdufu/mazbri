@@ -4,7 +4,8 @@ use super::{
     ObservationRequestParts, ProxyError, ProxyState, StoreRequest, SwitchCondition, TimeoutPhase,
     TraceContext, UpstreamResponse, build_fallback_cache_key, build_observation_request,
     classify_proxy_result, debug, enqueue_cbpro_observation, execute_http_upstream_request,
-    get_or_create_breaker, proxy_body_to_json_value, record_upstream_timeout, warn,
+    get_or_create_breaker, is_retry_safe_request, proxy_body_to_json_value,
+    record_upstream_timeout, warn,
 };
 use mazbri_upstream_contracts::UPSTREAM_AUTH_REJECTED_PREFIX;
 use tracing::Instrument;
@@ -109,78 +110,53 @@ async fn run_channel_attempt(
         "[{}] Attempting channel {} at {} for tenant [{}] mode={}",
         request_id, channel.channel_id, addr, claims.tenant_code, mode
     );
-    let breaker = get_or_create_breaker(state, &req.product_id).await;
+    let breaker = get_or_create_breaker(state, &req.product_id, channel).await;
     let product_id = req.product_id.as_str();
     let method = req.method.as_str();
+    let retry_safe = is_retry_safe_request(req);
     let timeout_duration = Duration::from_millis(channel.switch_condition.timeout_ms);
     let timeout_result = tokio::time::timeout(
         timeout_duration,
-        breaker.execute(|| async {
-            execute_http_upstream_request(
-                state,
-                req,
-                channel,
-                claims,
-                AttemptCtx {
-                    max_retries: channel.switch_condition.max_retries,
-                    mode,
-                    attempt_order: u32::try_from(attempt.order).unwrap_or(u32::MAX),
-                },
-                trace_context,
-            )
-            .await
-        }),
+        breaker.execute_with_classifier(
+            || async {
+                execute_http_upstream_request(
+                    state,
+                    req,
+                    channel,
+                    claims,
+                    AttemptCtx {
+                        max_retries: channel.switch_condition.max_retries,
+                        mode,
+                        attempt_order: u32::try_from(attempt.order).unwrap_or(u32::MAX),
+                        retry_safe,
+                    },
+                    trace_context,
+                )
+                .await
+            },
+            |resp| {
+                (resp.status >= 500
+                    && (should_switch_status(resp.status, &channel.switch_condition)
+                        || (channel.switch_condition.switch_on_bad_gateway
+                            && matches!(resp.status, 502..=504))
+                        || (channel.switch_condition.switch_on_internal_error
+                            && resp.status == 500)))
+                    .then(|| format!("HTTP status {}", resp.status))
+            },
+        ),
     )
     .await;
     if let Ok(result) = timeout_result {
-        match result {
-            CircuitResult::Success(response) => {
-                let status = response.status.to_string();
-                let result_label = classify_proxy_result(response.status, None);
-                record_proxy_metric(product_id, method, &status, mode, result_label);
-                Ok(response)
-            }
-            CircuitResult::Rejected {
-                reason,
-                retry_after,
-            } => {
-                warn!(
-                    "[{}] Circuit breaker rejected request for product [{}]: {} (retry_after: {:?})",
-                    request_id, product_id, reason, retry_after
-                );
-                tracing::info!(
-                    target: mazbri_core::trace_spans::SPAN_EVENT_TARGET,
-                    reason = %reason,
-                    "circuit_breaker.rejected"
-                );
-                record_proxy_metric(product_id, method, "503", mode, "circuit_open");
-                Err(ProxyError::CircuitOpen(format!("服务暂时不可用: {reason}")))
-            }
-            CircuitResult::Failure { error } => {
-                warn!(
-                    "[{}] upstream HTTP/2 request failed for product [{}]: {}",
-                    request_id, product_id, error
-                );
-                if error.starts_with(UPSTREAM_AUTH_REJECTED_PREFIX) {
-                    record_proxy_metric(product_id, method, "502", mode, "upstream_auth");
-                    return Err(ProxyError::UpstreamAuthRejected(error));
-                }
-                let result_label = if error.contains("contract") || error.contains("contract_id") {
-                    "config"
-                } else {
-                    "upstream_error"
-                };
-                record_proxy_metric(product_id, method, "502", mode, result_label);
-                Err(ProxyError::BadGateway(error))
-            }
-        }
+        handle_channel_circuit_result(result, channel, product_id, method, mode, request_id)
     } else {
+        breaker.record_failure("upstream timeout");
         warn!(
-            "[{}] upstream HTTP/2 request timed out for product [{}]",
-            request_id, product_id
+            "[{}] upstream HTTP/2 request timed out for channel [{}] product [{}]",
+            request_id, channel.channel_code, product_id
         );
         tracing::info!(
             target: mazbri_core::trace_spans::SPAN_EVENT_TARGET,
+            channel_id = %channel.channel_id,
             timeout_ms = channel.switch_condition.timeout_ms,
             "upstream.timeout"
         );
@@ -189,6 +165,59 @@ async fn run_channel_attempt(
         Err(ProxyError::GatewayTimeout(format!(
             "channel wait exceeded switch_condition.timeout_ms for product={product_id}"
         )))
+    }
+}
+
+fn handle_channel_circuit_result(
+    result: CircuitResult<UpstreamResponse>,
+    channel: &GatewayCandidateChannel,
+    product_id: &str,
+    method: &str,
+    mode: &str,
+    request_id: &str,
+) -> Result<UpstreamResponse, ProxyError> {
+    match result {
+        CircuitResult::Success(response) => {
+            let status = response.status.to_string();
+            let result_label = classify_proxy_result(response.status, None);
+            record_proxy_metric(product_id, method, &status, mode, result_label);
+            Ok(response)
+        }
+        CircuitResult::Rejected {
+            reason,
+            retry_after,
+        } => {
+            warn!(
+                "[{}] Circuit breaker rejected request for channel [{}] product [{}]: {} (retry_after: {:?})",
+                request_id, channel.channel_code, product_id, reason, retry_after
+            );
+            tracing::info!(
+                target: mazbri_core::trace_spans::SPAN_EVENT_TARGET,
+                channel_id = %channel.channel_id,
+                channel_code = %channel.channel_code,
+                reason = %reason,
+                "circuit_breaker.rejected"
+            );
+            record_proxy_metric(product_id, method, "503", mode, "circuit_open");
+            Err(ProxyError::CircuitOpen(format!("服务暂时不可用: {reason}")))
+        }
+        CircuitResult::Failure { error } => {
+            warn!(
+                "[{}] upstream HTTP/2 request failed for channel [{}] product [{}]: {}",
+                request_id, channel.channel_code, product_id, error
+            );
+            if error.starts_with(UPSTREAM_AUTH_REJECTED_PREFIX) {
+                record_proxy_metric(product_id, method, "502", mode, "upstream_auth");
+                return Err(ProxyError::UpstreamAuthRejected(error));
+            }
+            let result_label = if error.contains("contract") || error.contains("contract_id") {
+                "config"
+            } else {
+                "upstream_error"
+            };
+            record_proxy_metric(product_id, method, "502", mode, result_label);
+            Err(ProxyError::BadGateway(error))
+        }
     }
 }
 
@@ -229,7 +258,7 @@ async fn store_fallback_snapshot(
     let Some(cbpro_client) = state.cbpro_client.as_ref() else {
         return;
     };
-    let cache_key = build_fallback_cache_key(req);
+    let cache_key = build_fallback_cache_key(&claims.tenant_id, req);
     let body_json = proxy_body_to_json_value(&response.body);
     let request = StoreRequest {
         product_id: req.product_id.clone(),

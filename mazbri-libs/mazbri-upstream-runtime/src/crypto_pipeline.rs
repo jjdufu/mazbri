@@ -3,6 +3,7 @@
 //! 算法一律经 [`mazbri_crypto`]；按 [`UpstreamCryptoProfile::order`] 编排。
 //! 本模块为通用客户端组包/拆包，**不是** upupt 服务端 pipeline 拷贝。
 
+use hkdf::Hkdf;
 use mazbri_crypto::aead::AEAD_NONCE_LEN;
 use mazbri_crypto::legacy::assert_not_legacy_or_allowed;
 use mazbri_crypto::symmetric::AES_BLOCK_LEN;
@@ -14,6 +15,8 @@ use mazbri_crypto::{
 };
 use rand::Rng;
 use serde_json::{Map, Value};
+use sha2::Sha256;
+use subtle::ConstantTimeEq;
 
 use crate::canon::{self, CanonInput};
 use crate::slots::{self, role, SlotBags, SlotError};
@@ -412,37 +415,89 @@ fn open_with_encrypt(
     }
 
     let session = resolve_data_key_for_open(parts, profile, keys, ctx)?;
+    let map_before_encrypt_err = |err: PipelineError| -> PipelineError {
+        if matches!(sign_mode, SignMode::BeforeEncrypt) {
+            match err {
+                PipelineError::Profile(_) | PipelineError::MissingKey { .. } => err,
+                _ => PipelineError::VerifyFailed,
+            }
+        } else {
+            err
+        }
+    };
     let plain = if profile.scope == CipherScope::NamedFields {
-        open_named_fields(parts, profile, crypt, &session, ctx)?
+        open_named_fields(parts, profile, crypt, &session, ctx).map_err(map_before_encrypt_err)?
     } else {
-        let encoded = read_encoded_cipher(parts, profile)?;
-        let payload_enc = crypt.encoding.unwrap_or(profile.encodings.payload);
-        let wire = decode_wire(payload_enc, &encoded)?;
-        let iv_len = iv_len_for(crypt.alg)?;
-        let (iv, cipher) = split_iv_cipher(profile, parts, ctx, &session, iv_len, &wire)?;
-        decrypt_alg(
-            ctx.registry,
-            crypt.alg,
-            &session,
-            &iv,
-            ctx.aad,
-            &cipher,
-            profile.allow_insecure,
-        )?
+        let decrypt_res = (|| -> Result<Vec<u8>, PipelineError> {
+            let encoded = read_encoded_cipher(parts, profile)?;
+            let payload_enc = crypt.encoding.unwrap_or(profile.encodings.payload);
+            let wire = decode_wire(payload_enc, &encoded)?;
+            let iv_len = iv_len_for(crypt.alg)?;
+            let (iv, cipher) = split_iv_cipher(profile, parts, ctx, &session, iv_len, &wire)?;
+            decrypt_alg(
+                ctx.registry,
+                crypt.alg,
+                &session,
+                &iv,
+                ctx.aad,
+                &cipher,
+                profile.allow_insecure,
+            )
+        })();
+        decrypt_res.map_err(map_before_encrypt_err)?
     };
 
     if matches!(sign_mode, SignMode::BeforeEncrypt) {
-        let sign = profile.sign.as_ref().ok_or(PipelineError::MissingMac)?;
-        let (_, encoded_sig) = parts.slots.read_role(&profile.slots, role::SIGN)?;
-        let sig = decode_wire(
-            sign.encoding.unwrap_or(profile.encodings.signature),
-            &encoded_sig,
-        )?;
-        let message = signing_message(profile, &plain, ctx)?;
-        verify_sign(profile, keys, ctx, &message, &sig)?;
+        let verify_res = (|| -> Result<(), PipelineError> {
+            let sign = profile.sign.as_ref().ok_or(PipelineError::MissingMac)?;
+            let (_, encoded_sig) = parts.slots.read_role(&profile.slots, role::SIGN)?;
+            let sig = decode_wire(
+                sign.encoding.unwrap_or(profile.encodings.signature),
+                &encoded_sig,
+            )?;
+            let message = signing_message(profile, &plain, ctx)?;
+            verify_sign(profile, keys, ctx, &message, &sig)
+        })();
+        verify_res.map_err(map_before_encrypt_err)?;
     }
 
     Ok(plain)
+}
+
+fn derive_named_field_aad(base_aad: &[u8], field_name: &str, multi_field: bool) -> Vec<u8> {
+    if !multi_field {
+        return base_aad.to_vec();
+    }
+    let mut aad = Vec::with_capacity(base_aad.len() + 7 + field_name.len());
+    aad.extend_from_slice(base_aad);
+    aad.extend_from_slice(b"|field:");
+    aad.extend_from_slice(field_name.as_bytes());
+    aad
+}
+
+fn derive_named_field_iv(
+    base_iv: &[u8],
+    field_name: &str,
+    alg: AlgorithmId,
+    multi_field: bool,
+) -> Result<Vec<u8>, PipelineError> {
+    if !multi_field
+        || base_iv.is_empty()
+        || !(alg.kind() == AlgorithmKind::Aead
+            || mazbri_crypto::profile::upstream::is_stream_mode(alg))
+    {
+        return Ok(base_iv.to_vec());
+    }
+    let hk = Hkdf::<Sha256>::new(Some(b"mazbri-named-field-iv-v1"), base_iv);
+    let mut derived = vec![0u8; base_iv.len()];
+    let mut info = Vec::with_capacity(6 + field_name.len());
+    info.extend_from_slice(b"field:");
+    info.extend_from_slice(field_name.as_bytes());
+    hk.expand(&info, &mut derived)
+        .map_err(|_| PipelineError::InvalidInput {
+            reason: "named_fields hkdf sub-nonce expand failed".into(),
+        })?;
+    Ok(derived)
 }
 
 fn seal_named_fields(
@@ -463,7 +518,13 @@ fn seal_named_fields(
         }
     })?;
     let iv_len = iv_len_for(crypt.alg)?;
-    let iv = take_iv(profile, ctx, data_key, iv_len)?;
+    let multi_field = crypt.fields.len() > 1;
+    let base_iv = if matches!(profile.iv, IvSource::RandomPrefix) {
+        Vec::new()
+    } else {
+        take_iv(profile, ctx, data_key, iv_len)?
+    };
+    let mut last_prefix_iv = Vec::new();
     let payload_enc = crypt.encoding.unwrap_or(profile.encodings.payload);
 
     for name in &crypt.fields {
@@ -476,16 +537,24 @@ fn seal_named_fields(
                 reason: e.to_string(),
             })?,
         };
+        let field_iv = if matches!(profile.iv, IvSource::RandomPrefix) {
+            let generated = take_iv(profile, ctx, data_key, iv_len)?;
+            last_prefix_iv.clone_from(&generated);
+            generated
+        } else {
+            derive_named_field_iv(&base_iv, name, crypt.alg, multi_field)?
+        };
+        let field_aad = derive_named_field_aad(ctx.aad, name, multi_field);
         let cipher = encrypt_alg(
             ctx.registry,
             crypt.alg,
             data_key,
-            &iv,
-            ctx.aad,
+            &field_iv,
+            &field_aad,
             &plain,
             profile.allow_insecure,
         )?;
-        let wire = prefix_iv_if_needed(profile.iv, &iv, &cipher);
+        let wire = prefix_iv_if_needed(profile.iv, &field_iv, &cipher);
         let encoded = encode_wire(payload_enc, &wire);
         map.insert(name.clone(), Value::String(encoded));
     }
@@ -493,7 +562,12 @@ fn seal_named_fields(
     let out = serde_json::to_vec(&Value::Object(map)).map_err(|e| PipelineError::JsonScope {
         reason: e.to_string(),
     })?;
-    Ok((iv, out))
+    let slot_iv = if matches!(profile.iv, IvSource::RandomPrefix) {
+        last_prefix_iv
+    } else {
+        base_iv
+    };
+    Ok((slot_iv, out))
 }
 
 fn open_named_fields(
@@ -516,8 +590,9 @@ fn open_named_fields(
         }
     })?;
     let iv_len = iv_len_for(crypt.alg)?;
+    let multi_field = crypt.fields.len() > 1;
     let payload_enc = crypt.encoding.unwrap_or(profile.encodings.payload);
-    let mut shared_iv: Option<Vec<u8>> = None;
+    let mut shared_base_iv: Option<Vec<u8>> = None;
 
     for name in &crypt.fields {
         let encoded = map
@@ -527,27 +602,26 @@ fn open_named_fields(
                 reason: format!("missing cipher field {name}"),
             })?;
         let wire = decode_wire(payload_enc, encoded)?;
-        let (iv, cipher) = if let Some(iv) = &shared_iv {
-            let c = match profile.iv {
-                IvSource::RandomPrefix => wire.get(iv_len..).map(<[u8]>::to_vec).ok_or_else(
-                    || PipelineError::InvalidInput {
-                        reason: "cipher shorter than iv prefix".into(),
-                    },
-                )?,
-                _ => wire,
-            };
-            (iv.clone(), c)
+        let (field_iv, cipher) = if matches!(profile.iv, IvSource::RandomPrefix) {
+            split_iv_cipher(profile, parts, ctx, data_key, iv_len, &wire)?
         } else {
-            let pair = split_iv_cipher(profile, parts, ctx, data_key, iv_len, &wire)?;
-            shared_iv = Some(pair.0.clone());
-            pair
+            let base_iv = if let Some(iv) = &shared_base_iv {
+                iv.clone()
+            } else {
+                let (iv, _) = split_iv_cipher(profile, parts, ctx, data_key, iv_len, &wire)?;
+                shared_base_iv = Some(iv.clone());
+                iv
+            };
+            let derived = derive_named_field_iv(&base_iv, name, crypt.alg, multi_field)?;
+            (derived, wire)
         };
+        let field_aad = derive_named_field_aad(ctx.aad, name, multi_field);
         let plain = decrypt_alg(
             ctx.registry,
             crypt.alg,
             data_key,
-            &iv,
-            ctx.aad,
+            &field_iv,
+            &field_aad,
             &cipher,
             profile.allow_insecure,
         )?;
@@ -881,7 +955,7 @@ fn verify_sign(
                     reason: format!("unsupported digest-as-sign alg {}", sign.alg),
                 });
             };
-            if got.as_slice() == signature {
+            if got.len() == signature.len() && bool::from(got.as_slice().ct_eq(signature)) {
                 Ok(())
             } else {
                 Err(PipelineError::VerifyFailed)
@@ -1416,9 +1490,39 @@ pub fn parts_from_json_object(map: &Map<String, Value>, profile: &UpstreamCrypto
     parts
 }
 
+/// 从完整 HTTP 响应（body + headers）按 profile 槽位装填 [`RequestParts`]（供 `open_response`）。
+#[must_use]
+pub fn parts_from_response<S: ::std::hash::BuildHasher>(
+    body: &[u8],
+    headers: &std::collections::HashMap<String, String, S>,
+    profile: &UpstreamCryptoProfile,
+) -> RequestParts {
+    let mut parts = if let Ok(Value::Object(map)) = serde_json::from_slice::<Value>(body) {
+        parts_from_json_object(&map, profile)
+    } else {
+        let mut p = RequestParts::blank();
+        p.body = body.to_vec();
+        p
+    };
+    parts.body = body.to_vec();
+    for spec in &profile.slots {
+        if spec.location != SlotLocation::Header {
+            continue;
+        }
+        if let Some((_, val)) = headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case(&spec.name))
+        {
+            let _ = parts.slots.write_spec(spec, val.clone());
+        }
+    }
+    parts
+}
+
 #[cfg(test)]
 mod keys_tests {
     use super::*;
+    use mazbri_crypto::{SignSpec, WireEncodings};
     use std::collections::HashMap;
 
     #[test]
@@ -1440,5 +1544,200 @@ mod keys_tests {
         let keys = pipeline_keys_from_credentials(&creds);
         let data = keys.data.expect("data");
         assert_eq!(data.raw_bytes().expect("raw").len(), 32);
+    }
+
+    #[test]
+    fn named_fields_multi_field_random_prefix_uses_distinct_nonces_and_field_aad() {
+        let registry = AlgorithmRegistry::default_registry();
+        let profile = UpstreamCryptoProfile {
+            version: 1,
+            order: CryptoOrder::AeadOnly,
+            scope: CipherScope::NamedFields,
+            crypt: Some(CryptSpec {
+                alg: AlgorithmId::Aes256Gcm,
+                fields: vec!["id_card".into(), "backup_card".into()],
+                encoding: None,
+            }),
+            response_crypt: None,
+            verify_response: false,
+            decrypt_response: true,
+            sign: None,
+            wrap: None,
+            canon: CanonStyle::Raw,
+            canon_key_affix: CanonKeyAffix::None,
+            iv: IvSource::RandomPrefix,
+            encodings: WireEncodings::base64_all(),
+            slots: Vec::new(),
+            allow_insecure: false,
+        };
+        let keys = PipelineKeys {
+            data: Some(KeyRef::raw(KeyPurpose::DataEncryption, vec![0x33; 32])),
+            ..PipelineKeys::empty()
+        };
+        let ctx = PipelineContext::new(&registry);
+        let plain = br#"{"id_card":"SAME_VALUE","backup_card":"SAME_VALUE","plain":"ok"}"#;
+        let sealed = seal_request(plain, &profile, &keys, &ctx).expect("seal");
+        let sealed_obj: Map<String, Value> = serde_json::from_slice(&sealed.body).expect("json");
+        let c1 = sealed_obj["id_card"].as_str().expect("c1");
+        let c2 = sealed_obj["backup_card"].as_str().expect("c2");
+        assert_ne!(c1, c2, "identical plaintexts must not reuse nonce");
+
+        let opened = open_response(&sealed, &profile, &keys, &ctx).expect("open");
+        let opened_obj: Map<String, Value> = serde_json::from_slice(&opened).expect("json");
+        assert_eq!(opened_obj["id_card"], "SAME_VALUE");
+        assert_eq!(opened_obj["backup_card"], "SAME_VALUE");
+
+        // Swapping field ciphertexts must fail due to field-bound AAD.
+        let mut swapped_obj = sealed_obj.clone();
+        swapped_obj.insert("id_card".into(), Value::String(c2.to_owned()));
+        swapped_obj.insert("backup_card".into(), Value::String(c1.to_owned()));
+        let mut swapped_parts = sealed.clone();
+        swapped_parts.body = serde_json::to_vec(&swapped_obj).expect("vec");
+        assert!(open_response(&swapped_parts, &profile, &keys, &ctx).is_err());
+    }
+
+    #[test]
+    fn named_fields_multi_field_shared_iv_derives_sub_nonces() {
+        let registry = AlgorithmRegistry::default_registry();
+        let profile = UpstreamCryptoProfile {
+            version: 1,
+            order: CryptoOrder::AeadOnly,
+            scope: CipherScope::NamedFields,
+            crypt: Some(CryptSpec {
+                alg: AlgorithmId::Aes256Gcm,
+                fields: vec!["f1".into(), "f2".into()],
+                encoding: None,
+            }),
+            response_crypt: None,
+            verify_response: false,
+            decrypt_response: true,
+            sign: None,
+            wrap: None,
+            canon: CanonStyle::Raw,
+            canon_key_affix: CanonKeyAffix::None,
+            iv: IvSource::Random,
+            encodings: WireEncodings::base64_all(),
+            slots: vec![SlotSpec {
+                role: role::IV.into(),
+                location: SlotLocation::Header,
+                name: "X-Iv".into(),
+            }],
+            allow_insecure: false,
+        };
+        let keys = PipelineKeys {
+            data: Some(KeyRef::raw(KeyPurpose::DataEncryption, vec![0x55; 32])),
+            ..PipelineKeys::empty()
+        };
+        let ctx = PipelineContext::new(&registry);
+        let plain = br#"{"f1":"IDENTICAL","f2":"IDENTICAL"}"#;
+        let sealed = seal_request(plain, &profile, &keys, &ctx).expect("seal");
+        let sealed_obj: Map<String, Value> = serde_json::from_slice(&sealed.body).expect("json");
+        assert_ne!(sealed_obj["f1"], sealed_obj["f2"]);
+        let opened = open_response(&sealed, &profile, &keys, &ctx).expect("open");
+        let opened_obj: Map<String, Value> = serde_json::from_slice(&opened).expect("json");
+        assert_eq!(opened_obj["f1"], "IDENTICAL");
+        assert_eq!(opened_obj["f2"], "IDENTICAL");
+    }
+
+    #[test]
+    fn sign_then_encrypt_returns_uniform_verify_failed_on_decrypt_or_sig_tamper() {
+        let registry = AlgorithmRegistry::default_registry();
+        let profile = UpstreamCryptoProfile {
+            version: 1,
+            order: CryptoOrder::SignThenEncrypt,
+            scope: CipherScope::WholeBody,
+            crypt: Some(CryptSpec {
+                alg: AlgorithmId::Aes256Cbc,
+                fields: Vec::new(),
+                encoding: None,
+            }),
+            response_crypt: None,
+            verify_response: true,
+            decrypt_response: true,
+            sign: Some(SignSpec {
+                alg: AlgorithmId::HmacSha256,
+                encoding: None,
+            }),
+            wrap: None,
+            canon: CanonStyle::Raw,
+            canon_key_affix: CanonKeyAffix::None,
+            iv: IvSource::Random,
+            encodings: WireEncodings::base64_all(),
+            slots: default_slots_json_cipher_sign_iv(),
+            allow_insecure: false,
+        };
+        let keys = PipelineKeys {
+            data: Some(KeyRef::raw(KeyPurpose::DataEncryption, vec![0x11; 32])),
+            mac: Some(KeyRef::raw(KeyPurpose::Mac, vec![0x22; 32])),
+            ..PipelineKeys::empty()
+        };
+        let ctx = PipelineContext::new(&registry);
+        let sealed = seal_request(br#"{"msg":"secret"}"#, &profile, &keys, &ctx).expect("seal");
+        assert_eq!(
+            open_response(&sealed, &profile, &keys, &ctx).expect("open"),
+            br#"{"msg":"secret"}"#
+        );
+
+        let mut bad_cipher = sealed.clone();
+        bad_cipher
+            .slots
+            .json
+            .insert("payload".into(), Value::String("AAAA".into()));
+        let err_cipher = open_response(&bad_cipher, &profile, &keys, &ctx).unwrap_err();
+
+        let mut bad_sig = sealed;
+        bad_sig.slots.json.insert(
+            "sign".into(),
+            Value::String("00".repeat(32)),
+        );
+        let err_sig = open_response(&bad_sig, &profile, &keys, &ctx).unwrap_err();
+        assert_eq!(err_cipher, PipelineError::VerifyFailed);
+        assert_eq!(err_sig, PipelineError::VerifyFailed);
+    }
+
+    #[test]
+    fn parts_from_response_extracts_case_insensitive_headers_and_json() {
+        let profile = UpstreamCryptoProfile {
+            version: 1,
+            order: CryptoOrder::SignOnly,
+            scope: CipherScope::WholeBody,
+            crypt: None,
+            response_crypt: None,
+            verify_response: true,
+            decrypt_response: false,
+            sign: Some(SignSpec {
+                alg: AlgorithmId::HmacSha256,
+                encoding: None,
+            }),
+            wrap: None,
+            canon: CanonStyle::Raw,
+            canon_key_affix: CanonKeyAffix::None,
+            iv: IvSource::Random,
+            encodings: WireEncodings::base64_all(),
+            slots: vec![
+                SlotSpec {
+                    role: role::SIGN.into(),
+                    location: SlotLocation::Header,
+                    name: "X-Upstream-Sign".into(),
+                },
+                SlotSpec {
+                    role: role::BIZ.into(),
+                    location: SlotLocation::Json,
+                    name: "biz".into(),
+                },
+            ],
+            allow_insecure: false,
+        };
+        let mut headers = HashMap::new();
+        headers.insert("x-upstream-sign".to_owned(), "deadbeef".to_owned());
+        let parts = parts_from_response(br#"{"biz":"hello"}"#, &headers, &profile);
+        assert_eq!(
+            parts.slots.read_role(&profile.slots, role::SIGN).unwrap().1,
+            "deadbeef"
+        );
+        assert_eq!(
+            parts.slots.read_role(&profile.slots, role::BIZ).unwrap().1,
+            "hello"
+        );
     }
 }

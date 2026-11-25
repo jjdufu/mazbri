@@ -1,7 +1,8 @@
+use crate::queue::ChargeQueue;
 use crate::service::{
-    AddFundsResult, BillInfo, BillLineItem, UsageBreakdownItem, UsageOutboxEvent, UsageRecord,
-    UsageSummaryInfo,
+    BillInfo, BillLineItem, UsageBreakdownItem, UsageOutboxEvent, UsageRecord, UsageSummaryInfo,
 };
+use crate::types::{AdjustmentDirection, FencedChargeItem, RecordUsageOutcome};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use mazbri_core::CoreError;
@@ -17,18 +18,20 @@ pub use mapping::AccountBalanceRow;
 pub trait BillingRepository: Send + Sync + std::fmt::Debug {
     async fn get_account_id(&self, tenant_id: Uuid) -> Result<Option<Uuid>, CoreError>;
     async fn record_usage(&self, record: &UsageRecord) -> Result<i64, CoreError>;
+    async fn record_usage_and_charge(
+        &self,
+        record: &UsageRecord,
+        async_queue: Option<&ChargeQueue>,
+    ) -> Result<RecordUsageOutcome, CoreError>;
     async fn insert_usage_outbox(&self, event: &UsageOutboxEvent) -> Result<(), CoreError>;
     async fn check_balance(&self, tenant_id: Uuid) -> Result<Option<AccountBalanceRow>, CoreError>;
     async fn deduct_balance(&self, tenant_id: Uuid, amount: Decimal) -> Result<Decimal, CoreError>;
     async fn get_balance(&self, tenant_id: Uuid) -> Result<Option<AccountBalanceRow>, CoreError>;
-    async fn add_funds(
+    async fn get_bill(
         &self,
         tenant_id: Uuid,
-        amount: Decimal,
-        payment_method: &str,
-    ) -> Result<AddFundsResult, CoreError>;
-    async fn get_bill(&self, tenant_id: Uuid, bill_id: Uuid)
-    -> Result<Option<BillInfo>, CoreError>;
+        bill_id: Uuid,
+    ) -> Result<Option<BillInfo>, CoreError>;
     async fn list_bills(
         &self,
         tenant_id: Uuid,
@@ -68,20 +71,22 @@ pub trait BillingRepository: Send + Sync + std::fmt::Debug {
         account_id: Uuid,
         usage_record_id: i64,
         queue_id: Uuid,
+        lease_seq: i64,
     ) -> Result<DeductAndRecordResult, CoreError>;
-    /// Batch charge for one tenant: single balance UPDATE for SUM(amount), then per-item ledger.
-    /// `items` is (`queue_id`, `usage_record_id`, amount).
+    /// Batch charge for one tenant: fenced queue transition + single balance UPDATE for SUM(amount)
+    /// over fenced uncharged items + per-item ledger entries.
     async fn deduct_and_record_batch(
         &self,
         tenant_id: Uuid,
         account_id: Uuid,
-        items: &[(Uuid, i64, Decimal)],
+        items: &[FencedChargeItem],
     ) -> Result<DeductAndRecordResult, CoreError>;
     async fn create_adjustment(
         &self,
         tenant_id: Uuid,
         amount: Decimal,
-        direction: &str,
+        direction: AdjustmentDirection,
+        allow_overdraft: bool,
         description: &str,
     ) -> Result<Uuid, CoreError>;
 }
@@ -90,6 +95,7 @@ pub struct DeductAndRecordResult {
     pub transaction_id: Uuid,
     pub balance_before: Decimal,
     pub balance_after: Decimal,
+    pub charged_items: usize,
 }
 impl DeductAndRecordResult {
     #[must_use]

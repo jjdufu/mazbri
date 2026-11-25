@@ -1,21 +1,22 @@
 use crate::error::ApiError;
 use crate::repositories::tenant_crypto as repo;
 use crate::services::license::{ensure_license_issuance_allowed, fetch_license_status};
-use crate::services::root_package::fetch_root_material_bundle;
-use crate::services::tenant::resolve_tenant_id;
-use mazbri_core::crypto::tenant_key::{
-    COMMERCIAL_ROOT_PROTECTION_WRAPPING_KEY_ID, decode_configured_key, default_key_metadata,
-    generate_key_version, wrap_new_tenant_key,
+use crate::services::root_package::{
+    fetch_root_material_bundle, fetch_root_protection_keyring_cached,
 };
+use crate::services::tenant::resolve_tenant_id;
 use mazbri_core::crypto::request_binding::{
     DEFAULT_BINDING_MAC_ALG, SignatureVersion, parse_binding_alg, public_key_digest_scope,
 };
+use mazbri_core::crypto::supplier_secrets::{RootMaterialKeyring, install_root_material_keyring};
 use mazbri_core::crypto::tenant_key::{
-    secret_key_digest, unwrap_tenant_key, verify_secret_key_digest,
+    COMMERCIAL_ROOT_PROTECTION_WRAPPING_KEY_ID, decode_configured_key, default_key_metadata,
+    generate_key_version, secret_key_digest, unwrap_and_verify_tenant_key_with_keyring,
+    wrap_new_tenant_key,
 };
 use mazbri_core::crypto::{
-    AlgorithmId, AlgorithmRegistry, BindingSpec, KeySelection, TenantTransportProfile,
-    TransportMode, SUITE_TENANT_DEFAULT_2026_11, resolve_suite,
+    AlgorithmId, AlgorithmRegistry, BindingSpec, KeySelection, SUITE_TENANT_DEFAULT_2026_11,
+    TenantTransportProfile, TransportMode, resolve_suite,
 };
 use serde::Deserialize;
 use sqlx::PgPool;
@@ -86,6 +87,20 @@ fn default_nonce_ttl_seconds() -> i32 {
 
 fn default_clock_skew_seconds() -> i32 {
     300
+}
+
+async fn notify_tenant_crypto_invalidation(pool: &PgPool) {
+    if let Err(error) = mazbri_core::config_watch::bump_config_version_and_notify(
+        pool,
+        mazbri_core::config_watch::AUTH_API_KEY_VERSION_KEY,
+    )
+    .await
+    {
+        tracing::warn!(
+            error = %error,
+            "Failed to bump auth_api_key_version after tenant crypto mutation"
+        );
+    }
 }
 
 async fn ensure_tenant_crypto_enabled(
@@ -379,6 +394,7 @@ pub async fn update_profile(
     )
     .await
     .map_err(|error| ApiError::internal(format!("Failed to update crypto profile: {error}")))?;
+    notify_tenant_crypto_invalidation(pool).await;
     Ok(serde_json::to_value(profile).unwrap_or_default())
 }
 
@@ -435,6 +451,80 @@ pub async fn get_crypto_bundle(
     }))
 }
 
+async fn log_create_key_events_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: uuid::Uuid,
+    key_id: uuid::Uuid,
+    key_version: &str,
+    rotate: bool,
+    actor_id: uuid::Uuid,
+    details: &serde_json::Value,
+) -> Result<(), ApiError> {
+    repo::log_key_event_tx(
+        tx,
+        tenant_id,
+        Some(key_id),
+        Some(key_version),
+        if rotate { "rotate" } else { "create" },
+        actor_id,
+        details,
+    )
+    .await
+    .map_err(|error| ApiError::internal(format!("Failed to log crypto key event: {error}")))?;
+    repo::log_key_event_tx(
+        tx,
+        tenant_id,
+        Some(key_id),
+        Some(key_version),
+        "reveal_once",
+        actor_id,
+        &serde_json::json!({ "shownOnce": true }),
+    )
+    .await
+    .map_err(|error| ApiError::internal(format!("Failed to log crypto key event: {error}")))
+}
+
+async fn sync_profile_current_version_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: uuid::Uuid,
+    version: &str,
+    status: &str,
+    actor_id: uuid::Uuid,
+) -> Result<(), ApiError> {
+    if status == "active" {
+        repo::set_current_key_version_tx(tx, tenant_id, Some(version), actor_id)
+            .await
+            .map_err(|error| {
+                ApiError::internal(format!("Failed to update current crypto key: {error}"))
+            })
+    } else {
+        sqlx::query(
+            r"
+            UPDATE tenant_crypto_profiles
+            SET current_key_version = (
+                    SELECT key_version
+                    FROM tenant_crypto_keys
+                    WHERE tenant_id = $1 AND status = 'active'
+                    ORDER BY activated_at DESC NULLS LAST, created_at DESC
+                    LIMIT 1
+                ),
+                updated_by = $2,
+                updated_at = NOW()
+            WHERE tenant_id = $1 AND current_key_version = $3
+            ",
+        )
+        .bind(tenant_id)
+        .bind(actor_id)
+        .bind(version)
+        .execute(&mut **tx)
+        .await
+        .map(|_| ())
+        .map_err(|error| {
+            ApiError::internal(format!("Failed to refresh current crypto key: {error}"))
+        })
+    }
+}
+
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
@@ -449,20 +539,30 @@ pub async fn create_key(
 ) -> Result<serde_json::Value, ApiError> {
     ensure_tenant_crypto_enabled(cert_client, cert_service_url, cert_service_token).await?;
     let tenant_id = resolve_tenant_id(pool, code).await?;
-    let profile = repo::upsert_profile_defaults(pool, tenant_id)
+    let (master_key, integrity_key) =
+        load_root_materials(cert_client, cert_service_url, cert_service_token).await?;
+
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|error| ApiError::internal(format!("Failed to start transaction: {error}")))?;
+    if repo::lock_tenant_tx(&mut tx, tenant_id)
+        .await
+        .map_err(|error| ApiError::internal(format!("Failed to lock tenant: {error}")))?
+        .is_none()
+    {
+        return Err(ApiError::not_found("tenant".to_string(), code.to_string()));
+    }
+
+    let profile = repo::upsert_profile_defaults_tx(&mut tx, tenant_id)
         .await
         .map_err(|error| ApiError::internal(format!("Failed to load crypto profile: {error}")))?;
     let (data_algorithm, signature_algorithm) = resolve_key_algorithms(&profile)?;
-    let existing = repo::list_keys(pool, tenant_id)
+    let existing = repo::list_keys_tx(&mut tx, tenant_id)
         .await
         .map_err(|error| ApiError::internal(format!("Failed to list crypto keys: {error}")))?;
-    let versions = existing
-        .iter()
-        .map(|row| row.key_version.clone())
-        .collect::<Vec<_>>();
+    let versions: Vec<String> = existing.iter().map(|row| row.key_version.clone()).collect();
     let key_version = generate_key_version(&versions);
-    let (master_key, integrity_key) =
-        load_root_materials(cert_client, cert_service_url, cert_service_token).await?;
     let wrapped = wrap_new_tenant_key(
         &tenant_id.to_string(),
         &key_version,
@@ -471,7 +571,7 @@ pub async fn create_key(
         COMMERCIAL_ROOT_PROTECTION_WRAPPING_KEY_ID,
     )
     .map_err(|error| ApiError::internal(format!("Failed to wrap tenant key: {error}")))?;
-    let active_count = repo::active_key_count(pool, tenant_id)
+    let active_count = repo::active_key_count_tx(&mut tx, tenant_id)
         .await
         .map_err(|error| ApiError::internal(format!("Failed to count active keys: {error}")))?;
     let status = if rotate || active_count > 0 {
@@ -484,8 +584,8 @@ pub async fn create_key(
         &signature_algorithm,
         profile.suite.as_deref(),
     );
-    let key = repo::insert_key(
-        pool,
+    let key = repo::insert_key_tx(
+        &mut tx,
         repo::InsertCryptoKeyParams {
             tenant_id,
             key_version: &key_version,
@@ -502,18 +602,18 @@ pub async fn create_key(
     .await
     .map_err(|error| ApiError::internal(format!("Failed to create crypto key: {error}")))?;
     if status == "active" {
-        repo::set_current_key_version(pool, tenant_id, Some(&key_version), actor_id)
+        repo::set_current_key_version_tx(&mut tx, tenant_id, Some(&key_version), actor_id)
             .await
             .map_err(|error| {
                 ApiError::internal(format!("Failed to update current crypto key: {error}"))
             })?;
     }
-    repo::log_key_event(
-        pool,
+    log_create_key_events_tx(
+        &mut tx,
         tenant_id,
-        Some(key.id),
-        Some(&key_version),
-        if rotate { "rotate" } else { "create" },
+        key.id,
+        &key_version,
+        rotate,
         actor_id,
         &serde_json::json!({
             "status": status,
@@ -521,19 +621,11 @@ pub async fn create_key(
             "macAlg": signature_algorithm
         }),
     )
-    .await
-    .map_err(|error| ApiError::internal(format!("Failed to log crypto key event: {error}")))?;
-    repo::log_key_event(
-        pool,
-        tenant_id,
-        Some(key.id),
-        Some(&key_version),
-        "reveal_once",
-        actor_id,
-        &serde_json::json!({ "shownOnce": true }),
-    )
-    .await
-    .map_err(|error| ApiError::internal(format!("Failed to log crypto key event: {error}")))?;
+    .await?;
+    tx.commit()
+        .await
+        .map_err(|error| ApiError::internal(format!("Failed to commit transaction: {error}")))?;
+    notify_tenant_crypto_invalidation(pool).await;
     Ok(serde_json::json!({
         "keyVersion": key_version,
         "tenantSecretKey": wrapped.tenant_secret_key_b64,
@@ -560,9 +652,6 @@ pub struct SetKeyStatusArgs<'a> {
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn set_key_status(args: SetKeyStatusArgs<'_>) -> Result<serde_json::Value, ApiError> {
     let pool = args.pool;
-    let cert_client = args.cert_client;
-    let cert_service_url = args.cert_service_url;
-    let cert_service_token = args.cert_service_token;
     let code = args.code;
     let version = args.version;
     let status = args.status;
@@ -572,29 +661,49 @@ pub async fn set_key_status(args: SetKeyStatusArgs<'_>) -> Result<serde_json::Va
         return Err(ApiError::validation("invalid key status transition"));
     }
     if matches!(status, "active" | "deprecated") {
-        ensure_tenant_crypto_enabled(cert_client, cert_service_url, cert_service_token).await?;
+        ensure_tenant_crypto_enabled(args.cert_client, args.cert_service_url, args.cert_service_token)
+            .await?;
     }
     let tenant_id = resolve_tenant_id(pool, code).await?;
+
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|error| ApiError::internal(format!("Failed to start transaction: {error}")))?;
+    if repo::lock_tenant_tx(&mut tx, tenant_id)
+        .await
+        .map_err(|error| ApiError::internal(format!("Failed to lock tenant: {error}")))?
+        .is_none()
+    {
+        return Err(ApiError::not_found("tenant".to_string(), code.to_string()));
+    }
+    // 单事务原子守卫：先确认目标版本存在，防止目标不存在时误将存量 active 密钥降级为 deprecated！
+    if repo::find_key_tx(&mut tx, tenant_id, version)
+        .await
+        .map_err(|error| ApiError::internal(format!("Failed to check crypto key: {error}")))?
+        .is_none()
+    {
+        return Err(ApiError::not_found(
+            "tenant_crypto_key".to_string(),
+            version.to_string(),
+        ));
+    }
     if status == "active" {
-        repo::deprecate_other_active_keys(pool, tenant_id, version, actor_id)
+        repo::deprecate_other_active_keys_tx(&mut tx, tenant_id, version, actor_id)
             .await
             .map_err(|error| {
                 ApiError::internal(format!("Failed to deprecate old crypto keys: {error}"))
             })?;
     }
-    let key = repo::update_key_status(pool, tenant_id, version, status, actor_id)
+    let key = repo::update_key_status_tx(&mut tx, tenant_id, version, status, actor_id)
         .await
         .map_err(|error| ApiError::internal(format!("Failed to update crypto key: {error}")))?
-        .ok_or_else(|| ApiError::not_found("tenant_crypto_key".to_string(), version.to_string()))?;
-    if status == "active" {
-        repo::set_current_key_version(pool, tenant_id, Some(version), actor_id)
-            .await
-            .map_err(|error| {
-                ApiError::internal(format!("Failed to update current crypto key: {error}"))
-            })?;
-    }
-    repo::log_key_event(
-        pool,
+        .ok_or_else(|| {
+            ApiError::not_found("tenant_crypto_key".to_string(), version.to_string())
+        })?;
+    sync_profile_current_version_tx(&mut tx, tenant_id, version, status, actor_id).await?;
+    repo::log_key_event_tx(
+        &mut tx,
         tenant_id,
         Some(key.id),
         Some(version),
@@ -609,6 +718,10 @@ pub async fn set_key_status(args: SetKeyStatusArgs<'_>) -> Result<serde_json::Va
     )
     .await
     .map_err(|error| ApiError::internal(format!("Failed to log crypto key event: {error}")))?;
+    tx.commit()
+        .await
+        .map_err(|error| ApiError::internal(format!("Failed to commit transaction: {error}")))?;
+    notify_tenant_crypto_invalidation(pool).await;
     Ok(serde_json::to_value(key).unwrap_or_default())
 }
 
@@ -705,8 +818,12 @@ pub async fn verify_crypto_keys(
     cert_service_token: &str,
     actor_id: uuid::Uuid,
 ) -> Result<serde_json::Value, ApiError> {
-    let (master_key, integrity_key) =
-        load_root_materials(cert_client, cert_service_url, cert_service_token).await?;
+    let protection =
+        fetch_root_protection_keyring_cached(cert_client, cert_service_url, cert_service_token)
+            .await?;
+    let keyring_val = RootMaterialKeyring::from_protection_keyring(&protection)
+        .map_err(|error| ApiError::internal(format!("Root material keyring error: {error}")))?;
+    let keyring = install_root_material_keyring(keyring_val);
     let keys = repo::list_all_keys(pool)
         .await
         .map_err(|error| ApiError::internal(format!("Failed to list crypto keys: {error}")))?;
@@ -714,23 +831,15 @@ pub async fn verify_crypto_keys(
     let mut failed = Vec::new();
     for key in &keys {
         let tenant_id = key.tenant_id.to_string();
-        let result = unwrap_tenant_key(
+        let result = unwrap_and_verify_tenant_key_with_keyring(
             &key.encrypted_secret_key,
             &tenant_id,
             &key.key_version,
-            &master_key,
-        )
-        .and_then(|secret| {
-            verify_secret_key_digest(
-                &integrity_key,
-                &tenant_id,
-                &key.key_version,
-                &secret,
-                &key.secret_key_digest,
-            )
-        });
+            &key.secret_key_digest,
+            &keyring,
+        );
         match result {
-            Ok(true) => {
+            Ok(_) => {
                 verified += 1;
                 let _ = repo::log_key_event(
                     pool,
@@ -743,7 +852,7 @@ pub async fn verify_crypto_keys(
                 )
                 .await;
             }
-            _ => failed.push(serde_json::json!({
+            Err(_) => failed.push(serde_json::json!({
                 "tenant_id": key.tenant_id,
                 "key_version": key.key_version,
                 "status": key.status

@@ -240,16 +240,18 @@
     </OpsSection>
 
     <!-- 安全与治理摘要 -->
-    <OpsSection
-      id="security-gov"
-      :title="t('ops.overview.sections.securityGov')"
-    >
-      <SecurityGovSummary
-        ref="securityGovRef"
-        :start="chartWindow?.start ?? 0"
-        :end="chartWindow?.end ?? 0"
-      />
-    </OpsSection>
+    <RoleGate gate="admin">
+      <OpsSection
+        id="security-gov"
+        :title="t('ops.overview.sections.securityGov')"
+      >
+        <SecurityGovSummary
+          ref="securityGovRef"
+          :start="chartWindow?.start ?? 0"
+          :end="chartWindow?.end ?? 0"
+        />
+      </OpsSection>
+    </RoleGate>
 
     <!-- 洞察：跟随时间窗（SLO 为其自身评估窗口，单独标注） -->
     <OpsSection
@@ -521,8 +523,12 @@ async function reload() {
   loading.value = true;
 
   void productTopNRef.value?.reload(win);
-  void recentAnomaliesRef.value?.reload(win);
-  void securityGovRef.value?.reload();
+  if (isBiz.value) {
+    void recentAnomaliesRef.value?.reload(win);
+  }
+  if (isAdmin.value) {
+    void securityGovRef.value?.reload();
+  }
   void sloBudgetRef.value?.reload();
 
   try {

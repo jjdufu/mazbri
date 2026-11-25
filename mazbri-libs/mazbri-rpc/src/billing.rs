@@ -22,7 +22,7 @@ pub enum BillStatus {
     Overdue = 3,
     Cancelled = 4,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct Amount {
     pub value: i64,
@@ -92,6 +92,8 @@ pub struct UsageSummary {
 pub struct RecordUsageRequest {
     pub tenant_id: String,
     pub api_endpoint: String,
+    #[serde(default)]
+    pub event_id: String,
     #[serde(default)]
     pub request_id: String,
     pub request_size: i64,
@@ -239,9 +241,29 @@ pub trait BillingService {
     async fn record_usage(request: RecordUsageRequest) -> RecordUsageResponse;
     async fn check_balance(request: CheckBalanceRequest) -> CheckBalanceResponse;
     async fn get_balance(request: GetBalanceRequest) -> GetBalanceResponse;
-    async fn add_funds(request: AddFundsRequest) -> AddFundsResponse;
     async fn get_bill(request: GetBillRequest) -> GetBillResponse;
     async fn list_bills(request: ListBillsRequest) -> ListBillsResponse;
     async fn get_usage_summary(request: GetUsageSummaryRequest) -> GetUsageSummaryResponse;
     async fn health() -> HealthResponse;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::BillingServiceRequest;
+
+    #[test]
+    fn billing_tarpc_service_does_not_expose_add_funds() {
+        let err = serde_json::from_value::<BillingServiceRequest>(serde_json::json!({
+            "AddFunds": {
+                "request": {
+                    "tenant_id": "fc391546-7925-4139-b06e-6cfe9f3c8a70",
+                    "amount": { "value": 100, "currency": "CNY", "decimals": 6 }
+                }
+            }
+        }));
+        assert!(
+            err.is_err(),
+            "AddFunds must not be part of BillingServiceRequest tarpc enum"
+        );
+    }
 }

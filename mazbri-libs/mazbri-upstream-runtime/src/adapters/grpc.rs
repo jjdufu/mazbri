@@ -124,23 +124,16 @@ async fn send_grpc_http(
         }
     };
     let status = resp.status().as_u16();
-    let grpc_status_header = resp
-        .headers()
-        .get("grpc-status")
-        .and_then(|v| v.to_str().ok())
-        .map(str::to_string);
-    let grpc_message = resp
-        .headers()
-        .get("grpc-message")
-        .and_then(|v| v.to_str().ok())
-        .map(str::to_string);
-    let mut resp_headers = std::collections::HashMap::with_capacity(resp.headers().len());
-    for (k, v) in resp.headers() {
+    let http_resp: http::Response<reqwest::Body> = resp.into();
+    let (parts, body_stream) = http_resp.into_parts();
+    let mut resp_headers = std::collections::HashMap::with_capacity(parts.headers.len());
+    for (k, v) in &parts.headers {
         if let Ok(s) = v.to_str() {
             resp_headers.insert(k.as_str().to_string(), s.to_string());
         }
     }
-    let body = resp.bytes().await.unwrap_or_default().to_vec();
+    let (body, grpc_status_header, grpc_message) =
+        collect_grpc_body_and_trailers(parts, body_stream, &mut resp_headers, ctx, started).await?;
     let wire_duration = started.elapsed();
     ctx.wire_clock.add(wire_duration);
     Ok((
@@ -157,6 +150,75 @@ async fn send_grpc_http(
         grpc_status_header,
         grpc_message,
     ))
+}
+
+async fn collect_grpc_body_and_trailers(
+    parts: http::response::Parts,
+    mut body_stream: reqwest::Body,
+    resp_headers: &mut std::collections::HashMap<String, String>,
+    ctx: &AdapterCtx<'_>,
+    started: Instant,
+) -> Result<(Vec<u8>, Option<String>, Option<String>), ExecuteError> {
+    let mut grpc_status_header = parts
+        .headers
+        .get("grpc-status")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string);
+    let mut grpc_message = parts
+        .headers
+        .get("grpc-message")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string);
+    let mut body = Vec::new();
+    while let Some(frame_res) = http_body_util::BodyExt::frame(&mut body_stream).await {
+        let frame = match frame_res {
+            Ok(f) => f,
+            Err(e) => {
+                ctx.wire_clock.add(started.elapsed());
+                return Err(ExecuteError::UpstreamTransport(format!(
+                    "grpc response stream error: {e}"
+                )));
+            }
+        };
+        match frame.into_data() {
+            Ok(data) => {
+                if body.len().saturating_add(data.len())
+                    > crate::http_call::MAX_UPSTREAM_RESPONSE_BYTES
+                {
+                    ctx.wire_clock.add(started.elapsed());
+                    return Err(ExecuteError::UpstreamTransport(format!(
+                        "grpc response body exceeds limit of {} bytes",
+                        crate::http_call::MAX_UPSTREAM_RESPONSE_BYTES
+                    )));
+                }
+                body.extend_from_slice(&data);
+            }
+            Err(non_data) => {
+                if let Ok(trailers) = non_data.into_trailers() {
+                    if grpc_status_header.is_none() {
+                        grpc_status_header = trailers
+                            .get("grpc-status")
+                            .and_then(|v| v.to_str().ok())
+                            .map(str::to_string);
+                    }
+                    if grpc_message.is_none() {
+                        grpc_message = trailers
+                            .get("grpc-message")
+                            .and_then(|v| v.to_str().ok())
+                            .map(str::to_string);
+                    }
+                    for (k, v) in &trailers {
+                        if let Ok(s) = v.to_str() {
+                            resp_headers
+                                .entry(k.as_str().to_string())
+                                .or_insert_with(|| s.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok((body, grpc_status_header, grpc_message))
 }
 
 fn resolve_method(

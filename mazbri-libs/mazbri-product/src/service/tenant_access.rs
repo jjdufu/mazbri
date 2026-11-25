@@ -24,7 +24,7 @@ impl ProductService {
             return Err(anyhow::anyhow!("Product not found: {product_id}"));
         };
         let mut config = config.cloned().unwrap_or_default();
-        if config.unit_price.trim().is_empty() {
+        if config.unit_price.is_empty() {
             config.unit_price = TenantProductConfig::default().unit_price;
         }
         if !cb_pro_enabled {

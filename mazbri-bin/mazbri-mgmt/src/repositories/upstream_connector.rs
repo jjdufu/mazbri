@@ -143,9 +143,9 @@ pub async fn list_drafts(
         WHERE ($1::text IS NULL OR status = $1)
           AND (
             $2::text IS NULL
-            OR name ILIKE $2
-            OR COALESCE(upstream_url, '') ILIKE $2
-            OR draft_code ILIKE $2
+            OR name ILIKE $2 ESCAPE '\\'
+            OR COALESCE(upstream_url, '') ILIKE $2 ESCAPE '\\'
+            OR draft_code ILIKE $2 ESCAPE '\\'
           )
         ORDER BY updated_at DESC
         LIMIT $3 OFFSET $4
@@ -173,9 +173,9 @@ pub async fn count_drafts(
         WHERE ($1::text IS NULL OR status = $1)
           AND (
             $2::text IS NULL
-            OR name ILIKE $2
-            OR COALESCE(upstream_url, '') ILIKE $2
-            OR draft_code ILIKE $2
+            OR name ILIKE $2 ESCAPE '\\'
+            OR COALESCE(upstream_url, '') ILIKE $2 ESCAPE '\\'
+            OR draft_code ILIKE $2 ESCAPE '\\'
           )
         ",
     )

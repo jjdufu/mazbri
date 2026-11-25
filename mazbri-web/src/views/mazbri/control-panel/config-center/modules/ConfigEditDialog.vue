@@ -140,6 +140,7 @@ import EditDialog from "@/components/common/EditDialog.vue";
 import TomlEditor from "./TomlEditor.vue";
 import ServiceNameSelector from "./ServiceNameSelector.vue";
 import { getLicenseDisabledReason } from "@/composables/useLicenseGate";
+import { useLatestRequest } from "@/composables/useLatestRequest";
 import { isMfaStepUpCancelled } from "@/utils/http/mfa-dialog-service";
 import { logger } from "@/utils/sys";
 import { parseGatewayCors, serializeGatewayCors } from "../helpers";
@@ -164,10 +165,8 @@ const visible = computed({
 
 const formRef = ref<FormInstance>();
 const tomlEditorRef = ref<InstanceType<typeof TomlEditor> | null>(null);
-const loadingDetail = ref(false);
 const saving = ref(false);
 const validationError = ref<string | null>(null);
-let loadSeq = 0;
 
 const isEdit = computed(() => !!props.config);
 const dialogTitle = computed(() =>
@@ -274,35 +273,31 @@ const handleTabChange = (newTab: TabPaneName) => {
   });
 };
 
+const detailLoader = useLatestRequest(async (ctx, serviceName: string) => {
+  const detail = await fetchConfig(serviceName, ctx.signal);
+  if (!ctx.isLatest() || !visible.value) {
+    return;
+  }
+  form.service_name = detail.service_name;
+  form.content = detail.content;
+  if (detail.service_name === "mazbri-gateway") {
+    const parsed = parseGatewayCors(detail.content);
+    gatewayCors.allowed_origins = parsed.allowed_origins;
+    gatewayCors.allow_credentials = parsed.allow_credentials;
+  }
+  await nextTick();
+  tomlEditorRef.value?.requestMeasure();
+});
+const { loading: loadingDetail } = detailLoader;
+
 const loadConfigDetail = async (serviceName: string) => {
-  const seq = ++loadSeq;
-  loadingDetail.value = true;
   try {
-    const detail = await fetchConfig(serviceName);
-    if (seq !== loadSeq || !visible.value) {
-      return;
-    }
-    form.service_name = detail.service_name;
-    form.content = detail.content;
-    if (detail.service_name === "mazbri-gateway") {
-      const parsed = parseGatewayCors(detail.content);
-      gatewayCors.allowed_origins = parsed.allowed_origins;
-      gatewayCors.allow_credentials = parsed.allow_credentials;
-    }
-    await nextTick();
-    tomlEditorRef.value?.requestMeasure();
+    await detailLoader.run(serviceName);
   } catch (error: unknown) {
-    if (seq !== loadSeq) {
-      return;
-    }
     if (!isMfaStepUpCancelled(error)) {
       logger.error("Failed to load config detail:", error);
     }
     visible.value = false;
-  } finally {
-    if (seq === loadSeq) {
-      loadingDetail.value = false;
-    }
   }
 };
 
@@ -310,8 +305,7 @@ watch(
   () => [props.modelValue, props.config] as const,
   ([isOpen, targetConfig]) => {
     if (!isOpen) {
-      loadSeq++;
-      loadingDetail.value = false;
+      detailLoader.cancel();
       return;
     }
     activeTab.value = "toml";
@@ -323,7 +317,7 @@ watch(
       gatewayCors.allow_credentials = true;
       void loadConfigDetail(targetConfig.service_name);
     } else {
-      loadingDetail.value = false;
+      detailLoader.cancel();
       form.service_name = "";
       form.content = "";
       gatewayCors.allowed_origins = [];
@@ -413,8 +407,7 @@ const handleSave = async () => {
 };
 
 const handleClosed = () => {
-  loadSeq++;
-  loadingDetail.value = false;
+  detailLoader.cancel();
   formRef.value?.resetFields();
   validationError.value = null;
   inputOriginVisible.value = false;

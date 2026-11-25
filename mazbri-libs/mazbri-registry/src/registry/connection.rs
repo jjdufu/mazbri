@@ -73,7 +73,8 @@ impl ConnectionManager {
                 let base_secs = if attempt == 0 {
                     1u64
                 } else {
-                    let delay = 1u64 << (attempt.saturating_sub(1));
+                    let shift = attempt.saturating_sub(1).min(30);
+                    let delay = 1u64 << shift;
                     delay.min(30)
                 };
                 let jitter: f64 = rand::rng().random_range(0.5..1.0);
@@ -92,5 +93,23 @@ impl ConnectionManager {
 impl Default for ConnectionManager {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn reconnect_delay_never_overflows_on_high_attempt_count() {
+        let cm = ConnectionManager::new();
+        cm.on_disconnect().await;
+        for _ in 0..80 {
+            cm.on_reconnect_failed().await;
+        }
+        assert!(cm.current_attempt().await > 64);
+        let delay = cm.reconnect_delay().await;
+        assert!(delay <= Duration::from_secs(30));
+        assert!(delay >= Duration::from_secs(15));
     }
 }

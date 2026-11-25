@@ -160,7 +160,10 @@ impl EvaluationSession {
         let labels = serde_json::to_value(params.labels).unwrap_or_else(|_| serde_json::json!({}));
         // ON CONFLICT 谓词需与 PostgreSQL 部分唯一索引定义严格匹配以供仲裁推断。
         let row = sqlx::query(
-            "INSERT INTO alert_events (rule_id, fingerprint, status, severity, labels, value, started_at, trace_ids, silenced, inhibited)              VALUES ($1, $2, 'firing', $3, $4, $5, $6, $7, $8, $9)              ON CONFLICT (fingerprint) WHERE status IN ('firing', 'acked') DO NOTHING              RETURNING id",
+            "INSERT INTO alert_events (rule_id, fingerprint, status, severity, labels, value, started_at, trace_ids, silenced, inhibited) \
+             VALUES ($1, $2, 'firing', $3, $4, $5, $6, $7, $8, $9) \
+             ON CONFLICT (fingerprint) WHERE status = 'firing' DO NOTHING \
+             RETURNING id",
         )
         .bind(params.rule.id)
         .bind(params.fingerprint)
@@ -201,7 +204,7 @@ impl EvaluationSession {
         let row = sqlx::query(
             "UPDATE alert_events SET status = 'resolved', resolved_at = now(), updated_at = now() \
              WHERE id = $1 AND status = 'firing' \
-             RETURNING id, rule_id, labels, value, started_at, resolved_at",
+             RETURNING id, rule_id, labels, value, started_at, resolved_at, silenced, inhibited",
         )
         .bind(event_id)
         .fetch_optional(&mut *self.conn)
@@ -217,6 +220,8 @@ impl EvaluationSession {
                 resolved_at: row
                     .try_get::<Option<DateTime<Utc>>, _>("resolved_at")?
                     .unwrap_or_else(Utc::now),
+                silenced: row.try_get("silenced")?,
+                inhibited: row.try_get("inhibited")?,
             })
         })
         .transpose()
@@ -277,7 +282,7 @@ impl EvaluationSession {
         &mut self,
     ) -> Result<Vec<crate::alerting::filter::ActiveLabels>, sqlx::Error> {
         let rows = sqlx::query(
-            "SELECT labels FROM alert_events WHERE status = 'firing'",
+            "SELECT id, labels FROM alert_events WHERE status = 'firing'",
         )
         .fetch_all(&mut *self.conn)
         .await?;
@@ -285,6 +290,7 @@ impl EvaluationSession {
         for row in &rows {
             let labels: serde_json::Value = row.try_get("labels")?;
             out.push(crate::alerting::filter::ActiveLabels {
+                event_id: row.try_get("id")?,
                 labels: string_map(&labels),
             });
         }

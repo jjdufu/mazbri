@@ -30,7 +30,16 @@ pub async fn onboard_upstream(
         return Err(ApiError::Forbidden);
     }
     if let Some(ref cfg) = payload.supplier.config {
+        crate::services::upstream_connector::reject_client_enc_in_supplier_config(cfg)?;
         guard_supplier_tls_privilege(cfg, None, is_admin(&claims))?;
+        if crate::services::upstream_connector::supplier_config_has_secrets_to_seal(cfg) {
+            crate::services::root_package::ensure_root_material_keyring_for_write_raw(
+                &state.cert_http_client,
+                &state.cert_service.url,
+                &state.cert_service.token,
+            )
+            .await?;
+        }
     }
     let data = svc::onboard(
         &state.db,
@@ -62,7 +71,16 @@ pub async fn onboard_upstream_dry_run(
         return Err(ApiError::Forbidden);
     }
     if let Some(ref cfg) = payload.supplier.config {
+        crate::services::upstream_connector::reject_client_enc_in_supplier_config(cfg)?;
         guard_supplier_tls_privilege(cfg, None, is_admin(&claims))?;
+        if crate::services::upstream_connector::supplier_config_has_secrets_to_seal(cfg) {
+            crate::services::root_package::ensure_root_material_keyring_for_write_raw(
+                &state.cert_http_client,
+                &state.cert_service.url,
+                &state.cert_service.token,
+            )
+            .await?;
+        }
     }
     let data = svc::dry_run(&state.db, state.connector_runtime.ssrf(), &payload).await?;
     Ok(ApiResponse::ok(data))
@@ -89,6 +107,7 @@ pub async fn validate_supplier_config(
     if !is_business_admin(&claims) {
         return Err(ApiError::Forbidden);
     }
+    crate::services::upstream_connector::reject_client_enc_in_supplier_config(&body.config)?;
     guard_supplier_tls_privilege(&body.config, None, is_admin(&claims))?;
     let _supplier_id = uuid::Uuid::parse_str(&id)
         .map_err(|e| ApiError::validation(format!("供应商 ID 无效: {e}")))?;

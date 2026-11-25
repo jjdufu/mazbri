@@ -111,6 +111,7 @@ async fn login(deps: &Deps, user: &TestUser) -> Value {
     };
     admin_login(AdminLoginParams {
         db: &deps.db,
+        redis: &deps.redis,
         jwt_secret: SECRET,
         jwt_expiration_secs: 3600,
         refresh_token_expiration_secs: 604_800,
@@ -148,6 +149,7 @@ fn router(redis: Arc<RedisClient>) -> Router {
     let state = Arc::new(AdminAuthState {
         jwt_secret: SECRET.to_string(),
         redis,
+        admin_db: None,
     });
     let api = Router::new()
         .route("/auth/login", post(public))
@@ -331,6 +333,7 @@ fn subject(user: &TestUser) -> TokenSubject<'_> {
         username: &user.username,
         user_id: Box::leak(user.id.to_string().into_boxed_str()),
         role: "R_FINANCE",
+        auth_epoch: 0,
         binding,
     }
 }
@@ -453,6 +456,7 @@ async fn legacy_tokens_and_revoked_tokens_are_rejected() {
         token_type: None,
         sid: uuid::Uuid::new_v4().to_string(),
         sxp: None,
+        auth_epoch: 0,
     };
     let key = EncodingKey::from_secret(SECRET.as_bytes()).expect("test secret");
     let legacy_access = encode(&Header::default(), &legacy, &key).expect("encode");
@@ -573,6 +577,7 @@ async fn expired_temp_token_is_rejected() {
         token_type: Some(kind.as_str().to_string()),
         sid: uuid::Uuid::new_v4().to_string(),
         sxp: None,
+        auth_epoch: 0,
     };
     let token = encode(
         &Header::default(),
@@ -774,6 +779,7 @@ async fn per_user_mfa_required_forces_setup_and_blocks_disable() {
         token_type: Some(TokenKind::Access.as_str().to_string()),
         sid: uuid::Uuid::new_v4().to_string(),
         sxp: Some(now + 604_800),
+        auth_epoch: 0,
     };
     let disable_status = disable(crate::services::mfa::DisableParams {
         pool: &deps.db,
@@ -956,6 +962,7 @@ async fn refresh_allows_mfa_enabled_session_issued_after_verify() {
         &user.username,
         &user.id.to_string(),
         "R_FINANCE",
+        0,
         &binding,
         SECRET,
         now,

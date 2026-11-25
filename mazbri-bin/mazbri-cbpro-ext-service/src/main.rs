@@ -89,12 +89,9 @@ async fn main() -> Result<()> {
                 None
             };
             let admin_state = runtime.start_admin(&runtime.ctx.config.admin, platform_db.clone())?;
-            let cert_manager = mazbri_tls::CertManager::new(runtime.ctx.tls_config.clone());
-            let client_cert = cert_manager.initialize().await?;
             let cbpro_client = match CBProClient::new(
                 runtime.ctx.config.clients.cbpro.clone(),
-                &client_cert.ca_cert_pem,
-                &client_cert,
+                &runtime.ctx.cert_handle,
                 &runtime.ctx.tls_config,
             ) {
                 Ok(client) => Some(Arc::new(client)),

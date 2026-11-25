@@ -4,13 +4,17 @@ import type { OlapResponse } from "@/types/api/olap";
 
 const PATH = `${API_BASE_PATH}/stats/olap/query`;
 
-export async function postOlapQuery<T = Record<string, unknown>>(body: {
-  template: string;
-  params: Record<string, unknown>;
-}) {
+export async function postOlapQuery<T = Record<string, unknown>>(
+  body: {
+    template: string;
+    params: Record<string, unknown>;
+  },
+  signal?: AbortSignal,
+) {
   return request.post<OlapResponse<T>>({
     url: PATH,
     data: body,
     showErrorMessage: false,
+    signal,
   });
 }

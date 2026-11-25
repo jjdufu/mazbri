@@ -22,6 +22,7 @@ pub struct InhibitRule {
 /// 用于抑制判定的活跃源事件标签。
 #[derive(Debug, Clone)]
 pub struct ActiveLabels {
+    pub event_id: uuid::Uuid,
     pub labels: BTreeMap<String, String>,
 }
 
@@ -50,12 +51,13 @@ pub fn is_silenced(silences: &[Silence], labels: &BTreeMap<String, String>, now:
     })
 }
 
-/// 若存在匹配 `source_matchers` 的活跃源，且目标标签匹配 `target_matchers`，
+/// 若存在匹配 `source_matchers` 的其他活跃源（排除目标事件自身），且目标标签匹配 `target_matchers`，
 /// 且 `equal_labels` 上取值相等，则抑制目标。
 #[must_use]
 pub fn is_inhibited(
     rules: &[InhibitRule],
     sources: &[ActiveLabels],
+    target_event_id: uuid::Uuid,
     target: &BTreeMap<String, String>,
 ) -> bool {
     for rule in rules {
@@ -63,6 +65,9 @@ pub fn is_inhibited(
             continue;
         }
         for src in sources {
+            if src.event_id == target_event_id {
+                continue;
+            }
             if !matchers_match(&rule.source_matchers, &src.labels) {
                 continue;
             }
@@ -85,6 +90,7 @@ pub fn is_inhibited(
 mod tests {
     use super::*;
     use serde_json::json;
+    use uuid::Uuid;
 
     fn labels(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
         pairs
@@ -137,13 +143,67 @@ mod tests {
             target_matchers: json!({"category": "business"}),
             equal_labels: vec!["product_id".into()],
         };
+        let src_id = Uuid::from_u128(1);
+        let dst_id = Uuid::from_u128(2);
         let sources = vec![ActiveLabels {
+            event_id: src_id,
             labels: labels(&[("category", "upstream"), ("product_id", "A"), ("name", "cb")]),
         }];
         let target = labels(&[("category", "business"), ("product_id", "A")]);
-        assert!(is_inhibited(std::slice::from_ref(&rule), &sources, &target));
+        assert!(is_inhibited(
+            std::slice::from_ref(&rule),
+            &sources,
+            dst_id,
+            &target
+        ));
         let other = labels(&[("category", "business"), ("product_id", "B")]);
-        assert!(!is_inhibited(std::slice::from_ref(&rule), &sources, &other));
+        assert!(!is_inhibited(
+            std::slice::from_ref(&rule),
+            &sources,
+            dst_id,
+            &other
+        ));
     }
 
+    #[test]
+    fn inhibit_excludes_self_when_source_and_target_match_same_event() {
+        let broad_rule = InhibitRule {
+            source_matchers: json!({"category": "upstream"}),
+            target_matchers: json!({"category": "upstream"}),
+            equal_labels: vec!["product_id".into()],
+        };
+        let self_id = Uuid::from_u128(42);
+        let peer_id = Uuid::from_u128(99);
+        let event_labels = labels(&[("category", "upstream"), ("product_id", "A")]);
+        let only_self = vec![ActiveLabels {
+            event_id: self_id,
+            labels: event_labels.clone(),
+        }];
+        assert!(
+            !is_inhibited(
+                std::slice::from_ref(&broad_rule),
+                &only_self,
+                self_id,
+                &event_labels
+            ),
+            "an event must never inhibit itself"
+        );
+
+        let with_peer = vec![
+            ActiveLabels {
+                event_id: self_id,
+                labels: event_labels.clone(),
+            },
+            ActiveLabels {
+                event_id: peer_id,
+                labels: event_labels.clone(),
+            },
+        ];
+        assert!(is_inhibited(
+            std::slice::from_ref(&broad_rule),
+            &with_peer,
+            self_id,
+            &event_labels
+        ));
+    }
 }

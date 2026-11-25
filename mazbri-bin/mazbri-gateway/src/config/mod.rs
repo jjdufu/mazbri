@@ -11,12 +11,90 @@ pub use billing::BillingMiddlewareConfig;
 pub use callback::CallbackWorkerTomlConfig;
 pub use channel_rate_limit::{ChannelRateLimitConfig, ChannelRateLimitMode};
 pub use cors::CorsConfig;
+use mazbri_core::TrustedProxyIpExtractor;
 use mazbri_core::config::{ServiceConfig, ValidateConfig};
 pub use redis::RedisConfig;
 pub use route_reload::RouteReloadConfig;
 use serde::Deserialize;
 pub use tarpc::{CircuitBreakerCacheConfig, TarpcConfig};
 pub use types::{ServiceEndpoint, ServicesConfig};
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GatewayServerConfigRaw {
+    pub host: String,
+    pub port: u16,
+    #[serde(default = "default_shutdown_timeout")]
+    pub graceful_shutdown_timeout_secs: u64,
+    #[serde(default = "default_max_server_connections")]
+    pub max_connections: u32,
+    #[serde(default = "default_true")]
+    pub tcp_nodelay: bool,
+    #[serde(default = "default_tcp_keepalive_secs")]
+    pub tcp_keepalive_secs: u64,
+    #[serde(default = "default_true")]
+    pub http1_keep_alive: bool,
+    #[serde(default = "default_http1_header_read_timeout_secs")]
+    pub http1_header_read_timeout_secs: u64,
+    #[serde(default = "default_true")]
+    pub compression_enabled: bool,
+    #[serde(default)]
+    pub trusted_proxies: Vec<String>,
+}
+
+fn default_shutdown_timeout() -> u64 {
+    30
+}
+fn default_max_server_connections() -> u32 {
+    10_000
+}
+fn default_true() -> bool {
+    true
+}
+fn default_tcp_keepalive_secs() -> u64 {
+    60
+}
+fn default_http1_header_read_timeout_secs() -> u64 {
+    30
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(from = "GatewayServerConfigRaw")]
+pub struct GatewayServerConfig {
+    pub inner: mazbri_core::ServerConfig,
+    pub trusted_proxies: Vec<String>,
+}
+
+impl From<GatewayServerConfigRaw> for GatewayServerConfig {
+    fn from(raw: GatewayServerConfigRaw) -> Self {
+        Self {
+            inner: mazbri_core::ServerConfig {
+                host: raw.host,
+                port: raw.port,
+                graceful_shutdown_timeout_secs: raw.graceful_shutdown_timeout_secs,
+                max_connections: raw.max_connections,
+                tcp_nodelay: raw.tcp_nodelay,
+                tcp_keepalive_secs: raw.tcp_keepalive_secs,
+                http1_keep_alive: raw.http1_keep_alive,
+                http1_header_read_timeout_secs: raw.http1_header_read_timeout_secs,
+                compression_enabled: raw.compression_enabled,
+            },
+            trusted_proxies: raw.trusted_proxies,
+        }
+    }
+}
+
+impl std::ops::Deref for GatewayServerConfig {
+    type Target = mazbri_core::ServerConfig;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+pub const MIN_TOKEN_EXPIRATION_SECS: usize = 60;
+pub const MAX_TOKEN_EXPIRATION_SECS: usize = 86_400;
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AuthConfig {
@@ -24,12 +102,22 @@ pub struct AuthConfig {
     pub token_expiration_secs: usize,
     #[serde(default = "default_jwt_kid")]
     pub jwt_kid: String,
+    #[serde(default = "default_token_rate_limit_qps")]
+    pub token_rate_limit_qps: u64,
+    #[serde(default = "default_token_rate_limit_burst")]
+    pub token_rate_limit_burst: u64,
 }
 fn default_token_expiration() -> usize {
     1800
 }
 fn default_jwt_kid() -> String {
     "hs256-v1".to_string()
+}
+fn default_token_rate_limit_qps() -> u64 {
+    30
+}
+fn default_token_rate_limit_burst() -> u64 {
+    60
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -54,7 +142,7 @@ impl Default for RequestBindingConfig {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GatewayConfig {
-    pub server: mazbri_core::ServerConfig,
+    pub server: GatewayServerConfig,
     pub database: mazbri_core::DatabaseConfig,
     pub services: ServicesConfig,
     pub redis: RedisConfig,
@@ -100,7 +188,7 @@ impl ServiceConfig for GatewayConfig {
             })
     }
     fn server_config(&self) -> &mazbri_core::ServerConfig {
-        &self.server
+        &self.server.inner
     }
 }
 impl ValidateConfig for GatewayConfig {
@@ -144,6 +232,20 @@ impl ValidateConfig for GatewayConfig {
         self.route_reload.validate()?;
         self.config_watch.validate()?;
         self.channel_rate_limit.validate()?;
+        TrustedProxyIpExtractor::parse(&self.server.trusted_proxies)
+            .map_err(|err| anyhow::anyhow!("server.trusted_proxies invalid: {err}"))?;
+        if !(MIN_TOKEN_EXPIRATION_SECS..=MAX_TOKEN_EXPIRATION_SECS)
+            .contains(&self.auth.token_expiration_secs)
+        {
+            anyhow::bail!(
+                "auth.token_expiration_secs must be between {MIN_TOKEN_EXPIRATION_SECS} and {MAX_TOKEN_EXPIRATION_SECS}"
+            );
+        }
+        if self.auth.token_rate_limit_qps == 0 || self.auth.token_rate_limit_burst == 0 {
+            anyhow::bail!(
+                "auth.token_rate_limit_qps and auth.token_rate_limit_burst must be at least 1"
+            );
+        }
         if self.auth.jwt_kid.trim().is_empty() {
             anyhow::bail!("auth.jwt_kid must not be empty");
         }

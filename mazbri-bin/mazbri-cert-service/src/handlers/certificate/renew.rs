@@ -1,4 +1,7 @@
-use super::common::{CertificateState, extract_client_ip, update_certificate_inventory_metrics};
+use super::common::{
+    CertificateState, extract_client_ip, update_certificate_inventory_metrics,
+    validate_validity_days,
+};
 use crate::db::CertificateResponse;
 use crate::error::CertError;
 use crate::token::scope::{ScopeContext, owner_visible};
@@ -112,6 +115,7 @@ async fn renew_certificate_inner(
     id: Uuid,
     validity_days: i64,
 ) -> Result<Response, CertError> {
+    let _ = validate_validity_days(validity_days, None)?;
     let existing = state.repo.get_by_id(id).await?;
     if !owner_visible(
         scope.owner_mode,
@@ -128,13 +132,19 @@ async fn renew_certificate_inner(
     }
     let dns_names = state.san_policy.sans_for_subject(&existing.subject)?;
     let ca_manager = state.base_authorization.require_issuance().await?;
-    let (cert_pem, key_encrypted) = ca_manager.issue_certificate(&existing.subject, &dns_names)?;
-    let base_time = if existing.expires_at > Utc::now() {
+    let now = Utc::now();
+    let base_time = if existing.expires_at > now {
         existing.expires_at
     } else {
-        Utc::now()
+        now
     };
-    let expires_at = base_time + chrono::Duration::days(validity_days);
+    let validity_delta =
+        validate_validity_days(validity_days, ca_manager.ca_remaining_days(base_time))?;
+    let expires_at = base_time
+        .checked_add_signed(validity_delta)
+        .ok_or_else(|| CertError::InvalidRequest("证书过期时间溢出".into()))?;
+    let (cert_pem, key_encrypted) =
+        ca_manager.issue_certificate_until(&existing.subject, &dns_names, now, expires_at)?;
     let actor_ip =
         extract_client_ip(&headers, socket_addr).and_then(|ip| ip.parse::<std::net::IpAddr>().ok());
     let record = state

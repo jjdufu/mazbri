@@ -4,13 +4,65 @@ use super::mapping::{
 };
 use super::transactions;
 use super::{BillingRepository, DeductAndRecordResult, PgBillingRepository};
-use crate::service::{AddFundsResult, UsageOutboxEvent, UsageRecord};
+use crate::queue::ChargeQueue;
+use crate::service::{UsageOutboxEvent, UsageRecord};
+use crate::types::{AdjustmentDirection, FencedChargeItem, RecordUsageOutcome};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use mazbri_core::CoreError;
 use rust_decimal::Decimal;
 use sqlx::Row;
 use uuid::Uuid;
+
+pub(crate) const USAGE_SUMMARY_SQL: &str = "SELECT
+    COUNT(*) as total_requests,
+    COALESCE(SUM(request_size), 0)::BIGINT as total_bytes_in,
+    COALESCE(SUM(response_size), 0)::BIGINT as total_bytes_out,
+    COALESCE(SUM(billing_service_duration_ms), 0)::BIGINT as total_billing_service_duration_ms,
+    COALESCE(SUM(billable_amount), 0) as total_cost
+ FROM usage_records
+ WHERE tenant_id = $1
+   AND recorded_at >= to_timestamp($2)
+   AND recorded_at < to_timestamp($3)
+   AND charge_status = 'charged'
+   AND billable_amount > 0";
+
+pub(crate) const BILL_ITEMS_FROM_USAGE_SQL: &str = "SELECT
+    api_endpoint,
+    COUNT(*) as call_count,
+    COALESCE(SUM(billable_units), 0) as total_units,
+    COALESCE(SUM(billable_amount), 0) as total_amount,
+    COALESCE(MIN(unit_price), 0) as unit_price
+ FROM usage_records
+ WHERE tenant_id = $1
+   AND recorded_at >= $2
+   AND recorded_at < $3
+   AND charge_status = 'charged'
+   AND billable_amount > 0
+ GROUP BY api_endpoint
+ ORDER BY total_amount DESC, api_endpoint ASC";
+
+pub(crate) const USAGE_BREAKDOWN_TOTAL_SQL: &str = "SELECT COALESCE(SUM(billable_amount), 0) as total_cost
+ FROM usage_records
+ WHERE tenant_id = $1
+   AND recorded_at >= to_timestamp($2)
+   AND recorded_at < to_timestamp($3)
+   AND charge_status = 'charged'
+   AND billable_amount > 0";
+
+pub(crate) const USAGE_BREAKDOWN_GROUPS_SQL: &str = "SELECT
+    api_endpoint as category,
+    COUNT(*) as request_count,
+    COALESCE(SUM(billable_amount), 0) as cost
+ FROM usage_records
+ WHERE tenant_id = $1
+   AND recorded_at >= to_timestamp($2)
+   AND recorded_at < to_timestamp($3)
+   AND charge_status = 'charged'
+   AND billable_amount > 0
+ GROUP BY api_endpoint
+ ORDER BY cost DESC";
+
 #[async_trait]
 impl BillingRepository for PgBillingRepository {
     async fn get_account_id(&self, tenant_id: Uuid) -> Result<Option<Uuid>, CoreError> {
@@ -23,6 +75,57 @@ impl BillingRepository for PgBillingRepository {
         Ok(result)
     }
     async fn record_usage(&self, record: &UsageRecord) -> Result<i64, CoreError> {
+        if record.billing_result.amount < Decimal::ZERO {
+            return Err(CoreError::Validation(format!(
+                "Usage billable_amount must be non-negative, got {}",
+                record.billing_result.amount
+            )));
+        }
+        let units = i64::try_from(record.billing_result.units).map_err(|e| {
+            CoreError::Validation(format!(
+                "Billing units {} exceeds maximum representable value: {}",
+                record.billing_result.units, e
+            ))
+        })?;
+        if let Some(event_id) = record.event_id {
+            let inserted: Option<i64> = sqlx::query_scalar(
+                "INSERT INTO usage_records (
+                    tenant_id, account_id, api_endpoint, http_method, response_status,
+                    request_size, response_size, billing_service_duration_ms,
+                    unit_price, billable_amount, billable_units,
+                    product_id, billing_code, event_id
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                ON CONFLICT (event_id) WHERE event_id IS NOT NULL DO NOTHING
+                RETURNING id",
+            )
+            .bind(record.tenant_id)
+            .bind(record.account_id)
+            .bind(&record.api_endpoint)
+            .bind(&record.http_method)
+            .bind(i32::from(record.response_status))
+            .bind(record.request_size)
+            .bind(record.response_size)
+            .bind(record.billing_service_duration_ms)
+            .bind(record.billing_result.unit_price)
+            .bind(record.billing_result.amount)
+            .bind(units)
+            .bind(&record.product_id)
+            .bind(record.billing_code)
+            .bind(event_id)
+            .fetch_optional(&*self.pool)
+            .await
+            .map_err(Self::map_error)?;
+            if let Some(id) = inserted {
+                return Ok(id);
+            }
+            let existing_id: i64 =
+                sqlx::query_scalar("SELECT id FROM usage_records WHERE event_id = $1")
+                    .bind(event_id)
+                    .fetch_one(&*self.pool)
+                    .await
+                    .map_err(Self::map_error)?;
+            return Ok(existing_id);
+        }
         let row = sqlx::query(
             "INSERT INTO usage_records (
                 tenant_id, account_id, api_endpoint, http_method, response_status,
@@ -42,12 +145,7 @@ impl BillingRepository for PgBillingRepository {
         .bind(record.billing_service_duration_ms)
         .bind(record.billing_result.unit_price)
         .bind(record.billing_result.amount)
-        .bind(i64::try_from(record.billing_result.units).map_err(|e| {
-            CoreError::Validation(format!(
-                "Billing units {} exceeds maximum representable value: {}",
-                record.billing_result.units, e
-            ))
-        })?)
+        .bind(units)
         .bind(&record.product_id)
         .bind(record.billing_code)
         .bind(record.event_id)
@@ -55,6 +153,13 @@ impl BillingRepository for PgBillingRepository {
         .await
         .map_err(Self::map_error)?;
         Ok(row.get("id"))
+    }
+    async fn record_usage_and_charge(
+        &self,
+        record: &UsageRecord,
+        async_queue: Option<&ChargeQueue>,
+    ) -> Result<RecordUsageOutcome, CoreError> {
+        transactions::record_usage_and_charge(self, record, async_queue).await
     }
     async fn insert_usage_outbox(&self, event: &UsageOutboxEvent) -> Result<(), CoreError> {
         outbox_insert_query(event)?
@@ -131,7 +236,7 @@ impl BillingRepository for PgBillingRepository {
             builder.push(")");
         }
         if let Some(end) = end_time {
-            builder.push(" AND created_at <= to_timestamp(");
+            builder.push(" AND created_at < to_timestamp(");
             builder.push_bind(end);
             builder.push(")");
         }
@@ -154,24 +259,13 @@ impl BillingRepository for PgBillingRepository {
         start_time: i64,
         end_time: i64,
     ) -> Result<crate::service::UsageSummaryInfo, CoreError> {
-        let row = sqlx::query(
-            "SELECT
-                COUNT(*) as total_requests,
-                COALESCE(SUM(request_size), 0)::BIGINT as total_bytes_in,
-                COALESCE(SUM(response_size), 0)::BIGINT as total_bytes_out,
-                COALESCE(SUM(billing_service_duration_ms), 0)::BIGINT as total_billing_service_duration_ms,
-                COALESCE(SUM(billable_amount), 0) as total_cost
-             FROM usage_records
-             WHERE tenant_id = $1
-             AND recorded_at >= to_timestamp($2)
-             AND recorded_at <= to_timestamp($3)",
-        )
-        .bind(tenant_id)
-        .bind(start_time)
-        .bind(end_time)
-        .fetch_one(&*self.read_pool)
-        .await
-        .map_err(Self::map_error)?;
+        let row = sqlx::query(USAGE_SUMMARY_SQL)
+            .bind(tenant_id)
+            .bind(start_time)
+            .bind(end_time)
+            .fetch_one(&*self.read_pool)
+            .await
+            .map_err(Self::map_error)?;
         Ok(map_usage_summary(&row))
     }
     async fn get_bill_items(
@@ -195,28 +289,36 @@ impl BillingRepository for PgBillingRepository {
                 id: bill_id.to_string(),
             });
         };
-        let period_start: chrono::DateTime<chrono::Utc> = bill_row.get("billing_period_start");
-        let period_end: chrono::DateTime<chrono::Utc> = bill_row.get("billing_period_end");
-        let rows = sqlx::query(
+        let snapshot_rows = sqlx::query(
             "SELECT
-                api_endpoint,
-                COUNT(*) as call_count,
-                COALESCE(SUM(billable_units), 0) as total_units,
-                COALESCE(SUM(billable_amount), 0) as total_amount,
-                COALESCE(MIN(unit_price), 0) as unit_price
-             FROM usage_records
-             WHERE tenant_id = $1
-             AND recorded_at >= $2
-             AND recorded_at <= $3
-             GROUP BY api_endpoint
-             ORDER BY total_amount DESC",
+                description AS api_endpoint,
+                quantity AS call_count,
+                total_units,
+                total AS total_amount,
+                unit_price
+             FROM bill_items
+             WHERE bill_id = $1
+             ORDER BY id ASC",
         )
-        .bind(tenant_id)
-        .bind(period_start)
-        .bind(period_end)
+        .bind(bill_id)
         .fetch_all(&*self.read_pool)
         .await
         .map_err(Self::map_error)?;
+        if !snapshot_rows.is_empty() {
+            return Ok(snapshot_rows
+                .into_iter()
+                .map(|r| map_bill_line_item(&r))
+                .collect());
+        }
+        let period_start: chrono::DateTime<chrono::Utc> = bill_row.get("billing_period_start");
+        let period_end: chrono::DateTime<chrono::Utc> = bill_row.get("billing_period_end");
+        let rows = sqlx::query(BILL_ITEMS_FROM_USAGE_SQL)
+            .bind(tenant_id)
+            .bind(period_start)
+            .bind(period_end)
+            .fetch_all(&*self.read_pool)
+            .await
+            .map_err(Self::map_error)?;
         Ok(rows.into_iter().map(|r| map_bill_line_item(&r)).collect())
     }
     async fn get_usage_breakdown(
@@ -225,38 +327,21 @@ impl BillingRepository for PgBillingRepository {
         start_time: i64,
         end_time: i64,
     ) -> Result<Vec<crate::service::UsageBreakdownItem>, CoreError> {
-        let total_row = sqlx::query(
-            "SELECT COALESCE(SUM(billable_amount), 0) as total_cost
-             FROM usage_records
-             WHERE tenant_id = $1
-             AND recorded_at >= to_timestamp($2)
-             AND recorded_at <= to_timestamp($3)",
-        )
-        .bind(tenant_id)
-        .bind(start_time)
-        .bind(end_time)
-        .fetch_one(&*self.read_pool)
-        .await
-        .map_err(Self::map_error)?;
+        let total_row = sqlx::query(USAGE_BREAKDOWN_TOTAL_SQL)
+            .bind(tenant_id)
+            .bind(start_time)
+            .bind(end_time)
+            .fetch_one(&*self.read_pool)
+            .await
+            .map_err(Self::map_error)?;
         let total_cost: Decimal = total_row.get("total_cost");
-        let rows = sqlx::query(
-            "SELECT
-                api_endpoint as category,
-                COUNT(*) as request_count,
-                COALESCE(SUM(billable_amount), 0) as cost
-             FROM usage_records
-             WHERE tenant_id = $1
-             AND recorded_at >= to_timestamp($2)
-             AND recorded_at <= to_timestamp($3)
-             GROUP BY api_endpoint
-             ORDER BY cost DESC",
-        )
-        .bind(tenant_id)
-        .bind(start_time)
-        .bind(end_time)
-        .fetch_all(&*self.read_pool)
-        .await
-        .map_err(Self::map_error)?;
+        let rows = sqlx::query(USAGE_BREAKDOWN_GROUPS_SQL)
+            .bind(tenant_id)
+            .bind(start_time)
+            .bind(end_time)
+            .fetch_all(&*self.read_pool)
+            .await
+            .map_err(Self::map_error)?;
         Ok(rows
             .into_iter()
             .map(|r| map_usage_breakdown_item(&r, total_cost))
@@ -274,14 +359,6 @@ impl BillingRepository for PgBillingRepository {
     async fn deduct_balance(&self, tenant_id: Uuid, amount: Decimal) -> Result<Decimal, CoreError> {
         transactions::deduct_balance(self, tenant_id, amount).await
     }
-    async fn add_funds(
-        &self,
-        tenant_id: Uuid,
-        amount: Decimal,
-        payment_method: &str,
-    ) -> Result<AddFundsResult, CoreError> {
-        transactions::add_funds(self, tenant_id, amount, payment_method).await
-    }
     async fn generate_bill(
         &self,
         tenant_id: Uuid,
@@ -297,6 +374,7 @@ impl BillingRepository for PgBillingRepository {
         account_id: Uuid,
         usage_record_id: i64,
         queue_id: Uuid,
+        lease_seq: i64,
     ) -> Result<DeductAndRecordResult, CoreError> {
         transactions::deduct_and_record(
             self,
@@ -305,6 +383,7 @@ impl BillingRepository for PgBillingRepository {
             account_id,
             usage_record_id,
             queue_id,
+            lease_seq,
         )
         .await
     }
@@ -312,7 +391,7 @@ impl BillingRepository for PgBillingRepository {
         &self,
         tenant_id: Uuid,
         account_id: Uuid,
-        items: &[(Uuid, i64, Decimal)],
+        items: &[FencedChargeItem],
     ) -> Result<DeductAndRecordResult, CoreError> {
         transactions::deduct_and_record_batch(self, tenant_id, account_id, items).await
     }
@@ -320,10 +399,19 @@ impl BillingRepository for PgBillingRepository {
         &self,
         tenant_id: Uuid,
         amount: Decimal,
-        direction: &str,
+        direction: AdjustmentDirection,
+        allow_overdraft: bool,
         description: &str,
     ) -> Result<Uuid, CoreError> {
-        transactions::create_adjustment(self, tenant_id, amount, direction, description).await
+        transactions::create_adjustment(
+            self,
+            tenant_id,
+            amount,
+            direction,
+            allow_overdraft,
+            description,
+        )
+        .await
     }
 }
 
@@ -333,6 +421,12 @@ impl BillingRepository for PgBillingRepository {
 pub(crate) fn outbox_insert_query(
     event: &UsageOutboxEvent,
 ) -> Result<sqlx::query::Query<'_, sqlx::Postgres, sqlx::postgres::PgArguments>, CoreError> {
+    if event.billing_result.amount < Decimal::ZERO {
+        return Err(CoreError::Validation(format!(
+            "Outbox billable_amount must be non-negative, got {}",
+            event.billing_result.amount
+        )));
+    }
     let units = i64::try_from(event.billing_result.units).map_err(|e| {
         CoreError::Validation(format!(
             "Billing units {} exceeds maximum representable value: {}",
@@ -369,4 +463,39 @@ pub(crate) fn outbox_insert_query(
     .bind(event.billing_result.amount)
     .bind(event.billing_code)
     .bind(&event.trace_parent))
+}
+
+#[cfg(test)]
+mod query_predicate_tests {
+    use super::{
+        BILL_ITEMS_FROM_USAGE_SQL, USAGE_BREAKDOWN_GROUPS_SQL, USAGE_BREAKDOWN_TOTAL_SQL,
+        USAGE_SUMMARY_SQL,
+    };
+
+    #[test]
+    fn usage_queries_enforce_charged_predicate_and_half_open_window() {
+        for sql in [
+            USAGE_SUMMARY_SQL,
+            BILL_ITEMS_FROM_USAGE_SQL,
+            USAGE_BREAKDOWN_TOTAL_SQL,
+            USAGE_BREAKDOWN_GROUPS_SQL,
+        ] {
+            assert!(
+                sql.contains("charge_status = 'charged'"),
+                "missing charged predicate: {sql}"
+            );
+            assert!(
+                sql.contains("billable_amount > 0"),
+                "missing positive billable_amount predicate: {sql}"
+            );
+            assert!(
+                !sql.contains("recorded_at <="),
+                "must use half-open < end, not <= end: {sql}"
+            );
+            assert!(
+                sql.contains("recorded_at < "),
+                "missing half-open < end bound: {sql}"
+            );
+        }
+    }
 }

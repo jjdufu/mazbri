@@ -383,6 +383,7 @@ async fn fake_auth(mut request: Request, next: Next) -> Response {
             token_type: None,
             sid: uuid::Uuid::nil().to_string(),
             sxp: None,
+            auth_epoch: 0,
         });
     }
     next.run(request).await

@@ -21,6 +21,8 @@ pub struct ConfigHistory {
     pub service_name: String,
     pub content: String,
     pub content_hash: Option<String>,
+    #[serde(default)]
+    pub is_sensitive: bool,
     pub version_number: i32,
     pub updated_by: String,
     pub created_at: DateTime<Utc>,
@@ -41,6 +43,8 @@ pub struct UpdateConfigRequest {
     #[serde(default)]
     pub is_sensitive: Option<bool>,
     pub updated_by: String,
+    #[serde(default)]
+    pub expected_content_hash: Option<String>,
 }
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]

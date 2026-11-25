@@ -1,6 +1,6 @@
 use super::common::{
-    MfaServiceErrorMode, get_mfa_service, hash_backup_codes, ok_json, prepare_setup_artifacts,
-    store_setup_artifacts,
+    MfaServiceErrorMode, get_mfa_service, hash_backup_codes_async, ok_json,
+    prepare_setup_artifacts_async, store_setup_artifacts,
 };
 use crate::audit::{AuditAction, AuditService, user_audit};
 use crate::mfa::MfaServiceCache;
@@ -62,7 +62,7 @@ pub async fn setup(params: SetupParams<'_>) -> axum::response::Response {
             Ok(service) => service,
             Err(response) => return *response,
         };
-    let artifacts = match prepare_setup_artifacts(&mfa_service, username) {
+    let artifacts = match prepare_setup_artifacts_async(&mfa_service, username).await {
         Ok(artifacts) => artifacts,
         Err(response) => return *response,
     };
@@ -129,21 +129,30 @@ async fn verify_current_password(
                 .into_response(),
         ));
     }
-    let Some(hash) = user.password_hash.as_deref() else {
+    let Some(hash) = user.password_hash.clone() else {
         return Err(Box::new(ApiResponse::err(
             StatusCode::INTERNAL_SERVER_ERROR,
             mazbri_i18n::mfa::internal_error(),
         )));
     };
-    if mazbri_auth::constant_time_argon2_verify(current_password.as_bytes(), hash).is_err() {
+    let password_bytes = current_password.as_bytes().to_vec();
+    let verified_ok = mazbri_core::panic_policy::spawn_blocking_recoverable(move || {
+        mazbri_auth::constant_time_argon2_verify(&password_bytes, &hash).is_ok()
+    })
+    .await
+    .ok()
+    .and_then(Result::ok)
+    .unwrap_or(false);
+    if !verified_ok {
         let policy = password_policy_cache.get().await;
-        if let Err(error) = crate::repositories::admin::record_login_failure(
-            pool,
-            user_id,
-            policy.max_login_attempts,
-            i64::from(policy.lockout_duration_minutes),
-        )
-        .await
+        if user.role != crate::middleware::auth::ROLE_SUPER_ADMIN
+            && let Err(error) = crate::repositories::admin::record_login_failure(
+                pool,
+                user_id,
+                policy.max_login_attempts,
+                i64::from(policy.lockout_duration_minutes),
+            )
+            .await
         {
             error!("failed to record setup password failure: {error}");
             return Err(Box::new(ApiResponse::err(
@@ -185,11 +194,13 @@ pub async fn regenerate_backup_codes(
         Err(response) => return *response,
     };
     let backup_codes = mfa_service.generate_backup_codes();
-    let hashed_codes = match hash_backup_codes(
+    let hashed_codes = match hash_backup_codes_async(
         &mfa_service,
         &backup_codes,
         mazbri_i18n::mfa::failed_backup_codes(),
-    ) {
+    )
+    .await
+    {
         Ok(codes) => codes,
         Err(response) => return *response,
     };

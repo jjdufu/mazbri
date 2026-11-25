@@ -38,7 +38,7 @@ pub async fn list_admins(
         .as_ref()
         .map(|s| s.trim())
         .filter(|s| !s.is_empty())
-        .map(|s| format!("%{s}%"));
+        .map(mazbri_core::config::contains_ilike_pattern);
     let search_ref = search_pattern.as_deref();
     let filters = crate::list_query::parse_and_validate_filters(
         params.filters.as_deref(),
@@ -119,10 +119,12 @@ pub async fn create_admin(
     client_ip: Option<String>,
 ) -> Result<serde_json::Value, ApiError> {
     precheck_create_admin(pool, password_policy_cache, claims, req).await?;
-    let password_hash = helpers::hash_password(&req.password).map_err(|e| {
-        tracing::error!("Failed to hash password: {}", e);
-        ApiError::internal("处理密码失败".to_string())
-    })?;
+    let password_hash = helpers::hash_password_async(&req.password)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to hash password: {}", e);
+            ApiError::internal("处理密码失败".to_string())
+        })?;
     let row = repo::insert_admin(
         pool,
         repo::InsertAdminParams {
@@ -442,10 +444,12 @@ pub async fn precheck_password_reset(
         })?
         .ok_or_else(|| ApiError::not_found("admin".to_string(), id.to_string()))?;
     helpers::ensure_not_super_admin_target(&admin.role)?;
-    let password_hash = helpers::hash_password(&req.new_password).map_err(|e| {
-        tracing::error!("Failed to hash password: {}", e);
-        ApiError::internal("处理密码失败".to_string())
-    })?;
+    let password_hash = helpers::hash_password_async(&req.new_password)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to hash password: {}", e);
+            ApiError::internal("处理密码失败".to_string())
+        })?;
     let policy = password_policy_cache.get().await;
     if let Some(reuse_error) = policy.check_password_reuse(pool, id, &password_hash).await {
         return Err(ApiError::validation(reuse_error));
@@ -504,10 +508,12 @@ pub async fn reset_password(
         })?
         .ok_or_else(|| ApiError::not_found("admin".to_string(), id.to_string()))?;
     helpers::ensure_not_super_admin_target(&admin.role)?;
-    let password_hash = helpers::hash_password(&req.new_password).map_err(|e| {
-        tracing::error!("Failed to hash password: {}", e);
-        ApiError::internal("处理密码失败".to_string())
-    })?;
+    let password_hash = helpers::hash_password_async(&req.new_password)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to hash password: {}", e);
+            ApiError::internal("处理密码失败".to_string())
+        })?;
     let policy = password_policy_cache.get().await;
     if let Some(reuse_error) = policy.check_password_reuse(pool, id, &password_hash).await {
         return Err(ApiError::validation(reuse_error));

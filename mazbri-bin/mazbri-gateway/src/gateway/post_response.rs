@@ -6,6 +6,7 @@ use axum::http::HeaderMap;
 use mazbri_billing::BillingService;
 use mazbri_billing::{BillingCalculator, RateConfig, UsageOutboxEvent};
 use mazbri_callback::repository;
+use mazbri_core::TraceContext;
 use mazbri_core::num::SaturatingFrom;
 use mazbri_product::service::TenantProductDetail;
 use mazbri_rpc::BillingCode;
@@ -85,7 +86,6 @@ impl CallbackPayloadContext<'_> {
 }
 
 /// Cached active callback subscription id per `(tenant_id, product_id)`.
-/// Eliminates a PostgreSQL round-trip on every single request when no callback is configured.
 static CALLBACK_SUBSCRIPTION_CACHE: LazyLock<moka::future::Cache<(Uuid, Uuid), Option<Uuid>>> =
     LazyLock::new(|| {
         moka::future::Cache::builder()
@@ -111,7 +111,9 @@ pub(crate) async fn enqueue_callback_delivery(
         Ok(id) => id,
         Err(error) => {
             warn!(
-                tenant_id = % ctx.tenant_id, product_id = % ctx.product_code, error = % error,
+                tenant_id = %ctx.tenant_id,
+                product_id = %ctx.product_code,
+                error = %error,
                 "Failed to query callback subscription"
             );
             return;
@@ -125,11 +127,14 @@ pub(crate) async fn enqueue_callback_delivery(
         repository::enqueue_callback(&state.db, subscription_id, ctx.request_id, &payload).await
     {
         warn!(
-            subscription_id = % subscription_id, request_id = % ctx.request_id, error = %
-            error, "Failed to enqueue callback delivery"
+            subscription_id = %subscription_id,
+            request_id = %ctx.request_id,
+            error = %error,
+            "Failed to enqueue callback delivery"
         );
     }
 }
+
 pub(crate) struct UsageChargeContext<'a> {
     pub(crate) request_id: &'a str,
     pub(crate) tenant_id: Uuid,
@@ -140,23 +145,21 @@ pub(crate) struct UsageChargeContext<'a> {
     pub(crate) response_bytes: u64,
     pub(crate) service_total_ms: i32,
     pub(crate) interaction_event_id: Uuid,
-    pub(crate) fingerprint: Option<&'a str>,
+    pub(crate) idempotency_epoch_id: Option<Uuid>,
+    pub(crate) from_cbpro_fallback: bool,
 }
-/// Builds the usage event for a completed request. Returns the event and whether the
-/// request is billable; the `event_id` is deterministic (fingerprint v5 or interaction id)
-/// so the access log, Redpanda record and outbox row all share the same key.
+
+/// Builds the usage event for a completed request. Returns `(event, billable)`:
+/// - `event_id` binds to the per-acquisition `idempotency_epoch_id` (when present) or `interaction_event_id`,
+///   guaranteeing tenant + epoch uniqueness while still deduplicating outbox/Redpanda transport retries.
+/// - Only `200..=299` responses NOT served from `from_cbpro_fallback` are billable.
 pub(crate) fn build_usage_event(ctx: &UsageChargeContext<'_>) -> (UsageOutboxEvent, bool) {
     let billing_code = billing_code_for_status(ctx.status);
-    let billable = billing_code.default_billable();
+    let billable = billing_code.default_billable() && !ctx.from_cbpro_fallback;
     let calculator = build_billing_calculator(ctx.product_detail);
     let calc_result = calculator.calculate_call();
     let request_uuid = Uuid::parse_str(ctx.request_id).unwrap_or_else(|_| Uuid::now_v7());
-    // Fingerprint → deterministic event_id so outbox unique index dedupes transport retries.
-    let event_id = if let Some(fp) = ctx.fingerprint {
-        Uuid::new_v5(&Uuid::NAMESPACE_OID, fp.as_bytes())
-    } else {
-        ctx.interaction_event_id
-    };
+    let event_id = ctx.idempotency_epoch_id.unwrap_or(ctx.interaction_event_id);
     let event = UsageOutboxEvent {
         event_id,
         request_id: request_uuid,
@@ -182,9 +185,13 @@ pub(crate) async fn record_usage_charge(
     ctx: UsageChargeContext<'_>,
     prebuilt: Option<UsageOutboxEvent>,
     produced: bool,
+    reserved_amount: Decimal,
 ) -> u128 {
     let started_at = Instant::now();
     let Some(billing_state) = state.billing_state.as_ref() else {
+        if let Some(cache) = state.balance_cache.as_ref() {
+            cache.release(ctx.tenant_id, reserved_amount).await;
+        }
         return started_at.elapsed().as_millis();
     };
     let (usage_outbox_event, billable) = match prebuilt {
@@ -192,14 +199,17 @@ pub(crate) async fn record_usage_charge(
         None => build_usage_event(&ctx),
     };
     if !billable {
+        if let Some(cache) = state.balance_cache.as_ref() {
+            cache.release(ctx.tenant_id, reserved_amount).await;
+        }
         return started_at.elapsed().as_millis();
     }
     let calc_result = usage_outbox_event.billing_result.clone();
     if produced {
-        // L1: already enqueued for background batch produce; billing consumer writes the outbox.
+        // L1: already enqueued for background batch produce; reconcile reservation delta (zero double subtraction!).
         if let Some(cache) = state.balance_cache.as_ref() {
             cache
-                .optimistic_subtract(ctx.tenant_id, calc_result.amount)
+                .settle(ctx.tenant_id, reserved_amount, calc_result.amount)
                 .await;
         }
         return started_at.elapsed().as_millis();
@@ -208,22 +218,32 @@ pub(crate) async fn record_usage_charge(
     match deliver_usage_event(service, usage_outbox_event, CHARGE_RETRY_ATTEMPTS).await {
         Delivery::Done => {
             if let Some(cache) = state.balance_cache.as_ref() {
-                // 乐观扣减 L1，避免每票 invalidate 把预检打回 L3；L2 短 TTL 自然过期
                 cache
-                    .optimistic_subtract(ctx.tenant_id, calc_result.amount)
+                    .settle(ctx.tenant_id, reserved_amount, calc_result.amount)
                     .await;
             }
         }
         Delivery::AccountNotFound => {
+            if let Some(cache) = state.balance_cache.as_ref() {
+                cache.release(ctx.tenant_id, reserved_amount).await;
+            }
             warn!(
-                tenant_id = % ctx.tenant_id, product_id = % ctx.req.product_id,
+                tenant_id = %ctx.tenant_id,
+                product_id = %ctx.req.product_id,
                 "Skipping proxy usage charge because tenant account was not found"
             );
         }
         Delivery::Transient(event, error) => {
+            if let Some(cache) = state.balance_cache.as_ref() {
+                cache
+                    .settle(ctx.tenant_id, reserved_amount, calc_result.amount)
+                    .await;
+            }
             warn!(
-                request_id = % ctx.request_id, tenant_id = % ctx.tenant_id, product_id = % ctx.req
-                .product_id, error = % error,
+                request_id = %ctx.request_id,
+                tenant_id = %ctx.tenant_id,
+                product_id = %ctx.req.product_id,
+                error = %error,
                 "Usage charge still failing after retries; deferring to background retry queue"
             );
             defer_usage_event(service, *event);
@@ -231,6 +251,7 @@ pub(crate) async fn record_usage_charge(
     }
     started_at.elapsed().as_millis()
 }
+
 /// In-request retries before handing the event to the background retry queue.
 const CHARGE_RETRY_ATTEMPTS: u32 = 4;
 /// Background retry queue capacity (events kept in memory while the DB is unavailable).
@@ -248,9 +269,6 @@ pub(crate) enum Delivery {
     Transient(Box<UsageOutboxEvent>, String),
 }
 
-/// Resolve the account (if not yet resolved) and insert the outbox row, retrying transient
-/// DB errors (pool acquire timeouts etc.). The outbox insert is idempotent on `event_id`
-/// (`ON CONFLICT DO NOTHING`), so a retry after an ambiguous failure cannot double-charge.
 pub(crate) async fn deliver_usage_event(
     service: &BillingService,
     mut event: UsageOutboxEvent,
@@ -267,7 +285,7 @@ pub(crate) async fn deliver_usage_event(
                 Ok(None) => return Delivery::AccountNotFound,
                 Err(error) => {
                     last_error = format!("account lookup: {error}");
-                    warn!(attempt, tenant_id = % event.tenant_id, error = % error, "Usage charge account lookup failed; retrying");
+                    warn!(attempt, tenant_id = %event.tenant_id, error = %error, "Usage charge account lookup failed; retrying");
                     continue;
                 }
             }
@@ -276,7 +294,7 @@ pub(crate) async fn deliver_usage_event(
             Ok(()) => return Delivery::Done,
             Err(error) => {
                 last_error = format!("outbox enqueue: {error}");
-                warn!(attempt, event_id = % event.event_id, error = % error, "Failed to enqueue usage outbox event; retrying");
+                warn!(attempt, event_id = %event.event_id, error = %error, "Failed to enqueue usage outbox event; retrying");
             }
         }
     }
@@ -284,10 +302,7 @@ pub(crate) async fn deliver_usage_event(
 }
 
 static DEFERRED_TX: OnceLock<mpsc::Sender<UsageOutboxEvent>> = OnceLock::new();
-/// Post-response billing tasks currently running (in-request retries included).
 static INFLIGHT_POST_TASKS: AtomicUsize = AtomicUsize::new(0);
-/// Deferred charges not yet delivered: `event_id` → (`request_id`, amount). Used for the
-/// shutdown drain and to log exactly which charges are lost if the drain times out.
 static DEFERRED_PENDING: LazyLock<Mutex<HashMap<Uuid, (Uuid, Decimal)>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
@@ -297,7 +312,6 @@ fn pending_lock() -> std::sync::MutexGuard<'static, HashMap<Uuid, (Uuid, Decimal
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
-/// Snapshot of outstanding billing work: (in-flight post-response tasks, deferred charges).
 pub(crate) fn outstanding_charges() -> (usize, usize) {
     (
         INFLIGHT_POST_TASKS.load(Ordering::Acquire),
@@ -305,9 +319,6 @@ pub(crate) fn outstanding_charges() -> (usize, usize) {
     )
 }
 
-/// Called after the HTTP server stopped accepting and finished in-flight requests:
-/// waits (bounded) until every post-response task and deferred charge is delivered,
-/// then logs whatever is left at ERROR with `event_id` and amount.
 pub async fn drain_on_shutdown(timeout: Duration) {
     let deadline = Instant::now() + timeout;
     let (inflight, deferred) = outstanding_charges();
@@ -332,8 +343,12 @@ pub async fn drain_on_shutdown(timeout: Duration) {
     let remaining: Vec<(Uuid, (Uuid, Decimal))> =
         pending_lock().iter().map(|(k, v)| (*k, *v)).collect();
     for (event_id, (request_id, amount)) in &remaining {
-        error!(event_id = % event_id, request_id = % request_id, amount = % amount,
-            "Usage charge LOST at shutdown: deferred charge not delivered before drain timeout");
+        error!(
+            event_id = %event_id,
+            request_id = %request_id,
+            amount = %amount,
+            "Usage charge LOST at shutdown: deferred charge not delivered before drain timeout"
+        );
     }
     error!(
         inflight,
@@ -342,9 +357,6 @@ pub async fn drain_on_shutdown(timeout: Duration) {
     );
 }
 
-/// Hands an event to a single background task that keeps retrying until the DB is back.
-/// Limitation: in-memory only — events still queued when the gateway process exits are lost
-/// (an overflowing queue logs each lost event at ERROR with its `event_id` and amount).
 pub(crate) fn defer_usage_event(service: &Arc<BillingService>, event: UsageOutboxEvent) {
     let sender = DEFERRED_TX.get_or_init(|| {
         let (tx, mut rx) = mpsc::channel::<UsageOutboxEvent>(DEFERRED_QUEUE_CAPACITY);
@@ -356,16 +368,16 @@ pub(crate) fn defer_usage_event(service: &Arc<BillingService>, event: UsageOutbo
                     match deliver_usage_event(&service, event, CHARGE_RETRY_ATTEMPTS).await {
                         Delivery::Done => {
                             pending_lock().remove(&event_key);
-                            info!(event_id = % event_key, "Deferred usage charge delivered");
+                            info!(event_id = %event_key, "Deferred usage charge delivered");
                             break;
                         }
                         Delivery::AccountNotFound => {
                             pending_lock().remove(&event_key);
-                            error!(event_id = % event_key, "Deferred usage charge dropped: tenant account not found");
+                            error!(event_id = %event_key, "Deferred usage charge dropped: tenant account not found");
                             break;
                         }
                         Delivery::Transient(back, err) => {
-                            warn!(error = % err, "Deferred usage charge still failing; will retry");
+                            warn!(error = %err, "Deferred usage charge still failing; will retry");
                             event = *back;
                             tokio::time::sleep(DEFERRED_RETRY_INTERVAL).await;
                         }
@@ -385,8 +397,10 @@ pub(crate) fn defer_usage_event(service: &Arc<BillingService>, event: UsageOutbo
         };
         pending_lock().remove(&event.event_id);
         error!(
-            event_id = % event.event_id, request_id = % event.request_id, tenant_id = % event.tenant_id,
-            amount = % event.billing_result.amount,
+            event_id = %event.event_id,
+            request_id = %event.request_id,
+            tenant_id = %event.tenant_id,
+            amount = %event.billing_result.amount,
             "Usage charge LOST: deferred retry queue full or closed"
         );
     }
@@ -394,6 +408,7 @@ pub(crate) fn defer_usage_event(service: &Arc<BillingService>, event: UsageOutbo
 
 pub(crate) struct PostResponseTaskArgs {
     pub(crate) request_id: String,
+    pub(crate) trace_context: TraceContext,
     pub(crate) tenant_id: Uuid,
     pub(crate) req: GatewayRequest,
     pub(crate) request_size: u64,
@@ -405,17 +420,16 @@ pub(crate) struct PostResponseTaskArgs {
     pub(crate) tenant_product_detail: Option<TenantProductDetail>,
     pub(crate) tenant_product_id: Uuid,
     pub(crate) interaction_event_id: Uuid,
+    pub(crate) idempotency_epoch_id: Option<Uuid>,
+    pub(crate) from_cbpro_fallback: bool,
+    pub(crate) reserved_amount: Decimal,
     pub(crate) service_total_ms: i32,
     pub(crate) upstream_route: Option<UpstreamRouteMetadata>,
-    /// When present, used as billing outbox dedupe key (fingerprint → deterministic `event_id`).
-    pub(crate) fingerprint: Option<String>,
-    /// Billable usage event already built in the request path (L1).
     pub(crate) usage_event: Option<UsageOutboxEvent>,
-    /// True when `usage_event` was durably produced to Redpanda before the response.
     pub(crate) usage_event_produced: bool,
-    /// 阶段日志公共维度（租户编码、路由渠道等），`post_response` 行用。
     pub(crate) stage_ctx: super::stage_log::StageCtx,
 }
+
 /// Counts a running post-response task; decremented on drop (also on panic).
 struct InflightGuard;
 impl InflightGuard {
@@ -431,61 +445,101 @@ impl Drop for InflightGuard {
 }
 
 pub(crate) fn spawn_post_response_tasks(state: &AppState, args: PostResponseTaskArgs) {
-    let state = state.clone();
+    let state_for_subtask = state.clone();
+    let state_for_watcher = state.clone();
     let request_id = args.request_id.clone();
+    let request_id_for_watcher = args.request_id.clone();
+    let tenant_id = args.tenant_id;
+    let reserved_amount = args.reserved_amount;
+    let reconcile_info = args
+        .usage_event
+        .as_ref()
+        .filter(|_| !args.usage_event_produced)
+        .map(|ev| (ev.event_id, ev.billing_result.amount));
     let guard = InflightGuard::new();
-    // 请求 span 先于后处理结束，补记 post_response 阶段时以它为父节点。
     let parent = mazbri_core::trace_spans::current_context();
+    let trace_context = args.trace_context.clone();
+
+    let subtask = mazbri_core::panic_policy::spawn_request_subtask(
+        "post_response",
+        trace_context,
+        async move {
+            let started_at = Instant::now();
+            let callback_task = enqueue_callback_delivery(
+                &state_for_subtask.proxy_state,
+                args.tenant_product_id,
+                CallbackPayloadContext {
+                    request_id: &request_id,
+                    tenant_id: args.tenant_id,
+                    product_code: &args.req.product_id,
+                    status: args.status,
+                    body: &args.body,
+                    error: args.error.as_deref(),
+                    response_bytes: args.response_bytes,
+                    content_type: args.content_type.as_deref(),
+                },
+            );
+            let billing_task = record_usage_charge(
+                &state_for_subtask,
+                UsageChargeContext {
+                    request_id: &request_id,
+                    tenant_id: args.tenant_id,
+                    product_detail: args.tenant_product_detail.as_ref(),
+                    req: &args.req,
+                    request_size: args.request_size,
+                    status: args.status,
+                    response_bytes: args.response_bytes,
+                    service_total_ms: args.service_total_ms,
+                    interaction_event_id: args.interaction_event_id,
+                    idempotency_epoch_id: args.idempotency_epoch_id,
+                    from_cbpro_fallback: args.from_cbpro_fallback,
+                },
+                args.usage_event,
+                args.usage_event_produced,
+                args.reserved_amount,
+            );
+            let ((), billing_record_ms) = tokio::join!(callback_task, billing_task);
+            let post_elapsed = started_at.elapsed();
+            let post_response_ms = mazbri_core::num::millis_u64(post_elapsed);
+            let stage_ids = super::stage_log::stage_span("post_response", post_elapsed)
+                .product(&args.req.product_id)
+                .record_with_parent(&parent);
+            stage_log!(
+                info,
+                "gateway.postpath",
+                &args.stage_ctx,
+                &stage_ids,
+                "post_response",
+                post_response_ms,
+                method = %args.req.method,
+                path = %args.req.path,
+                post_response_ms,
+                billing_record_ms,
+                upstream_route = ?args.upstream_route.as_ref().map(|route| (&route.supplier_code, &route.channel_code, &route.upstream_url)),
+                message = "Gateway post-response work completed",
+            );
+        },
+    );
+
     tokio::spawn(async move {
         let _guard = guard;
-        let started_at = Instant::now();
-        let callback_task = enqueue_callback_delivery(
-            &state.proxy_state,
-            args.tenant_product_id,
-            CallbackPayloadContext {
-                request_id: &request_id,
-                tenant_id: args.tenant_id,
-                product_code: &args.req.product_id,
-                status: args.status,
-                body: &args.body,
-                error: args.error.as_deref(),
-                response_bytes: args.response_bytes,
-                content_type: args.content_type.as_deref(),
-            },
-        );
-        let billing_task = record_usage_charge(
-            &state,
-            UsageChargeContext {
-                request_id: &request_id,
-                tenant_id: args.tenant_id,
-                product_detail: args.tenant_product_detail.as_ref(),
-                req: &args.req,
-                request_size: args.request_size,
-                status: args.status,
-                response_bytes: args.response_bytes,
-                service_total_ms: args.service_total_ms,
-                interaction_event_id: args.interaction_event_id,
-                fingerprint: args.fingerprint.as_deref(),
-            },
-            args.usage_event,
-            args.usage_event_produced,
-        );
-        let ((), billing_record_ms) = tokio::join!(callback_task, billing_task);
-        let post_elapsed = started_at.elapsed();
-        let post_response_ms = mazbri_core::num::millis_u64(post_elapsed);
-        let stage_ids = super::stage_log::stage_span("post_response", post_elapsed)
-            .product(&args.req.product_id)
-            .record_with_parent(&parent);
-        stage_log!(
-            info, "gateway.postpath",
-            &args.stage_ctx,
-            &stage_ids, "post_response", post_response_ms,
-            method = % args.req.method, path = % args.req.path, post_response_ms, billing_record_ms,
-            upstream_route = ? args.upstream_route.as_ref().map(|route| (& route.supplier_code, & route.channel_code, & route.upstream_url)),
-            message = "Gateway post-response work completed",
-        );
+        let panicked = !matches!(subtask.await, Ok(Some(())));
+        if panicked {
+            if let Some((event_id, amount)) = reconcile_info {
+                error!(
+                    event_id = %event_id,
+                    request_id = %request_id_for_watcher,
+                    tenant_id = %tenant_id,
+                    amount = %amount,
+                    "Post-response subtask panicked before outbox confirmation; manual billing reconciliation required"
+                );
+            } else if let Some(cache) = state_for_watcher.balance_cache.as_ref() {
+                cache.release(tenant_id, reserved_amount).await;
+            }
+        }
     });
 }
+
 pub(crate) fn build_billing_calculator(
     product_detail: Option<&TenantProductDetail>,
 ) -> BillingCalculator {
@@ -501,16 +555,20 @@ pub(crate) fn build_billing_calculator(
         ),
     })
 }
-pub(crate) fn billing_code_for_status(status: u16) -> BillingCode {
+
+#[must_use]
+pub(crate) const fn billing_code_for_status(status: u16) -> BillingCode {
     match status {
         200..=299 => BillingCode::SUCCESS,
         404 => BillingCode::NOT_FOUND,
         408 => BillingCode::UPSTREAM_TIMEOUT,
         429 => BillingCode::RATE_LIMIT_EXCEEDED,
         500..=599 => BillingCode::UPSTREAM_ERROR,
-        _ => BillingCode::SUCCESS_WITH_DATA,
+        // Uncategorized 4xx and unexpected status codes map to non-billable BAD_REQUEST.
+        _ => BillingCode::BAD_REQUEST,
     }
 }
+
 pub(crate) fn content_length(headers: &HeaderMap) -> usize {
     headers
         .get("content-length")
@@ -521,7 +579,10 @@ pub(crate) fn content_length(headers: &HeaderMap) -> usize {
 
 #[cfg(test)]
 mod charge_retry_tests {
-    use super::charge_backoff;
+    use super::{
+        BillingCode, GatewayRequest, UsageChargeContext, Uuid, billing_code_for_status,
+        build_usage_event, charge_backoff,
+    };
     use std::time::Duration;
 
     #[test]
@@ -547,5 +608,59 @@ mod charge_retry_tests {
         assert_eq!(charge_backoff(3), Duration::from_millis(800));
         assert_eq!(charge_backoff(4), Duration::from_millis(1_600));
         assert_eq!(charge_backoff(30), Duration::from_millis(1_600));
+    }
+
+    #[test]
+    fn four_xx_statuses_map_to_non_billable_bad_request() {
+        for status in [400, 401, 402, 403, 409, 413, 422] {
+            let code = billing_code_for_status(status);
+            assert_eq!(code, BillingCode::BAD_REQUEST, "status={status}");
+            assert!(!code.default_billable(), "status={status} must not be billable");
+        }
+        assert!(billing_code_for_status(200).default_billable());
+        assert!(!billing_code_for_status(502).default_billable());
+    }
+
+    #[test]
+    fn usage_event_binds_epoch_id_and_skips_cbpro_fallback_billing() {
+        let req: GatewayRequest =
+            serde_json::from_str(r#"{"product_id":"8000000001","path":"/v1","method":"POST"}"#)
+                .unwrap();
+        let interaction_id = Uuid::now_v7();
+        let epoch_id = Uuid::now_v7();
+
+        let (live_event, live_billable) = build_usage_event(&UsageChargeContext {
+            request_id: &Uuid::now_v7().to_string(),
+            tenant_id: Uuid::new_v4(),
+            product_detail: None,
+            req: &req,
+            request_size: 128,
+            status: 200,
+            response_bytes: 256,
+            service_total_ms: 15,
+            interaction_event_id: interaction_id,
+            idempotency_epoch_id: Some(epoch_id),
+            from_cbpro_fallback: false,
+        });
+        assert!(live_billable);
+        assert_eq!(live_event.event_id, epoch_id);
+
+        let (_, fallback_billable) = build_usage_event(&UsageChargeContext {
+            request_id: &Uuid::now_v7().to_string(),
+            tenant_id: Uuid::new_v4(),
+            product_detail: None,
+            req: &req,
+            request_size: 128,
+            status: 200,
+            response_bytes: 256,
+            service_total_ms: 15,
+            interaction_event_id: interaction_id,
+            idempotency_epoch_id: None,
+            from_cbpro_fallback: true,
+        });
+        assert!(
+            !fallback_billable,
+            "CBPro fallback responses must never be billed as live upstream calls"
+        );
     }
 }

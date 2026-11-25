@@ -1,7 +1,7 @@
 pub mod cert_token;
 pub mod channel_egress;
 mod circuit_breaker;
-mod client_ip;
+pub mod client_ip;
 pub mod config;
 pub mod config_watch;
 pub mod crypto;
@@ -14,6 +14,7 @@ pub mod json_path;
 pub mod log_writer_metrics;
 pub mod logging;
 pub mod metrics;
+pub mod net;
 pub mod num;
 pub mod otlp;
 pub mod panic_policy;
@@ -51,14 +52,16 @@ pub use circuit_breaker::{
     CIRCUIT_BREAKER_FAILURES, CIRCUIT_BREAKER_STATE, CIRCUIT_BREAKER_SUCCESS_RATE, CircuitBreaker,
     CircuitBreakerConfig, CircuitBreakerEvent, CircuitResult, CircuitState,
 };
-pub use client_ip::resolve_client_ip;
+pub use client_ip::{TrustedProxyIpExtractor, resolve_client_ip};
 pub use config::{
     CertServiceConfig, DatabaseConfig, Identity, LogRouteConfig, PgCredential, PgCredentials,
     PureBootstrap, RegistrationConfig, ServerConfig, ServiceConfig, TracingConfig, ValidateConfig,
     build_log_routes, get_cert_service_token, is_dev_flag, load_toml,
 };
 pub use crypto::supplier_secrets::{
-    DEFAULT_SECRET_ALGORITHM, ENCRYPTED_PREFIX, decrypt_secret, encrypt_secret,
+    DEFAULT_SECRET_ALGORITHM, ENCRYPTED_PREFIX, KeyringRef, RootMaterialKeyring,
+    SUPPLIER_SECRETS_HKDF_INFO, clear_root_material_keyring, decrypt_secret,
+    decrypt_secret_with_aad, encrypt_secret, encrypt_secret_with_aad, install_root_material_keyring,
     is_encrypted_secret, supplier_secrets_key,
 };
 pub use db::{connect_listener, create_lazy_pool, create_pool};

@@ -1,12 +1,10 @@
 mod metrics;
 mod platform;
 mod ratelimit;
-mod ratelimit_platform;
 mod traces;
 mod usage;
 pub use metrics::*;
 pub use platform::*;
 pub use ratelimit::*;
-pub use ratelimit_platform::*;
 pub use traces::*;
 pub use usage::*;

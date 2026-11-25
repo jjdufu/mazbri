@@ -18,6 +18,7 @@ pub struct MfaRequiredSetupState {
     pub mfa_required: bool,
     pub mfa_secret: Option<String>,
     pub role: String,
+    pub auth_epoch: i64,
 }
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct MfaRequiredEnableState {
@@ -421,7 +422,7 @@ pub async fn get_mfa_required_setup_state(
 ) -> Result<Option<MfaRequiredSetupState>, sqlx::Error> {
     sqlx::query_as::<_, MfaRequiredSetupState>(
         r"
-        SELECT mfa_enabled, mfa_required, mfa_secret, role
+        SELECT mfa_enabled, mfa_required, mfa_secret, role, auth_epoch
         FROM admin_users
         WHERE id = $1
     ",

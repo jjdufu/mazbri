@@ -24,6 +24,9 @@
       />
       <WorkbenchGhostField
         :label="$t('upstreamConnector.authPassword')"
+        secret
+        :invalid="isCredRequired('password')"
+        :required="isCredRequired('password')"
         :model-value="cred('password')"
         :disabled="disabled"
         @update:model-value="setCred('password', String($event))"
@@ -51,6 +54,9 @@
       <WorkbenchGhostField
         v-if="group === 'api_key'"
         :label="$t('upstreamConnector.authApiKeyLabel')"
+        secret
+        :invalid="isCredRequired('api_key')"
+        :required="isCredRequired('api_key')"
         :model-value="cred('api_key')"
         :disabled="disabled"
         @update:model-value="setCred('api_key', String($event))"
@@ -58,6 +64,9 @@
       <WorkbenchGhostField
         v-else
         :label="$t('upstreamConnector.authTokenLabel')"
+        secret
+        :invalid="isCredRequired('token')"
+        :required="isCredRequired('token')"
         :model-value="cred('token')"
         :disabled="disabled"
         @update:model-value="setCred('token', String($event))"
@@ -114,6 +123,9 @@
       <WorkbenchGhostField
         v-if="picker === 'oauth_cc_form'"
         :label="$t('upstreamConnector.authClientSecret')"
+        secret
+        :invalid="isCredRequired('client_secret')"
+        :required="isCredRequired('client_secret')"
         :model-value="cred('client_secret')"
         :disabled="disabled"
         @update:model-value="setCred('client_secret', String($event))"
@@ -128,6 +140,9 @@
       <WorkbenchGhostField
         v-if="picker === 'gettoken'"
         :label="$t('upstreamConnector.authSecret')"
+        secret
+        :invalid="isCredRequired('secret')"
+        :required="isCredRequired('secret')"
         :model-value="cred('secret')"
         :disabled="disabled"
         @update:model-value="setCred('secret', String($event))"
@@ -197,6 +212,9 @@
       />
       <WorkbenchGhostField
         :label="$t('upstreamConnector.authClientSecret')"
+        secret
+        :invalid="isCredRequired('client_secret')"
+        :required="isCredRequired('client_secret')"
         :model-value="cred('client_secret')"
         :disabled="disabled"
         @update:model-value="setCred('client_secret', String($event))"
@@ -223,6 +241,9 @@
       />
       <WorkbenchGhostField
         :label="$t('upstreamConnector.authSecret')"
+        secret
+        :invalid="isCredRequired('api_key') || isCredRequired('secret')"
+        :required="isCredRequired('api_key') || isCredRequired('secret')"
         :model-value="cred('api_key') || cred('secret')"
         :disabled="disabled"
         @update:model-value="setCred('api_key', String($event))"
@@ -274,28 +295,23 @@
       <WorkbenchGhostField
         v-if="isHsJwt"
         :label="$t('upstreamConnector.authJwtSecret')"
+        secret
+        :invalid="isCredRequired('jwt_secret')"
+        :required="isCredRequired('jwt_secret')"
         :model-value="cred('jwt_secret')"
         :disabled="disabled"
         @update:model-value="setCred('jwt_secret', String($event))"
       />
-      <label v-else class="wb-ghost">
-        <span class="wb-ghost__label">{{
-          $t("upstreamConnector.authJwtPrivateKey")
-        }}</span>
-        <textarea
-          class="wb-ghost__input wb-auth__pem"
-          :value="cred('jwt_private_key')"
-          :aria-label="$t('upstreamConnector.authJwtPrivateKey')"
-          :disabled="disabled"
-          rows="4"
-          @input="
-            setCred(
-              'jwt_private_key',
-              ($event.target as HTMLTextAreaElement).value,
-            )
-          "
-        />
-      </label>
+      <WorkbenchGhostField
+        v-else
+        :label="$t('upstreamConnector.authJwtPrivateKey')"
+        secret
+        :invalid="isCredRequired('jwt_private_key')"
+        :required="isCredRequired('jwt_private_key')"
+        :model-value="cred('jwt_private_key')"
+        :disabled="disabled"
+        @update:model-value="setCred('jwt_private_key', String($event))"
+      />
       <AuthInjectFields
         :flow="flow"
         :disabled="disabled"
@@ -318,18 +334,27 @@
       />
       <WorkbenchGhostField
         :label="$t('upstreamConnector.authAwsAccessKey')"
+        secret
+        :invalid="isCredRequired('access_key_id')"
+        :required="isCredRequired('access_key_id')"
         :model-value="cred('access_key_id')"
         :disabled="disabled"
         @update:model-value="setCred('access_key_id', String($event))"
       />
       <WorkbenchGhostField
         :label="$t('upstreamConnector.authAwsSecretKey')"
+        secret
+        :invalid="isCredRequired('secret_access_key')"
+        :required="isCredRequired('secret_access_key')"
         :model-value="cred('secret_access_key')"
         :disabled="disabled"
         @update:model-value="setCred('secret_access_key', String($event))"
       />
       <WorkbenchGhostField
         :label="$t('upstreamConnector.authAwsSession')"
+        secret
+        :invalid="isCredRequired('session_token')"
+        :required="isCredRequired('session_token')"
         :model-value="cred('session_token')"
         :disabled="disabled"
         @update:model-value="setCred('session_token', String($event))"
@@ -345,6 +370,9 @@
       />
       <WorkbenchGhostField
         :label="$t('upstreamConnector.authHawkKey')"
+        secret
+        :invalid="isCredRequired('hawk_key')"
+        :required="isCredRequired('hawk_key')"
         :model-value="cred('hawk_key')"
         :disabled="disabled"
         @update:model-value="setCred('hawk_key', String($event))"
@@ -398,6 +426,7 @@
           v-model="credRows"
           secret-values
           empty-compact
+          :required-keys="requiredCredKeys"
           :disabled="vaultDisabled"
           :title="$t('supplier.config.credentials')"
           :add-title="$t('supplier.config.addCredential')"
@@ -443,6 +472,7 @@ const props = withDefaults(
     appendTo?: HTMLElement | string;
     disabled?: boolean;
     vaultDisabled?: boolean;
+    requiredCredKeys?: string[];
   }>(),
   {
     adapter: "",
@@ -452,6 +482,7 @@ const props = withDefaults(
     appendTo: undefined,
     disabled: false,
     vaultDisabled: false,
+    requiredCredKeys: () => [],
   },
 );
 
@@ -532,6 +563,9 @@ function cred(key: string): string {
 }
 function setCred(key: string, value: string) {
   setCredValue(props.flow, key, value);
+}
+function isCredRequired(key: string): boolean {
+  return props.requiredCredKeys.includes(key) && !cred(key).trim();
 }
 
 const authVariables = computed(() => {

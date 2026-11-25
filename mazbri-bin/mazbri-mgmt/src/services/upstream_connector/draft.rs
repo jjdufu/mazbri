@@ -1,9 +1,10 @@
 use super::{
     ApiError, CreateDraftRequest, DraftDto, DraftGateItem, DraftSnapshot, GATE_TTL_HOURS, PgPool,
     RecentGateRun, SupplierConfig, UpdateDraftRequest, Uuid, draft_to_dto,
-    encode_workbench_env_for_db, evaluate_endpoint_gates, guard_supplier_tls_privilege,
-    parse_workbench_env, repo, sanitize_and_encrypt_endpoints_tls, strip_workbench_env_from_config,
-    validate_workbench_env,
+    encode_workbench_env_for_db, evaluate_endpoint_gates, guard_draft_origin_pinning,
+    guard_supplier_tls_privilege, parse_workbench_env, reject_client_enc_in_endpoints,
+    reject_client_enc_in_supplier_config, reject_client_enc_in_workbench_env, repo,
+    sanitize_and_encrypt_endpoints_tls, strip_workbench_env_from_config, validate_workbench_env,
 };
 
 // ---------- Draft CRUD ----------
@@ -17,6 +18,25 @@ pub async fn create_draft(
     actor: &str,
     is_super_admin: bool,
 ) -> Result<DraftDto, ApiError> {
+    create_draft_inner(pool, req, actor, is_super_admin, false).await
+}
+
+pub(super) async fn create_draft_from_internal_supplier(
+    pool: &PgPool,
+    req: CreateDraftRequest,
+    actor: &str,
+    is_super_admin: bool,
+) -> Result<DraftDto, ApiError> {
+    create_draft_inner(pool, req, actor, is_super_admin, true).await
+}
+
+async fn create_draft_inner(
+    pool: &PgPool,
+    req: CreateDraftRequest,
+    actor: &str,
+    is_super_admin: bool,
+    allow_internal_enc: bool,
+) -> Result<DraftDto, ApiError> {
     let code = req.draft_code.trim();
     if code.is_empty() || code.len() > 100 {
         return Err(ApiError::validation("draft_code 长度必须在 1..=100"));
@@ -28,10 +48,19 @@ pub async fn create_draft(
 
     let mut config = req.config.unwrap_or_else(|| serde_json::json!({}));
     strip_workbench_env_from_config(&mut config);
+    if !allow_internal_enc {
+        reject_client_enc_in_supplier_config(&config)?;
+    }
     guard_supplier_tls_privilege(&config, None, is_super_admin)?;
     let raw_endpoints = req.endpoints.unwrap_or_else(|| serde_json::json!([]));
+    if !allow_internal_enc {
+        reject_client_enc_in_endpoints(&raw_endpoints)?;
+    }
     let endpoints = sanitize_and_encrypt_endpoints_tls(&raw_endpoints, None, is_super_admin)?;
     let workbench_env = req.workbench_env.unwrap_or_else(|| serde_json::json!([]));
+    if !allow_internal_enc {
+        reject_client_enc_in_workbench_env(&workbench_env)?;
+    }
     validate_workbench_env(&workbench_env)?;
     let db_workbench_env = encode_workbench_env_for_db(&workbench_env);
     let upstream_url = req.upstream_url.clone();
@@ -95,7 +124,7 @@ pub async fn list_drafts(
     let search_pattern = q
         .map(str::trim)
         .filter(|s| !s.is_empty())
-        .map(|s| format!("%{s}%"));
+        .map(mazbri_core::config::contains_ilike_pattern);
     let search_ref = search_pattern.as_deref();
     let total = repo::count_drafts(pool, status, search_ref)
         .await
@@ -137,10 +166,29 @@ pub async fn update_draft(
     req: UpdateDraftRequest,
     is_super_admin: bool,
 ) -> Result<DraftDto, ApiError> {
+    if let Some(ref raw) = req.config {
+        reject_client_enc_in_supplier_config(raw)?;
+    }
+    if let Some(ref raw_eps) = req.endpoints {
+        reject_client_enc_in_endpoints(raw_eps)?;
+    }
+    if let Some(ref env) = req.workbench_env {
+        reject_client_enc_in_workbench_env(env)?;
+    }
+
     let existing = repo::get_draft(pool, id)
         .await
         .map_err(|e| ApiError::internal(format!("get draft: {e}")))?
         .ok_or_else(|| ApiError::not_found("draft".into(), id.to_string()))?;
+
+    guard_draft_origin_pinning(
+        req.upstream_url.as_deref(),
+        req.config.as_ref(),
+        req.endpoints.as_ref(),
+        &existing.upstream_url,
+        &existing.config,
+        &existing.endpoints,
+    )?;
 
     let db_workbench_env = if let Some(env) = req.workbench_env.as_ref() {
         validate_workbench_env(env)?;
@@ -222,6 +270,25 @@ pub(super) fn materialize_snapshot_row(
     existing: Option<&repo::DraftRow>,
     is_super_admin: bool,
 ) -> Result<repo::DraftRow, ApiError> {
+    if let Some(ref raw_cfg) = snap.config {
+        reject_client_enc_in_supplier_config(raw_cfg)?;
+    }
+    if let Some(ref raw_eps) = snap.endpoints {
+        reject_client_enc_in_endpoints(raw_eps)?;
+    }
+    if let Some(ref env) = snap.workbench_env {
+        reject_client_enc_in_workbench_env(env)?;
+    }
+    if let Some(old_row) = existing {
+        guard_draft_origin_pinning(
+            Some(&snap.upstream_url),
+            snap.config.as_ref(),
+            snap.endpoints.as_ref(),
+            &old_row.upstream_url,
+            &old_row.config,
+            &old_row.endpoints,
+        )?;
+    }
     let upstream_type = snap.upstream_type.clone();
     let mut config = snap
         .config

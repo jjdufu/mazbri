@@ -69,17 +69,17 @@ fn push_tenant_scope(
         let pat = p.to_string();
         builder.push(" AND (tenant_id ILIKE ");
         builder.push_bind(pat.clone());
-        builder.push(" OR name ILIKE ");
+        builder.push(" ESCAPE '\\' OR name ILIKE ");
         builder.push_bind(pat.clone());
-        builder.push(" OR tenant_code ILIKE ");
+        builder.push(" ESCAPE '\\' OR tenant_code ILIKE ");
         builder.push_bind(pat.clone());
-        builder.push(" OR contact_email ILIKE ");
+        builder.push(" ESCAPE '\\' OR contact_email ILIKE ");
         builder.push_bind(pat.clone());
-        builder.push(" OR contact_person ILIKE ");
+        builder.push(" ESCAPE '\\' OR contact_person ILIKE ");
         builder.push_bind(pat.clone());
-        builder.push(" OR contact_phone ILIKE ");
+        builder.push(" ESCAPE '\\' OR contact_phone ILIKE ");
         builder.push_bind(pat);
-        builder.push(")");
+        builder.push(" ESCAPE '\\')");
     }
     crate::list_query::apply_pg_filters(builder, filters)
 }
@@ -388,12 +388,12 @@ pub async fn search_tenant_ids(
     if needle.is_empty() {
         return Ok(Vec::new());
     }
-    let like = format!("%{needle}%");
+    let like = mazbri_core::config::contains_ilike_pattern(needle);
     sqlx::query_scalar::<_, uuid::Uuid>(
         "SELECT id FROM tenants
-         WHERE name ILIKE $1
-            OR tenant_code ILIKE $1
-            OR tenant_id ILIKE $1
+         WHERE name ILIKE $1 ESCAPE '\\'
+            OR tenant_code ILIKE $1 ESCAPE '\\'
+            OR tenant_id ILIKE $1 ESCAPE '\\'
          LIMIT 500",
     )
     .bind(like)

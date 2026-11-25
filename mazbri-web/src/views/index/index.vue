@@ -13,8 +13,8 @@
       </div>
     </main>
 
-    <div v-show="!isFullPage" id="app-global">
-      <ArtGlobalComponent />
+    <div id="app-global">
+      <ArtGlobalComponent :is-full-page="isFullPage" />
     </div>
   </div>
 </template>

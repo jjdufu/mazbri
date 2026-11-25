@@ -18,6 +18,9 @@ pub async fn get_tenant_account(
     Extension(claims): Extension<AdminClaims>,
     Path(code): Path<String>,
 ) -> axum::response::Response {
+    if !can_manage_account_finance(&claims) {
+        return ApiResponse::err(StatusCode::FORBIDDEN, "只有超级管理员或管理员可以查看租户账户");
+    }
     let tenant_id = match crate::services::tenant::resolve_tenant_id(&state.db, &code).await {
         Ok(uuid) => uuid,
         Err(e) => return ApiResponse::err(StatusCode::BAD_REQUEST, e.to_string()),
@@ -59,6 +62,7 @@ pub async fn recharge_tenant_account(
     service::recharge_tenant_account(service::RechargeTenantAccountArgs {
         db: &state.db,
         billing_db: &state.billing_db,
+        redis: &state.redis,
         audit: &state.audit,
         tenant_id,
         tenant_id_str: &code,
@@ -97,6 +101,7 @@ pub async fn refund_tenant_account(
     service::refund_tenant_account(service::RefundTenantAccountArgs {
         db: &state.db,
         billing_db: &state.billing_db,
+        redis: &state.redis,
         audit: &state.audit,
         tenant_id,
         tenant_id_str: &code,

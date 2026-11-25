@@ -54,6 +54,8 @@ pub struct GetTenantInfoResponse {
 #[serde(deny_unknown_fields)]
 pub struct ValidateApiKeyRequest {
     pub api_key: String,
+    #[serde(default)]
+    pub client_ip: Option<std::net::IpAddr>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(deny_unknown_fields)]

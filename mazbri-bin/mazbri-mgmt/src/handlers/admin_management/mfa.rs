@@ -33,5 +33,6 @@ pub async fn reset_admin_mfa(
     }
     let client_ip = extract_client_ip(&headers, Some(addr));
     let data = svc::reset_mfa(&state.admin_db, &state.audit, &claims, id, client_ip).await?;
+    crate::middleware::auth::invalidate_admin_subject_state(&state.redis, id).await;
     Ok(ApiResponse::ok(data).into_response())
 }

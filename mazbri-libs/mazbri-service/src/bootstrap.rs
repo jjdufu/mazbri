@@ -9,10 +9,11 @@ use mazbri_core::config::{
     load_toml,
 };
 use mazbri_core::metrics::health::{
-    BoxedConfigCenterCheck, CertExpiryInfoProvider, DbPoolInfo, HealthMetricsUpdater,
+    BoxedConfigCenterCheck, CertExpiryInfoProvider, DbPoolInfo, HealthMetricsUpdater, async_trait,
     register_health_metrics, set_rpc_ready,
 };
 use mazbri_core::num::SaturatingFrom;
+use mazbri_core::rate_limited_log::RateLimitedLog;
 use mazbri_registry::{
     ConfigCenterRegistry, ConfigHandler, HttpConfigClientBuilder, ServiceRegistry,
 };
@@ -20,7 +21,12 @@ use mazbri_tls::{CertManager, ManagedCertHandle, RenewalTaskHandle, TlsAcceptor,
 use sqlx::PgPool;
 use std::future::Future;
 use std::marker::PhantomData;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
+use std::time::Duration;
+use tokio_util::sync::CancellationToken;
+
+static READY_NEAR_EXPIRY_WARN: LazyLock<RateLimitedLog> =
+    LazyLock::new(|| RateLimitedLog::new(Duration::from_secs(300)));
 
 /// 走配置中心的服务入口：读 `--bootstrap` 文件（`PureBootstrap`），拉配置中心内容，初始化 mTLS 与注册。
 ///
@@ -48,6 +54,7 @@ pub struct BootstrapContext<C: ServiceConfig> {
     pub registry: Option<Arc<ConfigCenterRegistry>>,
     pub cert_handle: ManagedCertHandle,
     pub renewal_threshold_days: i64,
+    pub(crate) shutdown_token: CancellationToken,
 }
 pub struct ServiceInitOutput {
     pub admin_state: Option<Arc<AdminState>>,
@@ -106,6 +113,7 @@ where
             Some(self.ctx.cert_handle.clone()),
             self.ctx.renewal_threshold_days,
             config_center_connected,
+            Some(self.ctx.shutdown_token.clone()),
         )
     }
 
@@ -163,6 +171,7 @@ where
         let handler: Arc<dyn ConfigHandler> =
             crate::registry_helpers::create_toml_config_handler::<C>(service_name);
         let registry = init_registry(&bootstrap, &config, handler).await?;
+        let shutdown_token = CancellationToken::new();
         let ctx = BootstrapContext {
             bootstrap,
             config,
@@ -172,6 +181,7 @@ where
             registry: registry.clone(),
             cert_handle: mtls.cert_handle,
             renewal_threshold_days: mtls.renewal_threshold_days,
+            shutdown_token: shutdown_token.clone(),
         };
         tracing::info!(
             service = % service_name, "Bootstrap service name resolved"
@@ -182,6 +192,7 @@ where
             tracing::error!("Server error: {}", e); } } () = wait_for_termination_signal()
             => { tracing::info!("收到关闭信号"); }
         }
+        shutdown_token.cancel();
         if let Some(ref reg) = registry {
             reg.shutdown()
                 .await
@@ -194,6 +205,8 @@ where
     }
 }
 pub struct PgPoolInfoBridge(pub Arc<PgPool>);
+
+#[async_trait]
 impl DbPoolInfo for PgPoolInfoBridge {
     fn pool_size(&self) -> u32 {
         self.0.size()
@@ -201,37 +214,31 @@ impl DbPoolInfo for PgPoolInfoBridge {
     fn num_idle(&self) -> u32 {
         u32::saturating_from(self.0.num_idle())
     }
-    fn is_healthy(&self) -> bool {
-        let pool = self.0.clone();
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async { pool.acquire().await.is_ok() })
-        })
+    async fn is_healthy(&self) -> bool {
+        matches!(
+            tokio::time::timeout(Duration::from_secs(2), self.0.acquire()).await,
+            Ok(Ok(_))
+        )
     }
 }
+
 struct CertInfoBridge {
     handle: ManagedCertHandle,
     renewal_threshold_days: i64,
 }
+
 impl CertExpiryInfoProvider for CertInfoBridge {
     fn cert_expiry(&self) -> Option<chrono::DateTime<chrono::Utc>> {
-        let handle = self.handle.clone();
-        let threshold = self.renewal_threshold_days;
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current()
-                .block_on(async { Some(handle.check_expiry(threshold).await.expires_at) })
-        })
+        self.handle.cert_expiry()
     }
     fn is_cert_valid(&self) -> bool {
-        let handle = self.handle.clone();
-        let threshold = self.renewal_threshold_days;
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async {
-                let info = handle.check_expiry(threshold).await;
-                !info.is_expired && !info.is_near_expiry
-            })
-        })
+        !self.handle.is_expired_now()
+    }
+    fn is_cert_near_expiry(&self) -> bool {
+        self.handle.is_near_expiry_now(self.renewal_threshold_days)
     }
 }
+
 async fn run_admin_readiness_checks(
     db: Option<Arc<PgPool>>,
     cert: Option<ManagedCertHandle>,
@@ -240,8 +247,8 @@ async fn run_admin_readiness_checks(
 ) -> ReadinessResult {
     let mut checks = Vec::new();
     if let Some(ref pool) = db {
-        match pool.acquire().await {
-            Ok(conn) => {
+        match tokio::time::timeout(Duration::from_secs(2), pool.acquire()).await {
+            Ok(Ok(conn)) => {
                 drop(conn);
                 checks.push(ReadinessCheckResult {
                     name: "database".to_string(),
@@ -249,11 +256,18 @@ async fn run_admin_readiness_checks(
                     message: None,
                 });
             }
-            Err(e) => {
+            Ok(Err(e)) => {
                 checks.push(ReadinessCheckResult {
                     name: "database".to_string(),
                     status: CheckStatus::Failed,
                     message: Some(format!("database connection failed: {e}")),
+                });
+            }
+            Err(_) => {
+                checks.push(ReadinessCheckResult {
+                    name: "database".to_string(),
+                    status: CheckStatus::Failed,
+                    message: Some("database connection acquire timed out after 2s".to_string()),
                 });
             }
         }
@@ -271,11 +285,19 @@ async fn run_admin_readiness_checks(
                 )),
             });
         } else if info.is_near_expiry {
+            if READY_NEAR_EXPIRY_WARN.allow(&state.service_name) {
+                tracing::warn!(
+                    service = %state.service_name,
+                    subject = %info.subject,
+                    expires_at = %info.expires_at.to_rfc3339(),
+                    "Certificate is within renewal threshold window; keeping /ready healthy"
+                );
+            }
             checks.push(ReadinessCheckResult {
                 name: "certificate".to_string(),
-                status: CheckStatus::Failed,
+                status: CheckStatus::Ok,
                 message: Some(format!(
-                    "certificate near expiry: {} (expires at {})",
+                    "certificate near expiry (warning): {} (expires at {})",
                     info.subject,
                     info.expires_at.to_rfc3339()
                 )),
@@ -296,6 +318,25 @@ async fn run_admin_readiness_checks(
     result
 }
 
+pub(crate) fn build_configured_admin_server(
+    service_name: &str,
+    admin_config: &AdminConfig,
+    db_pool: Option<Arc<PgPool>>,
+    cert_handle: Option<ManagedCertHandle>,
+    renewal_threshold_days: i64,
+) -> Result<mazbri_admin::AdminServer> {
+    AdminServerBuilder::new(service_name, admin_config.port)
+        .bind_addr(&admin_config.bind_addr)
+        .registry(Arc::new(REGISTRY.clone()))
+        .readiness_check_with_state(move |state| {
+            let db = db_pool.clone();
+            let cert = cert_handle.clone();
+            let threshold = renewal_threshold_days;
+            async move { run_admin_readiness_checks(db, cert, threshold, state).await }
+        })
+        .build()
+}
+
 pub(crate) fn start_admin_server(
     service_name: &str,
     admin_config: &AdminConfig,
@@ -303,29 +344,20 @@ pub(crate) fn start_admin_server(
     cert_handle: Option<ManagedCertHandle>,
     renewal_threshold_days: i64,
     config_center_connected: Option<BoxedConfigCenterCheck>,
+    shutdown_token: Option<CancellationToken>,
 ) -> Result<Option<Arc<AdminState>>> {
     if !admin_config.enabled {
         tracing::info!("Admin server disabled");
         return Ok(None);
     }
-    let state = Arc::new(AdminState::new(
-        service_name.to_string(),
-        Arc::new(REGISTRY.clone()),
-    ));
-    let db_pool_for_ready = db_pool.clone();
-    let cert_handle_for_ready = cert_handle.clone();
-    let state_for_ready = state.clone();
-    let server = AdminServerBuilder::new(service_name, admin_config.port)
-        .bind_addr(&admin_config.bind_addr)
-        .registry(Arc::new(REGISTRY.clone()))
-        .readiness_check(move || {
-            let db = db_pool_for_ready.clone();
-            let cert = cert_handle_for_ready.clone();
-            let threshold = renewal_threshold_days;
-            let state = state_for_ready.clone();
-            async move { run_admin_readiness_checks(db, cert, threshold, state).await }
-        })
-        .build()?;
+    let server = build_configured_admin_server(
+        service_name,
+        admin_config,
+        db_pool.clone(),
+        cert_handle.clone(),
+        renewal_threshold_days,
+    )?;
+    let state = server.state();
     let _handle = server.spawn();
     tracing::info!("Admin server started on port {}", admin_config.port);
     if let Err(e) = register_health_metrics() {
@@ -336,7 +368,7 @@ pub(crate) fn start_admin_server(
     }
     // updater 默认用 db+cert 健康写入 mazbri_rpc_ready（与 /ready 依赖同源）；
     // /ready 探针内会再次 set_rpc_ready，与 HTTP 响应一致。
-    let updater = HealthMetricsUpdater::new(
+    let mut updater = HealthMetricsUpdater::new(
         service_name.to_string(),
         db_pool.map(|p| Arc::new(PgPoolInfoBridge(p)) as Arc<dyn DbPoolInfo>),
         cert_handle.map(|h| {
@@ -347,6 +379,9 @@ pub(crate) fn start_admin_server(
         }),
         config_center_connected,
     );
+    if let Some(token) = shutdown_token {
+        updater = updater.with_cancellation_token(token);
+    }
     set_rpc_ready(service_name, false);
     drop(updater.spawn());
     tracing::info!("Health metrics updater started for {}", service_name);
@@ -365,7 +400,7 @@ async fn init_mtls(tls_config: &TlsConfig) -> Result<MtlsInitResult> {
     let cert = cert_manager.initialize().await?;
     let cert_handle = cert_manager.cert_handle();
     let renewal_task = cert_manager.spawn_renewal_task_managed();
-    let tls_acceptor = TlsAcceptor::new(&cert, tls_config)?;
+    let tls_acceptor = TlsAcceptor::from_cert_handle(&cert_handle, tls_config)?;
     tracing::info!("mTLS 初始化成功");
     Ok(MtlsInitResult {
         tls_acceptor,
@@ -414,4 +449,149 @@ async fn init_registry<C: ServiceConfig>(
         .map_err(|e| anyhow::anyhow!("Registry startup failed: {e}"))?;
     tracing::info!(service = % service_name, "Node registered successfully, heartbeat started");
     Ok(Some(registry))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CertInfoBridge, PgPoolInfoBridge, build_configured_admin_server};
+    use axum::body::{Body, to_bytes};
+    use axum::http::{Request, StatusCode};
+    use chrono::{TimeDelta, Utc};
+    use mazbri_admin::AdminConfig;
+    use mazbri_core::metrics::health::{
+        CertExpiryInfoProvider, DbPoolInfo, HealthMetricsUpdater, RPC_READY,
+    };
+    use mazbri_tls::{ManagedCertHandle, ManagedCertificate};
+    use sqlx::postgres::PgPoolOptions;
+    use std::sync::Arc;
+    use tower::ServiceExt;
+
+    fn make_cert_handle(days_remaining: i64) -> ManagedCertHandle {
+        let now = Utc::now();
+        ManagedCertHandle::from_certificate(ManagedCertificate {
+            id: uuid::Uuid::now_v7(),
+            subject: "mazbri-test-svc".to_string(),
+            cert_pem: String::new(),
+            key_pem: String::new().into(),
+            ca_cert_pem: String::new(),
+            issued_at: now - TimeDelta::days(10),
+            expires_at: now + TimeDelta::try_days(days_remaining).unwrap_or_else(TimeDelta::zero),
+            updated_at: now,
+        })
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn current_thread_probes_never_panic_and_distinguish_near_expiry_from_expired() {
+        let admin_cfg = AdminConfig {
+            bind_addr: "::1".to_string(),
+            port: 9000,
+            ..AdminConfig::default()
+        };
+
+        // Case 1: 15 days left (< renewal_threshold_days = 30, not expired) => /ready 200 OK & mazbri_rpc_ready == 1
+        let cert_15d = make_cert_handle(15);
+        let server_15d = build_configured_admin_server(
+            "svc-ready-15d",
+            &admin_cfg,
+            None,
+            Some(cert_15d.clone()),
+            30,
+        )
+        .expect("build server");
+        let state_15d = server_15d.state();
+        state_15d.set_routes_status_provider(|| serde_json::json!({"active_routes": 7}));
+
+        let router_15d = server_15d.router();
+        let ready_resp = router_15d
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/ready")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(ready_resp.status(), StatusCode::OK);
+        assert!(state_15d.is_ready());
+        assert_eq!(RPC_READY.with_label_values(&["svc-ready-15d"]).get(), 1);
+
+        // Verify single AdminState instance serves /routes/status 200 OK
+        let routes_resp = router_15d
+            .oneshot(
+                Request::builder()
+                    .uri("/routes/status")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(routes_resp.status(), StatusCode::OK);
+        let routes_bytes = to_bytes(routes_resp.into_body(), 4096).await.expect("body");
+        let routes_json: serde_json::Value = serde_json::from_slice(&routes_bytes).expect("json");
+        assert_eq!(routes_json["active_routes"], 7);
+
+        // Also run HealthMetricsUpdater + CertInfoBridge on current_thread runtime (zero block_in_place!)
+        let updater_15d = HealthMetricsUpdater::new(
+            "svc-updater-15d",
+            None,
+            Some(Arc::new(CertInfoBridge {
+                handle: cert_15d,
+                renewal_threshold_days: 30,
+            }) as Arc<dyn CertExpiryInfoProvider>),
+            None,
+        );
+        updater_15d.update().await;
+        assert_eq!(RPC_READY.with_label_values(&["svc-updater-15d"]).get(), 1);
+
+        // Case 2: -1 days left (expired) => /ready 503 & mazbri_rpc_ready == 0
+        let cert_expired = make_cert_handle(-1);
+        let server_exp = build_configured_admin_server(
+            "svc-ready-expired",
+            &admin_cfg,
+            None,
+            Some(cert_expired.clone()),
+            30,
+        )
+        .expect("build server");
+        let exp_resp = server_exp
+            .router()
+            .oneshot(
+                Request::builder()
+                    .uri("/ready")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(exp_resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert!(!server_exp.state().is_ready());
+        assert_eq!(RPC_READY.with_label_values(&["svc-ready-expired"]).get(), 0);
+
+        let updater_exp = HealthMetricsUpdater::new(
+            "svc-updater-expired",
+            None,
+            Some(Arc::new(CertInfoBridge {
+                handle: cert_expired,
+                renewal_threshold_days: 30,
+            }) as Arc<dyn CertExpiryInfoProvider>),
+            None,
+        );
+        updater_exp.update().await;
+        assert_eq!(
+            RPC_READY.with_label_values(&["svc-updater-expired"]).get(),
+            0
+        );
+
+        // Case 3: PgPoolInfoBridge on current_thread runtime does not panic (no block_in_place)
+        let unreachable_pool = Arc::new(
+            PgPoolOptions::new()
+                .max_connections(1)
+                .acquire_timeout(std::time::Duration::from_millis(50))
+                .connect_lazy("postgres://postgres:postgres@127.0.0.1:1/mazbri")
+                .expect("lazy pool"),
+        );
+        let bridge = PgPoolInfoBridge(unreachable_pool);
+        assert!(!bridge.is_healthy().await);
+    }
 }

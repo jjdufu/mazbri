@@ -133,6 +133,7 @@ pub async fn run_draft(pool: &PgPool, params: RunDraftParams<'_>) -> Result<RunD
             pool,
             ProbeMicroserviceParams {
                 audit,
+                ssrf: engine.ssrf(),
                 draft_id: id,
                 row: &row,
                 req: &req,
@@ -192,6 +193,7 @@ pub async fn run_draft(pool: &PgPool, params: RunDraftParams<'_>) -> Result<RunD
 /// `probe_microservice_draft` 的入参。
 pub(super) struct ProbeMicroserviceParams<'a> {
     pub(super) audit: &'a AuditService,
+    pub(super) ssrf: &'a SsrfChecker,
     pub(super) draft_id: Option<Uuid>,
     pub(super) row: &'a repo::DraftRow,
     pub(super) req: &'a RunRequest,
@@ -208,6 +210,7 @@ pub(super) async fn probe_microservice_draft(
 ) -> Result<RunDto, ApiError> {
     let ProbeMicroserviceParams {
         audit,
+        ssrf,
         draft_id,
         row,
         req,
@@ -222,7 +225,7 @@ pub(super) async fn probe_microservice_draft(
         .map_err(|e| ApiError::validation(format!("CONFIG_INVALID: {e}")))?;
     let (contract_ok, validate_stage) = probe_contract_stage(&cfg);
     let (connect_ok, connect_stage) =
-        probe_connectivity_stage(&row.upstream_url, default_timeout_ms).await;
+        probe_connectivity_stage(ssrf, &row.upstream_url, default_timeout_ms).await;
     let stages = vec![validate_stage, connect_stage];
 
     let overall_ok = contract_ok && connect_ok;
@@ -564,6 +567,48 @@ struct LocalNonGateParams<'a> {
     max_body_bytes: usize,
 }
 
+async fn validate_auth_only_ssrf(
+    ssrf: &SsrfChecker,
+    fallback_upstream_url: &str,
+    input: &InvokeInput,
+) -> Result<(), ApiError> {
+    let target_base = if input.spec.base_url.trim().is_empty() {
+        fallback_upstream_url
+    } else {
+        input.spec.base_url.as_str()
+    };
+    if !target_base.trim().is_empty() {
+        ssrf::validate_public_http_url(ssrf, target_base)
+            .await
+            .map_err(|e| ApiError::validation(format!("SSRF_BLOCKED: {e}")))?;
+    }
+    if let Some(token_url) = input
+        .spec
+        .auth
+        .as_ref()
+        .and_then(|a| a.token_url.as_deref())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        ssrf::validate_public_http_url(ssrf, token_url)
+            .await
+            .map_err(|e| ApiError::validation(format!("SSRF_BLOCKED token_url: {e}")))?;
+    }
+    if let Some(token_url) = input
+        .config
+        .as_ref()
+        .and_then(|c| c.auth_flow.as_ref())
+        .filter(|a| a.enabled)
+        .map(|a| a.token_url.trim())
+        .filter(|s| !s.is_empty())
+    {
+        ssrf::validate_public_http_url(ssrf, token_url)
+            .await
+            .map_err(|e| ApiError::validation(format!("SSRF_BLOCKED token_url: {e}")))?;
+    }
+    Ok(())
+}
+
 async fn run_draft_local_non_gate(
     pool: &PgPool,
     params: LocalNonGateParams<'_>,
@@ -585,6 +630,10 @@ async fn run_draft_local_non_gate(
         endpoint_key,
         request_id,
     } = prepare_run_input(pool, row, req, default_timeout_ms, max_body_bytes).await?;
+
+    if req.mode == "auth_only" {
+        validate_auth_only_ssrf(engine.ssrf(), &row.upstream_url, &input).await?;
+    }
 
     let result = engine.invoke(input).await;
     let ep = endpoint_by_id(&row.endpoints, req.endpoint_id.as_deref());
@@ -680,7 +729,7 @@ async fn run_draft_via_bypass(
     ssrf::validate_public_http_url(ssrf, &prepared.upstream_url_for_ssrf)
         .await
         .map_err(|e| ApiError::validation(format!("SSRF_BLOCKED: {e}")))?;
-    if let Some(ref token_url) = prepared.token_url_for_ssrf {
+    for token_url in &prepared.token_urls_for_ssrf {
         ssrf::validate_public_http_url(ssrf, token_url)
             .await
             .map_err(|e| ApiError::validation(format!("SSRF_BLOCKED token_url: {e}")))?;
@@ -918,7 +967,7 @@ struct PreparedBypassProbe {
     endpoint_key: Option<String>,
     fingerprint: String,
     upstream_url_for_ssrf: String,
-    token_url_for_ssrf: Option<String>,
+    token_urls_for_ssrf: Vec<String>,
 }
 
 /// 草稿物化 egress + 密文 config JSON → bypass Invoke（密钥仅在 bypass 解密）。
@@ -975,11 +1024,27 @@ async fn prepare_bypass_probe_from_draft(
     // 与生产一致：hash 供 bypass 缓存键（full JSON 始终下发，避免 CONFIG_CACHE_MISS）。
     let _egress_hash = hash_egress_spec_json(&egress_spec_json);
 
-    let token_url_for_ssrf = cfg
+    let mut token_urls_for_ssrf = Vec::new();
+    if let Some(token_url) = cfg
         .auth_flow
         .as_ref()
-        .filter(|a| a.enabled && !a.token_url.trim().is_empty())
-        .map(|a| a.token_url.clone());
+        .filter(|a| a.enabled)
+        .map(|a| a.token_url.trim())
+        .filter(|s| !s.is_empty())
+    {
+        token_urls_for_ssrf.push(token_url.to_string());
+    }
+    if let Some(ep_token_url) = built
+        .spec
+        .auth
+        .as_ref()
+        .and_then(|a| a.token_url.as_deref())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        && !token_urls_for_ssrf.iter().any(|u| u == ep_token_url)
+    {
+        token_urls_for_ssrf.push(ep_token_url.to_string());
+    }
 
     let expanded_url = if built.spec.base_url.trim().is_empty() {
         row.upstream_url.clone()
@@ -1001,10 +1066,11 @@ async fn prepare_bypass_probe_from_draft(
         endpoint_key,
         fingerprint: built.fingerprint,
         upstream_url_for_ssrf: expanded_url,
-        token_url_for_ssrf,
+        token_urls_for_ssrf,
     })
 }
 
+const MAX_LOCAL_PROBE_TIMEOUT_MS: u64 = 30_000;
 
 /// 一次草稿试跑的执行输入。
 struct PreparedRun {
@@ -1063,7 +1129,8 @@ async fn prepare_run_input(
     let timeout_ms = spec
         .timeout_ms
         .or_else(|| cfg.timeouts.as_ref().and_then(|t| t.total_ms))
-        .unwrap_or(default_timeout_ms);
+        .unwrap_or(default_timeout_ms)
+        .min(MAX_LOCAL_PROBE_TIMEOUT_MS);
 
     let mut credentials = HashMap::new();
     if let Some(ref auth) = cfg.auth_flow {
@@ -1089,7 +1156,6 @@ async fn prepare_run_input(
         timeout: Duration::from_millis(timeout_ms),
         mode,
         options: ExecuteOptions {
-            follow_redirects: false,
             max_body_capture_bytes: 64 * 1024,
             mask_secrets: true,
             collect_trace: true,
@@ -1155,35 +1221,127 @@ fn probe_contract_stage(cfg: &SupplierConfig) -> (bool, serde_json::Value) {
     (contract_ok, stage)
 }
 
-/// 连通性阶段：TCP 连接 host:port（去掉 scheme 与路径）。
+fn parse_probe_host_port(upstream_url: &str) -> Result<(String, u16), String> {
+    let trimmed = upstream_url.trim();
+    if trimmed.is_empty() {
+        return Err("empty upstream_url".to_string());
+    }
+    if trimmed.contains("://") {
+        let parsed =
+            url::Url::parse(trimmed).map_err(|e| format!("invalid upstream_url: {e}"))?;
+        let raw_host = parsed
+            .host_str()
+            .ok_or_else(|| "missing host in upstream_url".to_string())?;
+        let host = raw_host
+            .trim_start_matches('[')
+            .trim_end_matches(']')
+            .to_string();
+        let default_port = match parsed.scheme() {
+            "http" | "ws" => Some(80),
+            "https" | "wss" => Some(443),
+            _ => None,
+        };
+        let port = parsed
+            .port()
+            .or(default_port)
+            .ok_or_else(|| "missing explicit port in upstream_url".to_string())?;
+        if host.is_empty() || port == 0 {
+            return Err("invalid host or port".to_string());
+        }
+        return Ok((host, port));
+    }
+
+    let authority = trimmed.split('/').next().unwrap_or("").trim();
+    if authority.is_empty() {
+        return Err("empty host:port".to_string());
+    }
+    let (host, port_str) = if let Some(rest) = authority.strip_prefix('[') {
+        rest.split_once("]:")
+            .ok_or_else(|| "invalid IPv6 [host]:port".to_string())?
+    } else {
+        authority
+            .rsplit_once(':')
+            .ok_or_else(|| "missing port in host:port".to_string())?
+    };
+    let port: u16 = port_str
+        .parse()
+        .map_err(|_| "invalid port in host:port".to_string())?;
+    if host.trim().is_empty() || port == 0 {
+        return Err("invalid host or port".to_string());
+    }
+    Ok((host.trim().to_string(), port))
+}
+
+/// 连通性阶段：先经 `SsrfChecker::resolve_checked_socket_addrs` 核验并固定已审 `SocketAddr`，再执行 TCP 连接（消除二次 DNS 解析 TOCTOU）。
 async fn probe_connectivity_stage(
+    ssrf: &SsrfChecker,
     upstream_url: &str,
     default_timeout_ms: u64,
 ) -> (bool, serde_json::Value) {
-    let host_port = upstream_url
-        .trim()
-        .trim_start_matches("http://")
-        .trim_start_matches("https://")
-        .split('/')
-        .next()
-        .unwrap_or("")
-        .to_string();
     let c_start = std::time::Instant::now();
-    let connect_ok = if host_port.is_empty() {
-        false
-    } else {
-        let timeout = Duration::from_millis(default_timeout_ms.min(5_000));
-        matches!(
-            tokio::time::timeout(timeout, tokio::net::TcpStream::connect(&host_port)).await,
-            Ok(Ok(_))
-        )
+    let display_target = upstream_url.trim().to_string();
+    let (connect_ok, err_msg) = match parse_probe_host_port(upstream_url) {
+        Err(parse_err) => (false, Some(format!("invalid probe target: {parse_err}"))),
+        Ok((host, port)) => match ssrf.resolve_checked_socket_addrs(&host, port).await {
+            Err(ssrf_err) => (false, Some(format!("SSRF_BLOCKED: {ssrf_err}"))),
+            Ok(addrs) if addrs.is_empty() => (false, Some("DNS resolved empty address list".into())),
+            Ok(addrs) => {
+                let timeout = Duration::from_millis(default_timeout_ms.min(5_000));
+                if matches!(
+                    tokio::time::timeout(timeout, tokio::net::TcpStream::connect(&addrs[..])).await,
+                    Ok(Ok(_))
+                ) {
+                    (true, None)
+                } else {
+                    (false, Some("TCP connect failed".into()))
+                }
+            }
+        },
     };
     let stage = serde_json::json!({
         "name": "probe_connectivity",
         "ok": connect_ok,
         "latency_ms": mazbri_core::num::millis_u64(c_start.elapsed()),
-        "request_summary": { "url": host_port },
-        "error": if connect_ok { serde_json::Value::Null } else { serde_json::json!("TCP connect failed") }
+        "request_summary": { "url": display_target },
+        "error": match err_msg {
+            None => serde_json::Value::Null,
+            Some(msg) => serde_json::Value::String(msg),
+        }
     });
     (connect_ok, stage)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_probe_host_port_handles_schemes_and_ipv6() {
+        assert_eq!(
+            parse_probe_host_port("grpc://svc.example.com:50051/pkg.Svc").expect("grpc url"),
+            ("svc.example.com".to_string(), 50051)
+        );
+        assert_eq!(
+            parse_probe_host_port("https://api.example.com/health").expect("https default 443"),
+            ("api.example.com".to_string(), 443)
+        );
+        assert_eq!(
+            parse_probe_host_port("svc.example.com:9090").expect("bare host:port"),
+            ("svc.example.com".to_string(), 9090)
+        );
+        assert_eq!(
+            parse_probe_host_port("[2001:db8::1]:8443").expect("ipv6 host:port"),
+            ("2001:db8::1".to_string(), 8443)
+        );
+        assert!(parse_probe_host_port("grpc://svc.example.com").is_err());
+    }
+
+    #[tokio::test]
+    async fn probe_connectivity_stage_blocks_loopback_via_ssrf() {
+        let checker = SsrfChecker::new();
+        let (ok, stage) = probe_connectivity_stage(&checker, "127.0.0.1:8080", 1_000).await;
+        assert!(!ok);
+        let err = stage["error"].as_str().unwrap_or("");
+        assert!(err.contains("SSRF_BLOCKED"), "unexpected error: {err}");
+    }
 }

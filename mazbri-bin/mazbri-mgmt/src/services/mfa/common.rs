@@ -94,6 +94,58 @@ pub(super) fn prepare_setup_artifacts(
         totp_digits: mfa_service.config().digits,
     })
 }
+pub(super) async fn hash_backup_codes_async(
+    mfa_service: &Arc<MfaService>,
+    backup_codes: &[String],
+    error_message: String,
+) -> Result<Vec<String>, Box<axum::response::Response>> {
+    let svc = Arc::clone(mfa_service);
+    let codes = backup_codes.to_vec();
+    let msg_for_join = error_message.clone();
+    mazbri_core::panic_policy::spawn_blocking_recoverable(move || {
+        hash_backup_codes(&svc, &codes, error_message)
+    })
+    .await
+    .map_err(|error| {
+        error!("Backup code hash join error: {error}");
+        Box::new(ApiResponse::err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            msg_for_join.clone(),
+        ))
+    })?
+    .map_err(|error| {
+        error!("Backup code hash panicked: {error}");
+        Box::new(ApiResponse::err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            msg_for_join,
+        ))
+    })?
+}
+pub(super) async fn prepare_setup_artifacts_async(
+    mfa_service: &Arc<MfaService>,
+    username: &str,
+) -> Result<SetupArtifacts, Box<axum::response::Response>> {
+    let svc = Arc::clone(mfa_service);
+    let uname = username.to_string();
+    mazbri_core::panic_policy::spawn_blocking_recoverable(move || {
+        prepare_setup_artifacts(&svc, &uname)
+    })
+    .await
+    .map_err(|error| {
+        error!("MFA setup artifact join error: {error}");
+        Box::new(ApiResponse::err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            mazbri_i18n::mfa::failed_setup(),
+        ))
+    })?
+    .map_err(|error| {
+        error!("MFA setup artifact panicked: {error}");
+        Box::new(ApiResponse::err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            mazbri_i18n::mfa::failed_setup(),
+        ))
+    })?
+}
 pub(super) async fn store_setup_artifacts(
     pool: &PgPool,
     user_id: uuid::Uuid,
@@ -229,6 +281,7 @@ pub(super) struct ResignedSession {
 pub(super) async fn resign_bound_session(
     pool: &PgPool,
     claims: &AdminClaims,
+    auth_epoch: i64,
     jwt_secret: &str,
     access_ttl_fallback: u64,
     sxp: i64,
@@ -248,6 +301,7 @@ pub(super) async fn resign_bound_session(
         &claims.sub,
         &claims.user_id,
         &claims.role,
+        auth_epoch,
         &binding,
         jwt_secret,
         i64::saturating_from(access_ttl),
@@ -264,6 +318,7 @@ pub(super) async fn resign_bound_session(
         &claims.sub,
         &claims.user_id,
         &claims.role,
+        auth_epoch,
         &binding,
         jwt_secret,
         issued_at,

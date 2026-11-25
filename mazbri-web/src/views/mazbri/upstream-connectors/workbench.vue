@@ -203,6 +203,7 @@
                           ref="urlFieldRef"
                           :model-value="urlDraft"
                           :env="runtimeEnvMap"
+                          :mask-preview="!canWriteWorkbench"
                           :placeholder="$t('upstreamConnector.fields.upstreamUrl')"
                           @focus="urlFocused = true"
                           @update:model-value="onUrlInput"
@@ -390,6 +391,7 @@
                           :seed-json="authSeedJson"
                           :append-to="pageMount"
                           :running="running"
+                          :required-cred-keys="requiredCredKeys"
                           @update:profile="setEpAuthProfile"
                           @run="doRun('auth_only', focusUrlField)"
                         />
@@ -626,6 +628,7 @@ import { Pane, Splitpanes, type SplitpanesResizedPayload } from "splitpanes";
 import { useMediaQuery } from "@vueuse/core";
 import { onBeforeRouteLeave, onBeforeRouteUpdate } from "vue-router";
 import { $t } from "@/locales";
+import { useUserStore } from "@/store/modules/user";
 import HoppMenu from "@/components/common/hopp-menu/index.vue";
 import CryptoProfileEditor from "./CryptoProfileEditor.vue";
 import WorkbenchAssertEditor from "./WorkbenchAssertEditor.vue";
@@ -662,6 +665,7 @@ import {
 defineOptions({ name: "UpstreamConnectorWorkbench" });
 
 const route = useRoute();
+const userStore = useUserStore();
 const store = useWorkbenchStore();
 
 const {
@@ -724,6 +728,7 @@ const {
   activeAssertions,
   activeCaptures,
   sessionCredentialKeys,
+  requiredCredKeys,
   authSeedJson,
   queryCount,
   headerCount,
@@ -1105,6 +1110,7 @@ function onCommand(id: string) {
 }
 
 function onHotkey(e: KeyboardEvent) {
+  if (userStore.isLock) return;
   if (e.key === "Escape") {
     if (showCommands.value) {
       e.preventDefault();
@@ -1221,6 +1227,8 @@ watch(
 
 <style scoped lang="scss">
 .connector-workbench-page {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   width: 100%;

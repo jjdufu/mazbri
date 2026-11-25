@@ -1,5 +1,6 @@
 pub mod disconnect;
 pub mod execution;
+pub mod idempotency;
 pub mod metrics;
 pub mod request_binding;
 pub mod response;
@@ -17,6 +18,6 @@ pub mod state;
 
 pub use balance::balance_check_middleware;
 pub use handler::unified_gateway_handler;
-pub use metrics::{metrics_handler, register_proxy_metrics};
+pub use metrics::register_proxy_metrics;
 pub use response::ProxyError;
 pub use state::{GatewayRequestTiming, ProxyState, ProxyStateInit};

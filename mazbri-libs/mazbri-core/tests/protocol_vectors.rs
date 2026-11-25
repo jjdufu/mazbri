@@ -14,8 +14,9 @@ use mazbri_core::crypto::request_binding::{
     RequestSigner, SignatureVersion, binding_key_ref, canonical_http_binding, verify_binding,
 };
 use mazbri_core::crypto::transport::{
-    TransportCipher, TransportEnvelope, canonical_signature_payload, data_key_prefix,
-    encrypt_with_alg_iv, iv_len_for, open_envelope, sign_payload,
+    EnvelopeDirection, EnvelopeHeaderRef, SealEnvelopeParams, TransportCipher, TransportEnvelope,
+    canonical_envelope_aad, canonical_signature_payload, derive_transport_enc_key,
+    derive_transport_mac_key, iv_len_for, open_envelope, seal_envelope_deterministic, sign_payload,
 };
 use mazbri_crypto::id::{AlgorithmId, AlgorithmKind};
 use mazbri_crypto::profile::{KeySelection, TenantTransportProfile, TransportMode};
@@ -237,63 +238,89 @@ fn build_transport_vector(
     let mac_alg = mac_raw.map(|raw| parse_algorithm_id(raw).unwrap());
     let profile = profile_for(data_alg, mac_alg, legacy);
     profile.validate(registry).unwrap();
-    let cipher = TransportCipher::for_profile(registry, &profile);
 
     let secret = tenant_secret();
-    let data_key = data_key_prefix(data_alg, &secret).unwrap();
+    let direction = EnvelopeDirection::ClientToGateway;
+    let enc_key =
+        derive_transport_enc_key(&secret, TENANT_ID, KEY_VERSION, direction, data_alg).unwrap();
+    let mac_key = mac_alg.map(|_| {
+        derive_transport_mac_key(&secret, TENANT_ID, KEY_VERSION, direction).unwrap()
+    });
     let iv = fixed_iv(iv_len_for(data_alg).unwrap());
+    let nonce = fixed_nonce(seed);
     let plaintext = plaintext_request();
-    let parts = encrypt_with_alg_iv(
-        cipher,
-        data_alg,
-        data_key,
-        &iv,
-        plaintext.as_bytes(),
-        TENANT_ID.as_bytes(),
+
+    let envelope = seal_envelope_deterministic(
+        SealEnvelopeParams {
+            profile: &profile,
+            registry,
+            master_key: &secret,
+            direction,
+            key_version: KEY_VERSION,
+            tenant_id: TENANT_ID,
+            http_path: HTTP_PATH,
+            plaintext: plaintext.as_bytes(),
+            timestamp: TIMESTAMP,
+        },
+        |_| iv.clone(),
+        nonce.clone(),
     )
     .unwrap();
-    let mut envelope = TransportEnvelope {
-        encrypted: true,
-        key_version: KEY_VERSION.to_owned(),
-        data_alg: data_alg.as_str().to_owned(),
-        mac_alg: mac_alg.map(|mac| mac.as_str().to_owned()),
+
+    let aad_string = canonical_envelope_aad(EnvelopeHeaderRef {
+        direction,
+        tenant_id: TENANT_ID,
+        http_path: HTTP_PATH,
+        key_version: KEY_VERSION,
+        data_alg: data_alg.as_str(),
+        mac_alg: mac_alg.map(AlgorithmId::as_str),
         timestamp: TIMESTAMP,
-        nonce: fixed_nonce(seed),
-        iv: parts.iv,
-        ciphertext: parts.ciphertext,
-        tag: parts.tag,
-        signature: String::new(),
-    };
-    let canonical = mac_alg.map(|mac| {
-        let payload = canonical_signature_payload(&envelope, TENANT_ID, HTTP_PATH);
-        envelope.signature = sign_payload(cipher, mac, &secret, &payload).unwrap();
-        payload
+        nonce: &nonce,
+        iv_b64: &envelope.iv,
     });
-    // 网关侧真实解封路径必须能打开本向量。
+    let canonical = mac_alg.map(|_| {
+        canonical_signature_payload(&envelope, direction, TENANT_ID, HTTP_PATH)
+    });
+
+    // 网关侧真实解封路径必须能打开本向量，且反向反射解封必须拒绝。
     let opened = open_envelope(
         &profile,
         registry,
         &secret,
-        Some(&secret),
+        EnvelopeDirection::ClientToGateway,
         TENANT_ID,
         HTTP_PATH,
         &envelope,
     )
     .unwrap();
     assert_eq!(opened, plaintext.as_bytes(), "{name}: open_envelope");
+    assert!(
+        open_envelope(
+            &profile,
+            registry,
+            &secret,
+            EnvelopeDirection::GatewayToClient,
+            TENANT_ID,
+            HTTP_PATH,
+            &envelope,
+        )
+        .is_err(),
+        "{name}: reflection must fail"
+    );
 
     let aad = if data_alg.kind() == AlgorithmKind::Aead {
-        Value::from(TENANT_ID)
+        Value::from(aad_string)
     } else {
         Value::Null
     };
     let vector = json!({
         "name": name,
+        "direction": direction.as_str(),
         "data_alg": data_raw,
         "mac_alg": mac_raw,
         "legacy_allow_insecure": legacy,
-        "data_key_hex": hex::encode(data_key),
-        "mac_key_hex": mac_alg.map(|_| hex::encode(&secret)),
+        "data_key_hex": hex::encode(&*enc_key),
+        "mac_key_hex": mac_key.as_ref().map(|k| hex::encode(k.as_slice())),
         "iv_hex": hex::encode(&iv),
         "aad_utf8": aad,
         "plaintext_utf8": plaintext,
@@ -583,4 +610,38 @@ fn tenant_integration_vectors_match_implementation() {
         "protocol vectors drifted from implementation; regenerate and update docs"
     );
     verify_nondeterministic(&stored);
+
+    // Cross-verify x-loadgen golden_mazbri.json if present in sibling workspace.
+    let xlg_golden = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../x-loadgen/x-loadgen-libs/x-loadgen-core/src/crypto/transport/golden_mazbri.json");
+    if xlg_golden.exists() {
+        let gdoc: Value =
+            serde_json::from_str(&std::fs::read_to_string(&xlg_golden).unwrap()).unwrap();
+        let registry = AlgorithmRegistry::default_registry();
+        let secret = hex::decode(gdoc["secret_hex"].as_str().unwrap()).unwrap();
+        let tenant_id = gdoc["tenant_id"].as_str().unwrap();
+        let http_path = gdoc["http_path"].as_str().unwrap();
+        let plaintext = gdoc["plaintext"].as_str().unwrap();
+        for case in gdoc["cases"].as_array().unwrap() {
+            let profile: TenantTransportProfile =
+                serde_json::from_value(case["profile"].clone()).unwrap();
+            let envelope: TransportEnvelope =
+                serde_json::from_value(case["envelope"].clone()).unwrap();
+            let dir = match case["direction"].as_str().unwrap_or("c2g") {
+                "g2c" => EnvelopeDirection::GatewayToClient,
+                _ => EnvelopeDirection::ClientToGateway,
+            };
+            let opened = open_envelope(
+                &profile,
+                &registry,
+                &secret,
+                dir,
+                tenant_id,
+                http_path,
+                &envelope,
+            )
+            .unwrap();
+            assert_eq!(opened, plaintext.as_bytes(), "xlg golden {}", case["name"]);
+        }
+    }
 }

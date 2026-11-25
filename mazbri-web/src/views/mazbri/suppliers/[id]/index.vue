@@ -332,12 +332,19 @@
                         min-width="180"
                       >
                         <template #default="scope">
-                          <ElInput
-                            v-model="scope.row.value"
-                            type="password"
-                            show-password
-                            placeholder="value"
-                          />
+                          <ElFormItem
+                            :prop="`config.auth_flow.credentials.${scope.$index}.value`"
+                            :rules="credentialValueRules(scope.row)"
+                            class="inline-form-item"
+                          >
+                            <ElInput
+                              v-model="scope.row.value"
+                              type="password"
+                              show-password
+                              placeholder="value"
+                              @input="onCredentialValueInput(scope.row)"
+                            />
+                          </ElFormItem>
                         </template>
                       </ElTableColumn>
                       <ElTableColumn
@@ -498,9 +505,10 @@ import {
   ElMessage,
   ElMessageBox,
   type FormInstance,
+  type FormItemRule,
   type FormRules,
 } from "element-plus";
-import { computed, onMounted, reactive, ref, watch } from "vue";
+import { computed, nextTick, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   deleteSupplier,
@@ -513,6 +521,12 @@ import { runWithLoading } from "@/composables/useAsyncState";
 import { $t } from "@/locales";
 import { ROLES_BIZ } from "@/utils/ops/roles";
 import { formatDateTime } from "@/utils/format";
+import {
+  canonicalOrigin,
+  clearMaskedKvEntries,
+  hasOriginChanged,
+  isMaskedSecretValue,
+} from "@/utils/originPinning";
 import { formatUrlDisplay, stripUrlScheme } from "@/utils/sensitive";
 import { logger } from "@/utils/sys";
 import InjectPreviewCard from "../components/InjectPreviewCard.vue";
@@ -534,6 +548,47 @@ const editing = ref(false);
 const openingWorkbench = ref(false);
 const supplier = ref<Supplier | null>(null);
 const form = reactive<SupplierFormModel>(createEmptySupplierForm());
+const initialUpstreamUrl = ref("");
+const initialTokenUrl = ref("");
+const originClearedCredentialKeys = ref<Set<string>>(new Set());
+
+function captureOriginBaseline(): void {
+  initialUpstreamUrl.value = form.upstream_url;
+  initialTokenUrl.value = form.config.auth_flow.token_url;
+  originClearedCredentialKeys.value = new Set();
+}
+
+function defaultSchemeForSupplier(): "http" | "https" {
+  return form.upstream_type === "transparent" ? "https" : "http";
+}
+
+function credentialValueRules(row: { key: string; value: string }): FormItemRule[] {
+  const key = row.key.trim();
+  if (!key || !originClearedCredentialKeys.value.has(key)) {
+    return [];
+  }
+  return [
+    {
+      required: true,
+      message: $t("supplier.validation.credentialRequiredOnOriginChange"),
+      trigger: ["blur", "change"],
+    },
+  ];
+}
+
+function onCredentialValueInput(row: { key: string; value: string }): void {
+  const key = row.key.trim();
+  if (
+    key &&
+    row.value.trim() &&
+    !isMaskedSecretValue(row.value) &&
+    originClearedCredentialKeys.value.has(key)
+  ) {
+    const next = new Set(originClearedCredentialKeys.value);
+    next.delete(key);
+    originClearedCredentialKeys.value = next;
+  }
+}
 
 const supplierId = computed(() => route.params.id as string);
 
@@ -630,6 +685,7 @@ const loadData = async () => {
     await runWithLoading(loading, async () => {
       supplier.value = await fetchSupplierById(supplierId.value);
       Object.assign(form, supplierToForm(supplier.value));
+      captureOriginBaseline();
     });
   } catch (error) {
     logger.error("Failed to load supplier:", error);
@@ -640,6 +696,7 @@ const loadData = async () => {
 const enterEdit = () => {
   if (!supplier.value) return;
   Object.assign(form, supplierToForm(supplier.value));
+  captureOriginBaseline();
   editing.value = true;
   formRef.value?.clearValidate();
 };
@@ -647,6 +704,7 @@ const enterEdit = () => {
 const cancelEdit = () => {
   if (supplier.value) {
     Object.assign(form, supplierToForm(supplier.value));
+    captureOriginBaseline();
   }
   editing.value = false;
   formRef.value?.clearValidate();
@@ -664,8 +722,60 @@ const addCredential = () => {
 };
 
 const removeCredential = (index: number) => {
+  const removed = form.config.auth_flow.credentials[index];
+  if (removed?.key.trim() && originClearedCredentialKeys.value.has(removed.key.trim())) {
+    const next = new Set(originClearedCredentialKeys.value);
+    next.delete(removed.key.trim());
+    originClearedCredentialKeys.value = next;
+  }
   form.config.auth_flow.credentials.splice(index, 1);
 };
+
+watch(
+  () => [form.upstream_url, form.config.auth_flow.token_url] as const,
+  ([nextUpstream, nextToken]) => {
+    if (!editing.value) return;
+    const scheme = defaultSchemeForSupplier();
+    const baseOrigin = canonicalOrigin(initialUpstreamUrl.value, {
+      defaultScheme: scheme,
+    });
+    const upstreamChanged = hasOriginChanged(
+      initialUpstreamUrl.value,
+      nextUpstream,
+      { defaultScheme: scheme },
+    );
+    const tokenChanged = hasOriginChanged(
+      initialTokenUrl.value,
+      nextToken,
+      {
+        defaultScheme: "https",
+        fallbackInitialOrigin: baseOrigin || undefined,
+      },
+    );
+    if (!upstreamChanged && !tokenChanged) return;
+
+    const cleared = clearMaskedKvEntries(form.config.auth_flow.credentials);
+    clearMaskedKvEntries(form.config.auth_flow.headers);
+    if (cleared.length === 0) return;
+
+    const nextSet = new Set(originClearedCredentialKeys.value);
+    for (const k of cleared) nextSet.add(k);
+    originClearedCredentialKeys.value = nextSet;
+
+    void nextTick(() => {
+      const fields = form.config.auth_flow.credentials
+        .map((item, idx) =>
+          nextSet.has(item.key.trim())
+            ? `config.auth_flow.credentials.${idx}.value`
+            : "",
+        )
+        .filter(Boolean);
+      if (fields.length > 0) {
+        void formRef.value?.validateField(fields).catch(() => undefined);
+      }
+    });
+  },
+);
 
 const handleUrlBlur = () => {
   if (form.upstream_type === "transparent") {
@@ -714,6 +824,7 @@ const submitForm = async () => {
     );
     supplier.value = updated;
     Object.assign(form, supplierToForm(updated));
+    captureOriginBaseline();
     editing.value = false;
     ElMessage.success($t("common.feedback.saveSuccess"));
     if (route.query.edit != null) {

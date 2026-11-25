@@ -1,20 +1,31 @@
 use super::{MetricsBuilder, register_collector_once};
 use crate::REGISTRY;
+use crate::rate_limited_log::RateLimitedLog;
+pub use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use prometheus::{GaugeVec, IntGaugeVec, Opts};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, LazyLock, OnceLock};
 use tokio::time::{Duration, interval};
+use tokio_util::sync::CancellationToken;
+
+static NEAR_EXPIRY_WARN_GATE: LazyLock<RateLimitedLog> =
+    LazyLock::new(|| RateLimitedLog::new(Duration::from_secs(300)));
+
+#[async_trait]
 pub trait DbPoolInfo: Send + Sync {
     fn pool_size(&self) -> u32;
     fn num_idle(&self) -> u32;
-    fn is_healthy(&self) -> bool;
+    async fn is_healthy(&self) -> bool;
 }
 pub type LateDbPool = Arc<OnceLock<Arc<dyn DbPoolInfo>>>;
 pub trait CertExpiryInfoProvider: Send + Sync {
     fn cert_expiry(&self) -> Option<DateTime<Utc>>;
     fn is_cert_valid(&self) -> bool;
+    fn is_cert_near_expiry(&self) -> bool {
+        false
+    }
 }
 pub type BoxedConfigCenterCheck =
     Arc<dyn Fn() -> Pin<Box<dyn Future<Output = bool> + Send>> + Send + Sync>;
@@ -103,6 +114,7 @@ pub struct HealthMetricsUpdater {
     config_center_connected: Option<BoxedConfigCenterCheck>,
     /// 若提供则作为就绪判定（应与 `/ready` 相同）；否则用依赖健康（db∧cert）作为就绪。
     ready_check: Option<BoxedReadyCheck>,
+    cancel_token: Option<CancellationToken>,
 }
 impl HealthMetricsUpdater {
     pub fn new(
@@ -118,6 +130,7 @@ impl HealthMetricsUpdater {
             cert_handle,
             config_center_connected,
             ready_check: None,
+            cancel_token: None,
         }
     }
     #[must_use]
@@ -130,6 +143,11 @@ impl HealthMetricsUpdater {
         self.ready_check = Some(Arc::new(check));
         self
     }
+    #[must_use]
+    pub fn with_cancellation_token(mut self, token: CancellationToken) -> Self {
+        self.cancel_token = Some(token);
+        self
+    }
     pub async fn update(&self) {
         let name: &str = &self.service_name;
         let effective_pool = self
@@ -138,7 +156,7 @@ impl HealthMetricsUpdater {
             .or_else(|| self.late_db_pool.as_ref().and_then(|slot| slot.get()));
         let db_healthy = if let Some(pool) = effective_pool {
             record_db_pool_metrics(name, pool.as_ref());
-            pool.is_healthy()
+            pool.is_healthy().await
         } else {
             // 未接入数据库的服务不以连接池判定健康，与未配置证书一致。
             DB_POOL_ACTIVE_CONNECTIONS.with_label_values(&[name]).set(0);
@@ -146,12 +164,21 @@ impl HealthMetricsUpdater {
             true
         };
         let cert_healthy = if let Some(ref cert) = self.cert_handle {
-            if let Some(expires_at) = cert.cert_expiry() {
+            let expiry = cert.cert_expiry();
+            if let Some(expires_at) = expiry {
                 TLS_CERT_EXPIRY_TIMESTAMP
                     .with_label_values(&[name])
                     .set(crate::num::i64_to_f64(expires_at.timestamp()));
             }
-            cert.is_cert_valid()
+            let valid = cert.is_cert_valid();
+            if valid && cert.is_cert_near_expiry() && NEAR_EXPIRY_WARN_GATE.allow(name) {
+                tracing::warn!(
+                    service = %name,
+                    expires_at = ?expiry,
+                    "TLS certificate is near expiry threshold; keeping service ready while awaiting renewal"
+                );
+            }
+            valid
         } else {
             true
         };
@@ -180,17 +207,60 @@ impl HealthMetricsUpdater {
         );
     }
     #[must_use]
-    pub fn spawn(self) -> tokio::task::JoinHandle<()> {
+    pub fn spawn_with_token(self, token: CancellationToken) -> tokio::task::JoinHandle<()> {
+        self.with_cancellation_token(token).spawn()
+    }
+    #[must_use]
+    pub fn spawn(mut self) -> tokio::task::JoinHandle<()> {
+        let cancel_token = self.cancel_token.take();
         tokio::spawn(async move {
             let mut interval = interval(Duration::from_secs(15));
-            loop {
-                tokio::select! {
-                    _ = interval.tick() => { self.update(). await; } _ =
-                    tokio::signal::ctrl_c() => { tracing::info!(service = % self
-                    .service_name, "Health metrics updater shutting down"); break; }
+            if let Some(token) = cancel_token {
+                loop {
+                    tokio::select! {
+                        _ = interval.tick() => {
+                            self.update().await;
+                        }
+                        () = token.cancelled() => {
+                            tracing::info!(service = %self.service_name, "Health metrics updater shutting down (token)");
+                            break;
+                        }
+                    }
+                }
+            } else {
+                loop {
+                    tokio::select! {
+                        _ = interval.tick() => {
+                            self.update().await;
+                        }
+                        () = wait_for_termination_signal_internal() => {
+                            tracing::info!(service = %self.service_name, "Health metrics updater shutting down");
+                            break;
+                        }
+                    }
                 }
             }
         })
+    }
+}
+
+async fn wait_for_termination_signal_internal() {
+    #[cfg(unix)]
+    {
+        if let Ok(mut sigterm) =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+        {
+            tokio::select! {
+                _ = tokio::signal::ctrl_c() => {}
+                _ = sigterm.recv() => {}
+            }
+        } else {
+            let _ = tokio::signal::ctrl_c().await;
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = tokio::signal::ctrl_c().await;
     }
 }
 
@@ -199,6 +269,7 @@ mod tests {
     use super::*;
 
     struct FixedPool(bool);
+    #[async_trait]
     impl DbPoolInfo for FixedPool {
         fn pool_size(&self) -> u32 {
             4
@@ -206,18 +277,24 @@ mod tests {
         fn num_idle(&self) -> u32 {
             2
         }
-        fn is_healthy(&self) -> bool {
+        async fn is_healthy(&self) -> bool {
             self.0
         }
     }
 
-    struct FixedCert(bool);
+    struct FixedCert {
+        valid: bool,
+        near_expiry: bool,
+    }
     impl CertExpiryInfoProvider for FixedCert {
         fn cert_expiry(&self) -> Option<DateTime<Utc>> {
             None
         }
         fn is_cert_valid(&self) -> bool {
-            self.0
+            self.valid
+        }
+        fn is_cert_near_expiry(&self) -> bool {
+            self.near_expiry
         }
     }
 
@@ -261,6 +338,7 @@ mod tests {
     }
 
     struct IdlePool;
+    #[async_trait]
     impl DbPoolInfo for IdlePool {
         fn pool_size(&self) -> u32 {
             5
@@ -268,7 +346,7 @@ mod tests {
         fn num_idle(&self) -> u32 {
             5
         }
-        fn is_healthy(&self) -> bool {
+        async fn is_healthy(&self) -> bool {
             true
         }
     }
@@ -331,8 +409,57 @@ mod tests {
 
     #[tokio::test]
     async fn invalid_cert_is_unhealthy_without_db_pool() {
-        let cert: Arc<dyn CertExpiryInfoProvider> = Arc::new(FixedCert(false));
+        let cert: Arc<dyn CertExpiryInfoProvider> = Arc::new(FixedCert {
+            valid: false,
+            near_expiry: true,
+        });
         assert_eq!(run("health-test-bad-cert", None, Some(cert)).await, (0, 1));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn near_expiry_unexpired_cert_keeps_rpc_ready_one_on_current_thread() {
+        let near_cert: Arc<dyn CertExpiryInfoProvider> = Arc::new(FixedCert {
+            valid: true,
+            near_expiry: true,
+        });
+        HealthMetricsUpdater::new("health-test-near-cert", None, Some(near_cert), None)
+            .update()
+            .await;
+        assert_eq!(health("health-test-near-cert"), (1, 0));
+        assert_eq!(
+            RPC_READY
+                .with_label_values(&["health-test-near-cert"])
+                .get(),
+            1
+        );
+
+        let expired_cert: Arc<dyn CertExpiryInfoProvider> = Arc::new(FixedCert {
+            valid: false,
+            near_expiry: true,
+        });
+        HealthMetricsUpdater::new("health-test-expired-cert", None, Some(expired_cert), None)
+            .update()
+            .await;
+        assert_eq!(health("health-test-expired-cert"), (0, 1));
+        assert_eq!(
+            RPC_READY
+                .with_label_values(&["health-test-expired-cert"])
+                .get(),
+            0
+        );
+    }
+
+    #[tokio::test]
+    async fn cancellation_token_stops_updater_task_cleanly() {
+        let token = CancellationToken::new();
+        let handle = HealthMetricsUpdater::new("health-test-cancel-token", None, None, None)
+            .spawn_with_token(token.clone());
+        tokio::task::yield_now().await;
+        token.cancel();
+        tokio::time::timeout(Duration::from_secs(2), handle)
+            .await
+            .expect("updater task must exit on token cancellation")
+            .expect("updater task must not panic");
     }
 
     #[tokio::test]

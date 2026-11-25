@@ -8,8 +8,9 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use prometheus::{Encoder, TextEncoder};
+use std::sync::Arc;
 use tracing::{debug, error};
-pub async fn health_handler(State(state): State<AdminState>) -> impl IntoResponse {
+pub async fn health_handler(State(state): State<Arc<AdminState>>) -> impl IntoResponse {
     let is_healthy = (state.health_check)();
     if is_healthy {
         debug!(service = % state.service_name, "Health check passed");
@@ -19,7 +20,7 @@ pub async fn health_handler(State(state): State<AdminState>) -> impl IntoRespons
         (StatusCode::SERVICE_UNAVAILABLE, "Unhealthy")
     }
 }
-pub async fn ready_handler(State(state): State<AdminState>) -> impl IntoResponse {
+pub async fn ready_handler(State(state): State<Arc<AdminState>>) -> impl IntoResponse {
     let result = (state.readiness_check)().await;
     let status_code = if result.status == CheckStatus::Ok {
         StatusCode::OK
@@ -33,7 +34,7 @@ pub async fn ready_handler(State(state): State<AdminState>) -> impl IntoResponse
     (status_code, Json(result))
 }
 /// GET /routes/status — 网关热加载状态；未注入 provider 时返回 404。
-pub async fn routes_status_handler(State(state): State<AdminState>) -> impl IntoResponse {
+pub async fn routes_status_handler(State(state): State<Arc<AdminState>>) -> impl IntoResponse {
     let provider = state.routes_status.read().ok().and_then(|g| g.clone());
     match provider {
         Some(f) => (StatusCode::OK, Json(f())).into_response(),
@@ -47,7 +48,7 @@ pub async fn routes_status_handler(State(state): State<AdminState>) -> impl Into
     }
 }
 
-pub async fn metrics_handler(State(state): State<AdminState>) -> impl IntoResponse {
+pub async fn metrics_handler(State(state): State<Arc<AdminState>>) -> impl IntoResponse {
     let encoder = TextEncoder::new();
     let metric_families = state.registry.gather();
     let mut buffer = Vec::new();

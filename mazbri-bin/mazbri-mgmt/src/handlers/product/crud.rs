@@ -114,15 +114,16 @@ pub async fn update_product(
         return ApiResponse::err(StatusCode::BAD_REQUEST, "Invalid operator ID format");
     };
     let client_ip = extract_client_ip(&headers, Some(addr));
-    service::update_product(
-        &state.product_service,
-        &product_id,
+    service::update_product(service::UpdateProductArgs {
+        db: &state.db,
+        product_service: &state.product_service,
+        product_id: &product_id,
         req,
-        &claims.sub,
-        &state.audit,
+        operator: &claims.sub,
+        audit: &state.audit,
         operator_id,
         client_ip,
-    )
+    })
     .await
 }
 pub async fn delete_product(
@@ -140,6 +141,7 @@ pub async fn delete_product(
     };
     let client_ip = extract_client_ip(&headers, Some(addr));
     service::delete_product(
+        &state.db,
         &state.product_service,
         &product_id,
         &claims.sub,

@@ -1,7 +1,8 @@
-//! Tenant response cache via mazbri-cache-service (H-05).
+//! Tenant response cache via mazbri-cache-service (H-05 & Step 05 S05-3).
 //!
-//! Reads/writes proxy responses when the tenant has `cache_configs.enabled`.
-//! Fail-open on any cache error so proxy availability is not coupled to cache.
+//! Enforces strict tenant namespace isolation, routing header + length-prefixed query + body SHA-256
+//! cache keys, and inner HTTP method cacheability rules (wildcard caches `GET`/`HEAD` only;
+//! `POST` requires an explicit non-wildcard `api_ttl` endpoint rule).
 
 use super::execution::{ProxyBody, UpstreamResponse};
 use super::validation::GatewayRequest;
@@ -13,17 +14,150 @@ use mazbri_rpc::{CacheGetRequest, CacheSetRequest};
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 use sha2::{Digest, Sha256};
+use sqlx::{PgPool, Row};
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::{Instrument, debug, warn};
+use uuid::Uuid;
 
 /// Max body bytes we will put into the tenant response cache.
 const MAX_CACHEABLE_BODY_BYTES: usize = 512 * 1024;
 
 /// Short fail-open timeout for cache get RPC when the snapshot says caching is on.
-/// Kept as a fixed constant (not a new config knob) so a slow/hung cache cannot
-/// add tens of milliseconds to every miss path.
 const CACHE_GET_TIMEOUT: Duration = Duration::from_millis(8);
+
+const POLICY_CACHE_TTL: Duration = Duration::from_secs(30);
+const PUBLIC_CACHE_PARTITION: &str = "__public__";
+
+#[derive(Debug, Clone)]
+pub struct TenantCachePolicy {
+    pub enabled: bool,
+    pub tenant_isolated: bool,
+    pub api_ttl: HashMap<String, u64>,
+}
+
+impl Default for TenantCachePolicy {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            tenant_isolated: true,
+            api_ttl: HashMap::new(),
+        }
+    }
+}
+
+impl TenantCachePolicy {
+    /// Returns `true` when `path` matches an explicit non-wildcard `api_ttl` rule (`ttl > 0`).
+    #[must_use]
+    pub fn has_explicit_api_ttl(&self, path: &str) -> bool {
+        if self.api_ttl.get(path).is_some_and(|ttl| *ttl > 0) {
+            return true;
+        }
+        for (pattern, ttl) in &self.api_ttl {
+            if *ttl == 0 {
+                continue;
+            }
+            if let Some(prefix) = pattern.strip_suffix('*')
+                && !prefix.is_empty()
+                && prefix != "/"
+                && path.starts_with(prefix)
+            {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Evaluates whether inner `(method, path)` may be served from or stored in the response cache.
+    ///
+    /// - Without an explicit `api_ttl` rule (wildcard/default cache), ONLY inner `GET` / `HEAD` are cached.
+    /// - With an explicit non-wildcard `api_ttl` rule (e.g. `"/dev19-mock": 60`), read-only query `POST`
+    ///   is also permitted unless `cacheable_methods` explicitly restricts it.
+    #[must_use]
+    pub fn is_request_cacheable(&self, method: &str, path: &str) -> bool {
+        if !self.enabled {
+            return false;
+        }
+        match method.trim().to_ascii_uppercase().as_str() {
+            "GET" | "HEAD" => true,
+            "POST" => self.has_explicit_api_ttl(path),
+            _ => false,
+        }
+    }
+}
+
+pub struct TenantCachePolicyLookup {
+    cache_db: Option<PgPool>,
+    cache: moka::sync::Cache<Uuid, TenantCachePolicy>,
+}
+
+impl TenantCachePolicyLookup {
+    #[must_use]
+    pub fn new(cache_db: Option<PgPool>) -> Self {
+        let cache = moka::sync::Cache::builder()
+            .max_capacity(10_000)
+            .time_to_live(POLICY_CACHE_TTL)
+            .build();
+        Self { cache_db, cache }
+    }
+
+    pub fn invalidate_all(&self) {
+        self.cache.invalidate_all();
+    }
+
+    pub fn invalidate(&self, tenant_id: Uuid) {
+        self.cache.invalidate(&tenant_id);
+    }
+
+    pub async fn resolve(&self, tenant_id: Uuid, snapshot_enabled: bool) -> TenantCachePolicy {
+        if !snapshot_enabled {
+            return TenantCachePolicy::default();
+        }
+        if let Some(policy) = self.cache.get(&tenant_id) {
+            return policy;
+        }
+        let policy = self.fetch_from_db(tenant_id, snapshot_enabled).await;
+        self.cache.insert(tenant_id, policy.clone());
+        policy
+    }
+
+    async fn fetch_from_db(&self, tenant_id: Uuid, fallback_enabled: bool) -> TenantCachePolicy {
+        let Some(ref pool) = self.cache_db else {
+            return TenantCachePolicy {
+                enabled: fallback_enabled,
+                tenant_isolated: true,
+                api_ttl: HashMap::new(),
+            };
+        };
+        let row = match sqlx::query(
+            "SELECT enabled, tenant_isolated, api_ttl FROM cache_configs WHERE tenant_id = $1",
+        )
+        .bind(tenant_id)
+        .fetch_optional(pool)
+        .await
+        {
+            Ok(Some(row)) => row,
+            Ok(None) => return TenantCachePolicy::default(),
+            Err(err) => {
+                warn!(error = %err, %tenant_id, "Failed to load tenant cache_configs policy; treating as disabled");
+                return TenantCachePolicy::default();
+            }
+        };
+        let enabled = row.try_get::<bool, _>("enabled").unwrap_or(false);
+        let tenant_isolated = row.try_get::<bool, _>("tenant_isolated").unwrap_or(true);
+        let api_ttl = row
+            .try_get::<serde_json::Value, _>("api_ttl")
+            .ok()
+            .and_then(|v| serde_json::from_value::<HashMap<String, u64>>(v).ok())
+            .unwrap_or_default();
+        TenantCachePolicy {
+            enabled,
+            tenant_isolated,
+            api_ttl,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct CachedUpstreamResponse {
@@ -127,32 +261,76 @@ impl CachedUpstreamResponse {
     }
 }
 
-pub(crate) fn build_proxy_cache_key(req: &GatewayRequest) -> String {
+fn update_len_prefixed(hasher: &mut Sha256, bytes: &[u8]) {
+    hasher.update((bytes.len() as u64).to_be_bytes());
+    hasher.update(bytes);
+}
+
+/// Builds a tenant-isolated (or `__public__` when explicitly shared without route override)
+/// proxy response cache key incorporating routing headers, length-prefixed query params, and body SHA-256.
+#[must_use]
+pub(crate) fn build_proxy_cache_key(
+    tenant_id: &str,
+    req: &GatewayRequest,
+    tenant_isolated: bool,
+    has_tenant_route_override: bool,
+) -> String {
+    let partition = if tenant_isolated || has_tenant_route_override {
+        tenant_id
+    } else {
+        PUBLIC_CACHE_PARTITION
+    };
     let mut hasher = Sha256::new();
-    hasher.update(req.product_id.as_bytes());
-    hasher.update(b"\0");
-    hasher.update(req.method.to_ascii_uppercase().as_bytes());
-    hasher.update(b"\0");
-    hasher.update(req.path.as_bytes());
-    hasher.update(b"\0");
-    if let Some(query) = &req.query {
-        let mut pairs: Vec<_> = query.iter().collect();
-        pairs.sort_by(|a, b| a.0.cmp(b.0));
-        for (k, v) in pairs {
-            hasher.update(k.as_bytes());
-            hasher.update(b"=");
-            hasher.update(v.as_bytes());
-            hasher.update(b"&");
+    update_len_prefixed(&mut hasher, partition.as_bytes());
+    update_len_prefixed(&mut hasher, req.product_id.as_bytes());
+    let upper_method = req.method.trim().to_ascii_uppercase();
+    update_len_prefixed(&mut hasher, upper_method.as_bytes());
+    update_len_prefixed(&mut hasher, req.path.as_bytes());
+
+    // Canonical routing headers (e.g. X-Api-Version, Accept, Content-Type).
+    let mut route_headers: BTreeMap<String, &str> = BTreeMap::new();
+    if let Some(ref headers) = req.headers {
+        for (k, v) in headers {
+            let lower = k.trim().to_ascii_lowercase();
+            if matches!(lower.as_str(), "x-api-version" | "accept" | "content-type") {
+                route_headers.insert(lower, v.trim());
+            }
         }
     }
-    hasher.update(b"\0");
-    if let Some(body) = &req.body {
-        hasher.update(body.as_raw_json_str().as_bytes());
+    hasher.update((route_headers.len() as u64).to_be_bytes());
+    for (k, v) in route_headers {
+        update_len_prefixed(&mut hasher, k.as_bytes());
+        update_len_prefixed(&mut hasher, v.as_bytes());
     }
+
+    // Length-prefixed sorted query parameters (immune to `&` / `=` boundary ambiguity).
+    if let Some(ref query) = req.query {
+        let sorted: BTreeMap<&str, &str> = query
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+        hasher.update((sorted.len() as u64).to_be_bytes());
+        for (k, v) in sorted {
+            update_len_prefixed(&mut hasher, k.as_bytes());
+            update_len_prefixed(&mut hasher, v.as_bytes());
+        }
+    } else {
+        hasher.update(0_u64.to_be_bytes());
+    }
+
+    // Body SHA-256 digest.
+    if let Some(ref body) = req.body {
+        let body_digest = Sha256::digest(body.as_raw_json_str().trim().as_bytes());
+        hasher.update([1_u8]);
+        hasher.update(body_digest);
+    } else {
+        hasher.update([0_u8]);
+    }
+
     format!("proxy:{}", hex::encode(hasher.finalize()))
 }
 
-/// Returns true when the gateway snapshot says the tenant has caching enabled.
+/// Returns true when the gateway policy confirms this request is eligible for cache RPC.
 #[must_use]
 pub(crate) fn should_attempt_cache_rpc(cache_enabled: bool) -> bool {
     cache_enabled
@@ -185,8 +363,9 @@ pub(crate) async fn try_get_cached_response(
             return None;
         }
     };
+    let rpc_ctx = TarpcClientPool::rpc_context(CACHE_GET_TIMEOUT);
     let get_fut = client.get(
-        tarpc::context::current(),
+        rpc_ctx,
         CacheGetRequest {
             tenant_id: tenant_id.to_string(),
             key: cache_key.to_string(),
@@ -223,7 +402,11 @@ pub(crate) async fn try_get_cached_response(
             None
         }
     };
-    debug!(cache_lookup_ms = started.elapsed().as_millis(), hit = cached.is_some(), "response cache get finished");
+    debug!(
+        cache_lookup_ms = started.elapsed().as_millis(),
+        hit = cached.is_some(),
+        "response cache get finished"
+    );
     cached
 }
 
@@ -256,9 +439,10 @@ pub(crate) async fn try_put_cached_response(
             return;
         }
     };
+    let rpc_ctx = TarpcClientPool::rpc_context(endpoint.timeout());
     match client
         .set(
-            tarpc::context::current(),
+            rpc_ctx,
             CacheSetRequest {
                 tenant_id: tenant_id.to_string(),
                 key: cache_key.to_string(),
@@ -287,7 +471,10 @@ pub(crate) async fn try_put_cached_response(
 
 #[cfg(test)]
 mod skip_disabled_cache_tests {
-    use super::should_attempt_cache_rpc;
+    use super::{
+        GatewayRequest, TenantCachePolicy, build_proxy_cache_key, should_attempt_cache_rpc,
+    };
+    use std::collections::HashMap;
     use std::time::{Duration, Instant};
 
     #[test]
@@ -300,6 +487,62 @@ mod skip_disabled_cache_tests {
             should_attempt_cache_rpc(true),
             "enabled cache_configs must allow RPC"
         );
+    }
+
+    #[test]
+    fn cache_key_isolates_tenants_headers_and_query_boundaries() {
+        let req_v1: GatewayRequest = serde_json::from_str(
+            r#"{"product_id":"8000000001","path":"/v1/q","method":"GET","headers":{"X-Api-Version":"v1"},"query":{"a":"1&b=2"}}"#,
+        )
+        .unwrap();
+        let req_v2: GatewayRequest = serde_json::from_str(
+            r#"{"product_id":"8000000001","path":"/v1/q","method":"GET","headers":{"x-api-version":"v2"},"query":{"a":"1&b=2"}}"#,
+        )
+        .unwrap();
+        let req_split_query: GatewayRequest = serde_json::from_str(
+            r#"{"product_id":"8000000001","path":"/v1/q","method":"GET","headers":{"X-Api-Version":"v1"},"query":{"a":"1","b":"2"}}"#,
+        )
+        .unwrap();
+
+        assert_ne!(
+            build_proxy_cache_key("tenant-a", &req_v1, true, false),
+            build_proxy_cache_key("tenant-b", &req_v1, true, false)
+        );
+        // Shared mode still isolates when tenant has a dedicated route override.
+        assert_ne!(
+            build_proxy_cache_key("tenant-a", &req_v1, false, true),
+            build_proxy_cache_key("tenant-b", &req_v1, false, false)
+        );
+        assert_ne!(
+            build_proxy_cache_key("tenant-a", &req_v1, true, false),
+            build_proxy_cache_key("tenant-a", &req_v2, true, false)
+        );
+        assert_ne!(
+            build_proxy_cache_key("tenant-a", &req_v1, true, false),
+            build_proxy_cache_key("tenant-a", &req_split_query, true, false)
+        );
+    }
+
+    #[test]
+    fn wildcard_policy_caches_only_get_head_while_explicit_api_ttl_allows_post() {
+        let wildcard = TenantCachePolicy {
+            enabled: true,
+            tenant_isolated: true,
+            api_ttl: HashMap::from([("/*".to_string(), 60)]),
+        };
+        assert!(wildcard.is_request_cacheable("GET", "/v1/items"));
+        assert!(wildcard.is_request_cacheable("HEAD", "/v1/items"));
+        assert!(!wildcard.is_request_cacheable("POST", "/v1/items"));
+        assert!(!wildcard.is_request_cacheable("DELETE", "/v1/items"));
+
+        let explicit = TenantCachePolicy {
+            enabled: true,
+            tenant_isolated: true,
+            api_ttl: HashMap::from([("/dev19-mock".to_string(), 60)]),
+        };
+        assert!(explicit.is_request_cacheable("POST", "/dev19-mock"));
+        assert!(!explicit.is_request_cacheable("POST", "/v1/orders"));
+        assert!(!explicit.is_request_cacheable("DELETE", "/dev19-mock"));
     }
 
     #[tokio::test]

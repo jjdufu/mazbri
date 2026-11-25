@@ -112,6 +112,7 @@ import { useOpsSharedRange } from "@/composables/ops/useOpsSharedRange";
 import { useStep } from "@/composables/ops/useStep";
 import { fetchMetricTimeseries } from "@/api/monitoring";
 import { fetchBillingFailures, fetchBillingFunnel } from "@/api/billing-ops";
+import { useLatestRequest } from "@/composables/useLatestRequest";
 import type { MetricSeries } from "@/types/api/monitoring";
 import type {
   BillingFunnelPg,
@@ -154,9 +155,6 @@ const chartWindow = computed(() => ({
   end: timeRange.value.end,
 }));
 
-const loading = ref(false);
-const failuresLoading = ref(false);
-const deadLoading = ref(false);
 const funnel = ref<BillingFunnelPg | null>(null);
 const failures = ref<ChargeFailureRow[]>([]);
 const deadLetters = ref<DeadLetterRow[]>([]);
@@ -433,41 +431,53 @@ const deadColumns = computed<ColumnOption<DeadLetterRow>[]>(() => [
   },
 ]);
 
+const failuresLoader = useLatestRequest(async (ctx) => {
+  const res = await fetchBillingFailures(
+    buildFailuresQueueQuery(
+      toOpsRange(timeRange.value),
+      failurePage.value,
+      failurePageSize.value,
+    ),
+    50,
+    0,
+    ctx.signal,
+  );
+  if (!ctx.isLatest()) return;
+  failures.value = res.failures ?? [];
+  failuresTotal.value = res.failures_total ?? 0;
+});
+const { loading: failuresLoading } = failuresLoader;
+
+const deadLettersLoader = useLatestRequest(async (ctx) => {
+  const res = await fetchBillingFailures(
+    buildDeadLettersQueueQuery(
+      toOpsRange(timeRange.value),
+      deadPage.value,
+      deadPageSize.value,
+    ),
+    50,
+    0,
+    ctx.signal,
+  );
+  if (!ctx.isLatest()) return;
+  deadLetters.value = res.dead_letters ?? [];
+  deadLettersTotal.value = res.dead_letters_total ?? 0;
+});
+const { loading: deadLoading } = deadLettersLoader;
+
 async function loadFailures() {
-  failuresLoading.value = true;
   try {
-    const res = await fetchBillingFailures(
-      buildFailuresQueueQuery(
-        toOpsRange(timeRange.value),
-        failurePage.value,
-        failurePageSize.value,
-      ),
-    );
-    failures.value = res.failures ?? [];
-    failuresTotal.value = res.failures_total ?? 0;
+    await failuresLoader.run();
   } catch {
     ElMessage.error(t("ops.billing.loadFailed"));
-  } finally {
-    failuresLoading.value = false;
   }
 }
 
 async function loadDeadLetters() {
-  deadLoading.value = true;
   try {
-    const res = await fetchBillingFailures(
-      buildDeadLettersQueueQuery(
-        toOpsRange(timeRange.value),
-        deadPage.value,
-        deadPageSize.value,
-      ),
-    );
-    deadLetters.value = res.dead_letters ?? [];
-    deadLettersTotal.value = res.dead_letters_total ?? 0;
+    await deadLettersLoader.run();
   } catch {
     ElMessage.error(t("ops.billing.loadFailed"));
-  } finally {
-    deadLoading.value = false;
   }
 }
 
@@ -493,41 +503,51 @@ function handleDeadSizeChange(size: number) {
   void loadDeadLetters();
 }
 
-async function reload() {
-  loading.value = true;
+const pipelineLoader = useLatestRequest(async (ctx) => {
   const start = timeRange.value.start;
   const end = timeRange.value.end;
   const step = resolveStep(end - start);
   const opsRange = toOpsRange(timeRange.value);
-  failurePage.value = 1;
-  deadPage.value = 1;
-  try {
-    const [pg, fail, ...charts] = await Promise.all([
-      fetchBillingFunnel(opsRange),
-      fetchBillingFailures({
+  const [pg, fail, ...charts] = await Promise.all([
+    fetchBillingFunnel(opsRange, ctx.signal),
+    fetchBillingFailures(
+      {
         range: opsRange,
         limit: Math.max(failurePageSize.value, deadPageSize.value),
         failed_offset: 0,
         dlq_offset: 0,
-      }),
-      ...CHART_METRICS.map((metric) =>
-        fetchMetricTimeseries({ metric, start, end, step }),
-      ),
-    ]);
-    funnel.value = pg;
-    failures.value = (fail.failures ?? []).slice(0, failurePageSize.value);
-    deadLetters.value = (fail.dead_letters ?? []).slice(0, deadPageSize.value);
-    failuresTotal.value = fail.failures_total ?? 0;
-    deadLettersTotal.value = fail.dead_letters_total ?? 0;
-    const next = { ...series.value };
-    CHART_METRICS.forEach((metric, i) => {
-      next[metric] = charts[i] ?? null;
-    });
-    series.value = next;
+      },
+      50,
+      0,
+      ctx.signal,
+    ),
+    ...CHART_METRICS.map((metric) =>
+      fetchMetricTimeseries({ metric, start, end, step }, ctx.signal),
+    ),
+  ]);
+  if (!ctx.isLatest()) return;
+  funnel.value = pg;
+  failures.value = (fail.failures ?? []).slice(0, failurePageSize.value);
+  deadLetters.value = (fail.dead_letters ?? []).slice(0, deadPageSize.value);
+  failuresTotal.value = fail.failures_total ?? 0;
+  deadLettersTotal.value = fail.dead_letters_total ?? 0;
+  const next = { ...series.value };
+  CHART_METRICS.forEach((metric, i) => {
+    next[metric] = charts[i] ?? null;
+  });
+  series.value = next;
+});
+const { loading } = pipelineLoader;
+
+async function reload() {
+  failuresLoader.cancel();
+  deadLettersLoader.cancel();
+  failurePage.value = 1;
+  deadPage.value = 1;
+  try {
+    await pipelineLoader.run();
   } catch {
     ElMessage.error(t("ops.billing.loadFailed"));
-  } finally {
-    loading.value = false;
   }
 }
 

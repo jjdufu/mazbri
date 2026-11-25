@@ -109,6 +109,22 @@ impl RedisCache {
         self.config_resolve_cache.remove(tenant_id);
     }
 
+    /// Clears all in-process L1 entries and resolved tenant config snapshots.
+    pub async fn clear_all_memory(&self) {
+        self.config_resolve_cache.clear();
+        self.memory_cache.clear_all().await;
+    }
+
+    #[must_use]
+    pub fn redis(&self) -> &RedisClient {
+        &self.redis
+    }
+
+    #[must_use]
+    pub fn memory_cache(&self) -> &Arc<MemoryCache> {
+        &self.memory_cache
+    }
+
     /// Number of Postgres fetches performed by `resolve_config` (includes negative-cache fills).
     #[must_use]
     pub fn config_db_fetch_count(&self) -> u64 {
@@ -190,22 +206,23 @@ impl RedisCache {
         ))
     }
 
-    fn redis_key(&self, tenant_id: &str, key: &str) -> String {
-        let cache_key = if self.config.tenant_isolated {
-            key.to_string()
+    fn redis_key_for_config(&self, config: &CacheConfig, tenant_id: &str, key: &str) -> String {
+        let (ns, cache_key) = if config.tenant_isolated {
+            (tenant_id, key.to_string())
         } else {
-            format!("shared:{key}")
+            (SHARED_MEMORY_NAMESPACE, format!("shared:{key}"))
         };
         format!(
             "{}:cache:{}:{}",
             self.redis.key_prefix(),
-            tenant_id,
+            ns,
             sha256_hex(&cache_key)
         )
     }
 
     async fn encode_and_store(
         &self,
+        config: &CacheConfig,
         tenant_id: &str,
         key: &str,
         value: Vec<u8>,
@@ -213,7 +230,7 @@ impl RedisCache {
         metadata: serde_json::Value,
     ) -> Result<(), mazbri_core::CoreError> {
         let ttl_secs = ttl.as_secs().max(1);
-        let redis_key = self.redis_key(tenant_id, key);
+        let redis_key = self.redis_key_for_config(config, tenant_id, key);
         let envelope = RedisCacheEnvelope::new(value, ttl_secs, metadata);
         let payload = serde_json::to_vec(&envelope)
             .map_err(|error| mazbri_core::CoreError::Validation(error.to_string()))?;
@@ -246,7 +263,23 @@ impl RedisCache {
         &self,
         tenant_id: &str,
     ) -> Result<u64, mazbri_core::CoreError> {
-        let pattern = format!("{}:cache:{}:*", self.redis.key_prefix(), tenant_id);
+        let trimmed = tenant_id.trim();
+        if trimmed.is_empty() {
+            self.clear_all_memory().await;
+        } else {
+            self.invalidate_config_cache(trimmed);
+            let _ = self.memory_cache.clear_tenant(trimmed).await;
+            let _ = self
+                .memory_cache
+                .clear_tenant(SHARED_MEMORY_NAMESPACE)
+                .await;
+            reset_tenant_size_estimate(trimmed);
+        }
+        let pattern = if trimmed.is_empty() {
+            format!("{}:cache:*", self.redis.key_prefix())
+        } else {
+            format!("{}:cache:{}:*", self.redis.key_prefix(), trimmed)
+        };
         let keys = self
             .redis
             .scan_match(&pattern)
@@ -260,6 +293,11 @@ impl RedisCache {
                 .await
                 .map_err(Self::redis_unavailable)?;
             deleted = deleted.saturating_add(count);
+        }
+        let inv_channel = self.redis.cache_l1_invalidation_channel();
+        let inv_payload = if trimmed.is_empty() { "*" } else { trimmed };
+        if let Err(err) = self.redis.publish(&inv_channel, inv_payload).await {
+            tracing::debug!(error = %err, "Failed to publish cache L1 invalidation message");
         }
         Ok(deleted)
     }
@@ -302,6 +340,7 @@ impl RedisCache {
             ttl
         };
         self.encode_and_store(
+            &config,
             tenant_id,
             key,
             value.clone(),
@@ -375,7 +414,7 @@ impl RedisCache {
             }
             let _ = self.memory_cache.remove(memory_tenant_id, key).await;
         }
-        let redis_key = self.redis_key(tenant_id, key);
+        let redis_key = self.redis_key_for_config(&config, tenant_id, key);
         let cached = self
             .redis
             .get_bytes(&redis_key)
@@ -455,7 +494,7 @@ impl Cache for RedisCache {
         let recorder = CacheOperationRecorder::new("delete");
         let _timer = recorder.start_timer();
         let (config, _) = self.resolve_config(tenant_id).await?;
-        let redis_key = self.redis_key(tenant_id, key);
+        let redis_key = self.redis_key_for_config(&config, tenant_id, key);
         let deleted = self
             .redis
             .del(&redis_key)
@@ -473,8 +512,6 @@ impl Cache for RedisCache {
     async fn clear_tenant(&self, tenant_id: &str) -> Result<(), mazbri_core::CoreError> {
         let recorder = CacheOperationRecorder::new("clear_tenant");
         let deleted = self.clear_tenant_with_count(tenant_id).await?;
-        let _ = self.memory_cache.clear_tenant(tenant_id).await;
-        reset_tenant_size_estimate(tenant_id);
         if deleted > 0 {
             recorder.record_success();
         } else {
@@ -491,7 +528,7 @@ impl Cache for RedisCache {
             recorder.record_success();
             return Ok(false);
         }
-        let redis_key = self.redis_key(tenant_id, key);
+        let redis_key = self.redis_key_for_config(&config, tenant_id, key);
         let exists = self
             .redis
             .exists(&redis_key)
@@ -517,7 +554,7 @@ impl Cache for RedisCache {
         let memory_tenant_id = Self::memory_namespace(&config, tenant_id);
         let redis_keys: Vec<String> = keys
             .iter()
-            .map(|key| self.redis_key(tenant_id, key))
+            .map(|key| self.redis_key_for_config(&config, tenant_id, key))
             .collect();
         let values = self
             .redis
@@ -572,6 +609,7 @@ impl Cache for RedisCache {
                 ttl
             };
             self.encode_and_store(
+                &config,
                 tenant_id,
                 &key,
                 value.clone(),
@@ -658,5 +696,38 @@ mod resolve_config_cache_tests {
         assert!(cache.config_resolve_cache.contains_key(tenant));
         cache.invalidate_config_cache(tenant);
         assert!(!cache.config_resolve_cache.contains_key(tenant));
+    }
+
+    #[tokio::test]
+    async fn clear_tenant_evicts_in_process_l1_even_before_redis_scan() {
+        let cache = test_cache();
+        let tenant = "00000000-0000-0000-0000-000000000003";
+        cache
+            .memory_cache
+            .insert(
+                tenant,
+                "k1",
+                CacheEntry::new(b"v1".to_vec(), 60, serde_json::json!({})),
+            )
+            .await
+            .expect("insert l1");
+        assert!(
+            cache
+                .memory_cache
+                .get(tenant, "k1")
+                .await
+                .expect("get")
+                .is_some()
+        );
+        // Unconnected redis fails at scan_match, AFTER L1 memory cache was synchronously cleared.
+        let _ = cache.clear_tenant_with_count(tenant).await;
+        assert!(
+            cache
+                .memory_cache
+                .get(tenant, "k1")
+                .await
+                .expect("get after clear")
+                .is_none()
+        );
     }
 }

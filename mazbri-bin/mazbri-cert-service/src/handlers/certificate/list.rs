@@ -52,19 +52,47 @@ pub struct ListCertificatesQuery {
 fn default_limit() -> i64 {
     100
 }
+
+const MIN_LIST_LIMIT: i64 = 1;
+const MAX_LIST_LIMIT: i64 = 200;
+
+fn resolve_pagination(
+    limit: i64,
+    raw_offset: i64,
+    raw_page: Option<i64>,
+) -> Result<(i64, i64, i64), CertError> {
+    if !(MIN_LIST_LIMIT..=MAX_LIST_LIMIT).contains(&limit) {
+        return Err(CertError::InvalidRequest(format!(
+            "limit 必须在 {MIN_LIST_LIMIT} 到 {MAX_LIST_LIMIT} 之间"
+        )));
+    }
+    if raw_offset < 0 {
+        return Err(CertError::InvalidRequest("offset 不能为负数".into()));
+    }
+    if let Some(page) = raw_page {
+        if page < 1 {
+            return Err(CertError::InvalidRequest("page 必须大于或等于 1".into()));
+        }
+        let offset = (page - 1)
+            .checked_mul(limit)
+            .ok_or_else(|| CertError::InvalidRequest("分页偏移量超出有效范围".into()))?;
+        Ok((limit, offset, page))
+    } else {
+        let page = raw_offset
+            .checked_div(limit)
+            .and_then(|q| q.checked_add(1))
+            .ok_or_else(|| CertError::InvalidRequest("分页页码超出有效范围".into()))?;
+        Ok((limit, raw_offset, page))
+    }
+}
+
 pub async fn list_certificates(
     State(state): State<CertificateState>,
     axum::extract::Query(query): axum::extract::Query<ListCertificatesQuery>,
 ) -> Response {
-    let limit = query.limit;
-    let offset = match query.page {
-        Some(page) if page > 0 => (page - 1) * limit,
-        _ => query.offset,
-    };
-    let page = if offset > 0 && query.page.is_none() {
-        (offset / limit) + 1
-    } else {
-        query.page.unwrap_or(1)
+    let (limit, offset, page) = match resolve_pagination(query.limit, query.offset, query.page) {
+        Ok(resolved) => resolved,
+        Err(error) => return error.into_response(),
     };
     let q = query
         .q
@@ -138,6 +166,17 @@ pub async fn get_certificate(
 pub async fn list_certificate_subjects(State(state): State<CertificateState>) -> Response {
     match state.repo.list_active_subjects().await {
         Ok(subjects) => (StatusCode::OK, Json(subjects)).into_response(),
+        Err(e) => e.into_response(),
+    }
+}
+
+pub async fn list_revoked_serials(State(state): State<CertificateState>) -> Response {
+    match state.repo.list_revoked_serials_hex().await {
+        Ok((digest, serials)) => (
+            StatusCode::OK,
+            Json(mazbri_tls::RevokedSerialsResponse { digest, serials }),
+        )
+            .into_response(),
         Err(e) => e.into_response(),
     }
 }
@@ -318,6 +357,44 @@ mod tests {
                 "SELECT DISTINCT subject FROM certificates WHERE revoked = FALSE ORDER BY subject"
             ),
             "list_active_subjects must filter revoked = FALSE and deduplicate ordered subjects"
+        );
+    }
+
+    #[test]
+    fn pagination_rejects_zero_limit_negative_offset_and_overflow_without_panic() {
+        assert!(matches!(
+            resolve_pagination(0, 10, None),
+            Err(CertError::InvalidRequest(_))
+        ));
+        assert!(matches!(
+            resolve_pagination(-1, 0, None),
+            Err(CertError::InvalidRequest(_))
+        ));
+        assert!(matches!(
+            resolve_pagination(201, 0, None),
+            Err(CertError::InvalidRequest(_))
+        ));
+        assert!(matches!(
+            resolve_pagination(20, -1, None),
+            Err(CertError::InvalidRequest(_))
+        ));
+        assert!(matches!(
+            resolve_pagination(20, 0, Some(0)),
+            Err(CertError::InvalidRequest(_))
+        ));
+        assert!(matches!(
+            resolve_pagination(100, 0, Some(i64::MAX)),
+            Err(CertError::InvalidRequest(_))
+        ));
+        assert!(matches!(
+            resolve_pagination(1, i64::MAX, None),
+            Err(CertError::InvalidRequest(_))
+        ));
+        assert_eq!(resolve_pagination(10, 0, None).expect("first page"), (10, 0, 1));
+        assert_eq!(resolve_pagination(10, 20, None).expect("third page"), (10, 20, 3));
+        assert_eq!(
+            resolve_pagination(200, 0, Some(2)).expect("page param"),
+            (200, 200, 2)
         );
     }
 }

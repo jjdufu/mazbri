@@ -79,7 +79,8 @@ impl ConfigCenterRegistry {
 #[async_trait]
 impl ServiceRegistry for ConfigCenterRegistry {
     async fn register(&self, metadata: &ServiceMetadata) -> RegistryResult<()> {
-        self.http_client
+        let resp = self
+            .http_client
             .register_node(
                 metadata.ip.clone(),
                 metadata.port,
@@ -91,6 +92,9 @@ impl ServiceRegistry for ConfigCenterRegistry {
         {
             let mut meta = self.metadata.write();
             *meta = metadata.clone();
+            if meta.config_version == 0 && resp.config_version > 0 {
+                meta.config_version = resp.config_version;
+            }
         }
         info!(
             service = % metadata.service_name, ip = % metadata.ip, port = metadata.port,

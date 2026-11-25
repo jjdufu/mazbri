@@ -195,9 +195,21 @@ async fn strict_rejects_missing_actor_on_mgmt_only_routes() {
         .body(Body::empty())
         .expect("req");
     assert_eq!(call(&app, revoke).await, StatusCode::UNAUTHORIZED);
-    // 非 mgmt 专属接口（tls 客户端签发）不要求声明。
-    let issue_req = request("POST", "/issue").body(Body::empty()).expect("req");
-    assert_eq!(call(&app, issue_req).await, StatusCode::CREATED);
+    // POST /issue 为 mgmt 专属接口：不带声明拒绝，携带有效声明放行。
+    let issue_no_actor = request("POST", "/issue").body(Body::empty()).expect("req");
+    assert_eq!(call(&app, issue_no_actor).await, StatusCode::UNAUTHORIZED);
+    let issue_token = signer().sign(AUDIENCE_CERT, &admin(), "POST", "/issue");
+    let issue_ok = request("POST", "/issue")
+        .header(ACTOR_HEADER, issue_token)
+        .body(Body::empty())
+        .expect("req");
+    assert_eq!(call(&app, issue_ok).await, StatusCode::CREATED);
+    // 共享接口（如 /verify）不要求操作人声明。
+    let verify_req = request("POST", "/verify")
+        .header("x-test-valid", "1")
+        .body(Body::empty())
+        .expect("req");
+    assert_eq!(call(&app, verify_req).await, StatusCode::OK);
     // 带了声明但路径不匹配：任何接口都拒绝；未审计接口不落库。
     let token = signer().sign(AUDIENCE_CERT, &admin(), "GET", "/configs/other");
     let read = request("GET", "/configs/x")
@@ -212,19 +224,24 @@ async fn strict_rejects_missing_actor_on_mgmt_only_routes() {
         .expect("req");
     assert_eq!(call(&app, ok).await, StatusCode::OK);
     let rows = drain(handle, &store).await;
-    assert_eq!(rows.len(), 3, "{rows:?}");
-    // revoke 是关键事件（同步落库），issue 走异步队列，顺序不固定。
+    assert_eq!(rows.len(), 4, "{rows:?}");
     let denied = rows
         .iter()
-        .find(|row| row.status == AuditStatus::Denied)
+        .find(|row| row.action == "certificate.revoke" && row.status == AuditStatus::Denied)
         .expect("denied row");
-    assert_eq!(denied.action, "certificate.revoke");
     assert_eq!(denied.status, AuditStatus::Denied);
     assert_eq!(denied.actor_type, "anonymous");
     assert_eq!(detail(denied, "caller"), Some("admin"));
     assert_eq!(denied.failure_reason.as_deref(), Some("actor_missing"));
     assert_eq!(detail(denied, "actor_mode"), Some("strict"));
-    assert!(rows.iter().any(|row| row.action == "certificate.issue"));
+    assert!(
+        rows.iter()
+            .any(|row| row.action == "certificate.issue" && row.status == AuditStatus::Denied)
+    );
+    assert!(
+        rows.iter()
+            .any(|row| row.action == "certificate.issue" && row.status == AuditStatus::Success)
+    );
     let allowed = rows
         .iter()
         .find(|row| row.action == "certificate.revoke" && row.status == AuditStatus::Success)
@@ -348,17 +365,27 @@ async fn strict_rejects_invalid_and_treats_v1_without_key_as_absent() {
         .body(Body::empty())
         .expect("req");
     assert_eq!(call(&app, bad).await, StatusCode::UNAUTHORIZED);
-    // 未配置 v1 公钥：v1 声明无法验证，等同缺少声明。非 mgmt-only 路由放行，
-    // 声明内容不被信任；mgmt-only 路由（撤销）仍要求有效声明。
-    let v1 = signer().sign(AUDIENCE_CERT, &admin(), "POST", "/issue");
-    let legacy = Request::builder()
+    // 未配置 v1 公钥：v1 声明无法验证，等同缺少声明。非 mgmt-only 路由（/verify）放行，
+    // 声明内容不被信任；mgmt-only 路由（/issue、/revoke）仍要求有效声明。
+    let v1_verify = signer().sign(AUDIENCE_CERT, &admin(), "POST", "/verify");
+    let legacy_shared = Request::builder()
+        .method("POST")
+        .uri("/verify")
+        .header(header::AUTHORIZATION, "Bearer svc")
+        .header("x-test-valid", "1")
+        .header(ACTOR_HEADER, v1_verify)
+        .body(Body::empty())
+        .expect("req");
+    assert_eq!(call(&app, legacy_shared).await, StatusCode::OK);
+    let v1_issue = signer().sign(AUDIENCE_CERT, &admin(), "POST", "/issue");
+    let legacy_issue = Request::builder()
         .method("POST")
         .uri("/issue")
         .header(header::AUTHORIZATION, "Bearer svc")
-        .header(ACTOR_HEADER, v1)
+        .header(ACTOR_HEADER, v1_issue)
         .body(Body::empty())
         .expect("req");
-    assert_eq!(call(&app, legacy).await, StatusCode::CREATED);
+    assert_eq!(call(&app, legacy_issue).await, StatusCode::UNAUTHORIZED);
     let v1 = signer().sign(AUDIENCE_CERT, &admin(), "POST", "/revoke/c-4");
     let legacy = Request::builder()
         .method("POST")

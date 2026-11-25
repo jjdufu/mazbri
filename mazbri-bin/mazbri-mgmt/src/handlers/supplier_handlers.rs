@@ -34,10 +34,22 @@ pub async fn create_supplier(
     if !is_business_admin(&claims) {
         return Err(ApiError::Forbidden);
     }
+    if let Some(ref raw_cfg) = payload.config {
+        crate::services::upstream_connector::reject_client_enc_in_supplier_config(raw_cfg)?;
+        if crate::services::upstream_connector::supplier_config_has_secrets_to_seal(raw_cfg) {
+            crate::services::root_package::ensure_root_material_keyring_for_write_raw(
+                &state.cert_http_client,
+                &state.cert_service.url,
+                &state.cert_service.token,
+            )
+            .await?;
+        }
+    }
     let client_ip = extract_client_ip(&headers, Some(addr));
     let user_id = extract_user_id(&claims)?;
     let data = svc::create_supplier(
         &state.db,
+        state.connector_runtime.ssrf(),
         &state.audit,
         &payload,
         svc::SupplierActorCtx {
@@ -74,10 +86,22 @@ pub async fn update_supplier(
     if !is_business_admin(&claims) {
         return Err(ApiError::Forbidden);
     }
+    if let Some(ref raw_cfg) = payload.config {
+        crate::services::upstream_connector::reject_client_enc_in_supplier_config(raw_cfg)?;
+        if crate::services::upstream_connector::supplier_config_has_secrets_to_seal(raw_cfg) {
+            crate::services::root_package::ensure_root_material_keyring_for_write_raw(
+                &state.cert_http_client,
+                &state.cert_service.url,
+                &state.cert_service.token,
+            )
+            .await?;
+        }
+    }
     let user_id = extract_user_id(&claims)?;
     let client_ip = extract_client_ip(&headers, Some(addr));
     let data = svc::update_supplier(
         &state.db,
+        state.connector_runtime.ssrf(),
         &state.audit,
         &id,
         &payload,

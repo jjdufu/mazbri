@@ -1,7 +1,6 @@
 use axum::http::HeaderMap;
-use axum::response::IntoResponse;
 use mazbri_core::metrics::{MetricsBuilder, REGISTRY, register_collector_once};
-use prometheus::{CounterVec, Encoder, HistogramVec, IntCounter, IntGauge, Opts, TextEncoder};
+use prometheus::{CounterVec, HistogramVec, IntCounter, IntGauge, Opts};
 use std::sync::LazyLock;
 
 /// mode: transparent | microservice | unknown
@@ -423,20 +422,6 @@ pub(crate) fn extract_user_agent(headers: &HeaderMap) -> String {
         .and_then(|v| v.to_str().ok())
         .unwrap_or("unknown")
         .to_string()
-}
-pub async fn metrics_handler() -> impl IntoResponse {
-    let encoder = TextEncoder::new();
-    let metric_families = REGISTRY.gather();
-    let mut buffer = Vec::new();
-    match encoder.encode(&metric_families, &mut buffer) {
-        Ok(()) => {
-            String::from_utf8(buffer).unwrap_or_else(|_| "# Metrics encoding error\n".to_string())
-        }
-        Err(e) => {
-            tracing::error!("Failed to encode metrics: {}", e);
-            format!("# ERROR: Failed to encode metrics: {e}\n")
-        }
-    }
 }
 
 #[cfg(test)]

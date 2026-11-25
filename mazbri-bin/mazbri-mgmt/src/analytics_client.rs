@@ -2,21 +2,46 @@ use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::Response;
 use reqwest::Client;
 use serde::Deserialize;
-#[derive(Debug, Clone, Deserialize)]
+
+pub const INTERNAL_TOKEN_HEADER: &str = "x-mazbri-internal-token";
+
+#[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[serde(default)]
 pub struct AnalyticsClientConfig {
     pub url: String,
+    #[serde(default)]
+    pub internal_token: String,
     pub connect_timeout_secs: u64,
     pub read_timeout_secs: u64,
     pub write_timeout_secs: u64,
     /// analytics 不可达时返回给前端的 `Retry-After`（秒）。
     pub retry_after_secs: u64,
 }
+impl std::fmt::Debug for AnalyticsClientConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AnalyticsClientConfig")
+            .field("url", &self.url)
+            .field(
+                "internal_token",
+                &if self.internal_token.is_empty() {
+                    ""
+                } else {
+                    "***"
+                },
+            )
+            .field("connect_timeout_secs", &self.connect_timeout_secs)
+            .field("read_timeout_secs", &self.read_timeout_secs)
+            .field("write_timeout_secs", &self.write_timeout_secs)
+            .field("retry_after_secs", &self.retry_after_secs)
+            .finish()
+    }
+}
 impl Default for AnalyticsClientConfig {
     fn default() -> Self {
         Self {
             url: String::new(),
+            internal_token: String::new(),
             connect_timeout_secs: 5,
             read_timeout_secs: 10,
             write_timeout_secs: 5,
@@ -111,13 +136,26 @@ pub struct AnalyticsHttpClient {
     client: Client,
     base_url: String,
     retry_after_secs: u64,
+    internal_token: Option<HeaderValue>,
 }
 impl AnalyticsHttpClient {
     /// # Errors
     ///
-    /// reqwest 客户端构建失败时返回错误。
+    /// reqwest 客户端构建失败或 `internal_token` 含非法 HTTP 头字符时返回错误。
     pub fn new(config: &AnalyticsClientConfig) -> anyhow::Result<Self> {
         use anyhow::Context;
+        let internal_token = if config.internal_token.is_empty() {
+            None
+        } else {
+            anyhow::ensure!(
+                !config.internal_token.chars().any(char::is_whitespace),
+                "analytics.internal_token 不能包含空白字符"
+            );
+            Some(
+                HeaderValue::from_str(&config.internal_token)
+                    .context("analytics.internal_token 含非法 HTTP 头字符")?,
+            )
+        };
         let client = Client::builder()
             .connect_timeout(std::time::Duration::from_secs(config.connect_timeout_secs))
             .timeout(std::time::Duration::from_secs(config.read_timeout_secs))
@@ -127,6 +165,7 @@ impl AnalyticsHttpClient {
             client,
             base_url: config.url.trim_end_matches('/').to_string(),
             retry_after_secs: config.retry_after_secs,
+            internal_token,
         })
     }
     /// # Errors
@@ -385,7 +424,10 @@ impl AnalyticsHttpClient {
 
     /// 先读状态码，再解析 JSON：传输失败 → `Unavailable`；非 JSON → `BadResponse`；
     /// 非 2xx → `Upstream`。
-    async fn execute(&self, req: reqwest::RequestBuilder) -> AnalyticsResult<serde_json::Value> {
+    async fn execute(&self, mut req: reqwest::RequestBuilder) -> AnalyticsResult<serde_json::Value> {
+        if let Some(ref token) = self.internal_token {
+            req = req.header(INTERNAL_TOKEN_HEADER, token.clone());
+        }
         let unavailable = |e: reqwest::Error| AnalyticsError::Unavailable {
             source: e.without_url(),
             retry_after_secs: self.retry_after_secs,
@@ -474,6 +516,7 @@ mod tests {
             .expect("ephemeral port");
         let client = AnalyticsHttpClient::new(&AnalyticsClientConfig {
             url: format!("http://{addr}"),
+            internal_token: String::new(),
             connect_timeout_secs: 1,
             read_timeout_secs: 1,
             write_timeout_secs: 1,
@@ -499,5 +542,40 @@ mod tests {
                 .unwrap_or_default()
                 .contains("analytics 未就绪")
         );
+    }
+
+    #[tokio::test]
+    async fn sends_internal_token_header_when_configured() {
+        let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let app = axum::Router::new().route(
+            "/api/v1/slo/status",
+            axum::routing::get(|headers: axum::http::HeaderMap| async move {
+                let tok = headers
+                    .get(INTERNAL_TOKEN_HEADER)
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or_default()
+                    .to_string();
+                axum::Json(serde_json::json!({ "token": tok }))
+            }),
+        );
+        let server = tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+        let cfg = AnalyticsClientConfig {
+            url: format!("http://{addr}"),
+            internal_token: "mgmt-to-analytics-secret".to_string(),
+            connect_timeout_secs: 2,
+            read_timeout_secs: 2,
+            write_timeout_secs: 2,
+            retry_after_secs: 5,
+        };
+        assert!(!format!("{cfg:?}").contains("mgmt-to-analytics-secret"));
+        let client = AnalyticsHttpClient::new(&cfg).expect("client");
+        let res = client.slo_status().await.expect("ok");
+        assert_eq!(res["token"], "mgmt-to-analytics-secret");
+        server.abort();
     }
 }

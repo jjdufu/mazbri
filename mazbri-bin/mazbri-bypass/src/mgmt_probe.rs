@@ -88,15 +88,16 @@ async fn invoke_handler<E: ProbeExecutor>(
     (StatusCode::OK, Json(response)).into_response()
 }
 
-/// 探针路由（token 鉴权 + 单一 invoke 路径）。
+/// 探针路由（token 鉴权 + 单一 invoke 路径 + 请求级 panic 隔离）。
 fn router<E: ProbeExecutor>(token: &str, executor: E) -> Router {
     let state = ProbeState {
         executor,
         token: Arc::from(token),
     };
-    Router::new()
+    let base = Router::new()
         .route(MGMT_PROBE_INVOKE_PATH, post(invoke_handler::<E>))
-        .with_state(state)
+        .with_state(state);
+    mazbri_service::apply_http_resilience_layers(base)
 }
 
 /// 在独立端口启动管理探针 HTTP 服务；与 8888 mTLS gRPC 并行。
@@ -237,5 +238,59 @@ mod tests {
             .insert("unexpected".into(), serde_json::Value::Bool(true));
         let (status, _) = call(Some(&format!("Bearer {TEST_TOKEN}")), value.to_string()).await;
         assert!(status.is_client_error(), "{status}");
+    }
+
+    #[derive(Clone)]
+    struct PanickingExecutor {
+        observed: Arc<std::sync::Mutex<Option<mazbri_core::panic_policy::PanicDisposition>>>,
+    }
+
+    impl ProbeExecutor for PanickingExecutor {
+        async fn execute_probe_invoke(&self, _req: ProbeInvokeRequest) -> ProbeInvokeResponse {
+            tokio::task::yield_now().await;
+            *self.observed.lock().expect("lock") =
+                Some(mazbri_core::panic_policy::PanicDisposition::current());
+            panic!("boom");
+        }
+    }
+
+    #[tokio::test]
+    async fn handler_contains_panic_and_returns_500_json_with_request_id() {
+        let observed = Arc::new(std::sync::Mutex::new(None));
+        let app = router(
+            TEST_TOKEN,
+            PanickingExecutor {
+                observed: Arc::clone(&observed),
+            },
+        );
+        let body = serde_json::to_string(&probe_request()).unwrap();
+        let resp = app
+            .oneshot(
+                Request::post(MGMT_PROBE_INVOKE_PATH)
+                    .header(axum::http::header::CONTENT_TYPE, "application/json")
+                    .header(
+                        axum::http::header::AUTHORIZATION,
+                        format!("Bearer {TEST_TOKEN}"),
+                    )
+                    .header("x-request-id", "probe-panic-req-1")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(
+            resp.headers()
+                .get("x-request-id")
+                .and_then(|v| v.to_str().ok()),
+            Some("probe-panic-req-1")
+        );
+        assert_eq!(
+            *observed.lock().expect("lock"),
+            Some(mazbri_core::panic_policy::PanicDisposition::Recovered)
+        );
+        let bytes = to_bytes(resp.into_body(), 4096).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(json["request_id"], "probe-panic-req-1");
     }
 }

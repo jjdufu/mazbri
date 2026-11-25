@@ -80,24 +80,60 @@ def mac(alg: str, key: bytes, msg: bytes) -> bytes:
     return hmac.new(key, msg, HASHES[alg]).digest()
 
 
+def hkdf_sha256(salt: bytes, ikm: bytes, info: bytes, length: int) -> bytes:
+    prk = hmac.new(salt, ikm, hashlib.sha256).digest()
+    out, t, counter = bytearray(), b"", 1
+    while len(out) < length:
+        t = hmac.new(prk, t + info + bytes([counter]), hashlib.sha256).digest()
+        out.extend(t)
+        counter += 1
+    return bytes(out[:length])
+
+
 def check_transport(doc: dict) -> int:
     c = doc["common"]
+    master_key = base64.b64decode(doc["keys"]["tenant_secret_key_b64"])
     n = 0
     for t in doc["transport"]:
         e = t["expected"]
+        direction = t.get("direction", "c2g")
         key, iv = bytes.fromhex(t["data_key_hex"]), bytes.fromhex(t["iv_hex"])
+        expected_enc = hkdf_sha256(
+            c["key_version"].encode(),
+            master_key,
+            f"mazbri-transport-v1|{c['tenant_id']}|{direction}|enc".encode(),
+            len(key),
+        )
+        assert key == expected_enc, (t["name"], "hkdf enc key")
+        env = json.loads(e["envelope_json"])
+        mac_alg_str = t["mac_alg"] or ""
+        expected_aad = "\n".join([
+            "v1", direction, c["tenant_id"], c["http_path"], env["keyVersion"],
+            t["data_alg"], mac_alg_str, str(env["timestamp"]), env["nonce"], e["iv_b64"],
+        ])
         aead = t["data_alg"].endswith("-gcm") or t["data_alg"] == "chacha20-poly1305"
+        if aead:
+            assert t["aad_utf8"] == expected_aad, (t["name"], "aad")
         ct, tag = encrypt(t["data_alg"], key, iv, (t["aad_utf8"] or "").encode(), t["plaintext_utf8"].encode())
         assert b64(iv) == e["iv_b64"], t["name"]
         assert b64(ct) == e["ciphertext_b64"], (t["name"], "ciphertext")
         assert (b64(tag) if aead else "") == e["tag_b64"], (t["name"], "tag")
-        env = json.loads(e["envelope_json"])
         sig = ""
         if t["mac_alg"]:
-            canon = "\n".join([c["tenant_id"], c["http_path"], env["keyVersion"], str(env["timestamp"]),
-                               env["nonce"], env["iv"], env["ciphertext"], env["tag"]])
+            expected_mac = hkdf_sha256(
+                c["key_version"].encode(),
+                master_key,
+                f"mazbri-transport-v1|{c['tenant_id']}|{direction}|mac".encode(),
+                32,
+            )
+            assert bytes.fromhex(t["mac_key_hex"]) == expected_mac, (t["name"], "hkdf mac key")
+            canon = "\n".join([
+                "v1", direction, c["tenant_id"], c["http_path"], env["keyVersion"],
+                t["data_alg"], mac_alg_str, str(env["timestamp"]), env["nonce"],
+                env["iv"], env["ciphertext"], env["tag"],
+            ])
             assert canon == e["mac_canonical_string"], t["name"]
-            sig = mac(t["mac_alg"], bytes.fromhex(t["mac_key_hex"]), canon.encode()).hex()
+            sig = mac(t["mac_alg"], expected_mac, canon.encode()).hex()
         assert sig == e["signature_hex"], (t["name"], "signature")
         n += 1
         print(f"  ok transport {t['name']}")

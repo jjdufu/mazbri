@@ -352,7 +352,17 @@ async fn import_in_transaction(
                 CertError::InvalidRequest("尚未开通，不能导入换钥许可证".to_string())
             })?;
             let keys = (&private_key, &public_key);
-            Some(apply_rekey(&mut tx, verified, installation, current, keys).await?)
+            Some(
+                apply_rekey(
+                    &mut tx,
+                    verified,
+                    installation,
+                    current,
+                    keys,
+                    args.actor_id,
+                )
+                .await?,
+            )
         }
     };
     record_event_tx(
@@ -381,6 +391,7 @@ async fn apply_rekey(
     installation: &InstallationKeyFile,
     current: &LicenseStateRow,
     (private_key, public_key): (&[u8; 32], &[u8; 32]),
+    actor_id: Option<Uuid>,
 ) -> CertResult<LicenseAssets> {
     if verified.payload.previous_key_version.as_deref() != Some(current.key_version.as_str()) {
         return Err(license_error(
@@ -389,14 +400,14 @@ async fn apply_rekey(
         ));
     }
     let assets = license::open_assets(private_key, public_key, verified)?;
-    let old_password = license::open_key_password(
+    let old_password = zeroize::Zeroizing::new(license::open_key_password(
         private_key,
         public_key,
         installation.installation_id,
         &current.key_version,
         &current.key_password_sealed,
-    )?;
-    rekey_ca_and_materials(tx, &old_password, &assets, &verified.payload.key_version).await?;
+    )?);
+    rekey_ca_and_materials(tx, &old_password, &assets, verified, actor_id).await?;
     let sealed = license::seal_key_password(
         public_key,
         installation.installation_id,
@@ -578,11 +589,18 @@ async fn ensure_bootstrap_matches_existing(
     Ok(())
 }
 
+#[derive(Debug, Clone, sqlx::FromRow)]
+struct StoredCertKeyRow {
+    id: Uuid,
+    key_pem: String,
+}
+
 async fn rekey_ca_and_materials(
     tx: &mut Transaction<'_, Postgres>,
     old_password: &str,
     assets: &LicenseAssets,
-    new_key_version: &str,
+    verified: &VerifiedLicense,
+    actor_id: Option<Uuid>,
 ) -> CertResult<()> {
     if let Some(ca) = load_active_ca(tx).await? {
         let encrypted = CaManager::reencrypt_stored_key(
@@ -598,38 +616,130 @@ async fn rekey_ca_and_materials(
         .execute(&mut **tx)
         .await?;
     }
-    let materials = load_active_materials(tx).await?;
-    for row in materials {
-        let _old = unwrap_root_material(old_password, &row.encrypted_secret)?;
-        let encoded = if row.material_type == COMMERCIAL_ROOT_PROTECTION_MASTER_MATERIAL_TYPE {
-            &assets.master_key
-        } else {
-            &assets.integrity_key
-        };
-        let plaintext = BASE64
-            .decode(encoded.as_bytes())
-            .map_err(|_| license_error(LICENSE_ASSET_DIGEST_MISMATCH, "许可证资产摘要不一致"))?;
-        let (encrypted, digest, _) = wrap_root_material(
+
+    let cert_rows = sqlx::query_as::<_, StoredCertKeyRow>(
+        "SELECT id, key_pem FROM certificates FOR UPDATE",
+    )
+    .fetch_all(&mut **tx)
+    .await?;
+    for cert in cert_rows {
+        let reencrypted =
+            CaManager::reencrypt_stored_key(&cert.key_pem, old_password, &assets.key_password)?;
+        sqlx::query("UPDATE certificates SET key_pem = $1, updated_at = NOW() WHERE id = $2")
+            .bind(reencrypted)
+            .bind(cert.id)
+            .execute(&mut **tx)
+            .await?;
+    }
+
+    rewrap_and_append_root_materials(tx, old_password, assets, verified, actor_id).await
+}
+
+async fn rewrap_and_append_root_materials(
+    tx: &mut Transaction<'_, Postgres>,
+    old_password: &str,
+    assets: &LicenseAssets,
+    verified: &VerifiedLicense,
+    actor_id: Option<Uuid>,
+) -> CertResult<()> {
+    let new_key_version = &verified.payload.key_version;
+    let existing_materials = sqlx::query_as::<_, ActiveMaterialRow>(
+        r"
+        SELECT id, package_id, material_type, key_version, encrypted_secret, secret_digest
+        FROM commercial_root_materials
+        WHERE status IN ('active', 'deprecated')
+        FOR UPDATE
+        ",
+    )
+    .fetch_all(&mut **tx)
+    .await?;
+    for row in existing_materials {
+        let old_plaintext = zeroize::Zeroizing::new(unwrap_root_material(
+            old_password,
+            &row.encrypted_secret,
+        )?);
+        let check_digest = material_digest(
+            row.package_id,
+            &row.material_type,
+            &row.key_version,
+            &old_plaintext,
+        );
+        if check_digest != row.secret_digest {
+            return Err(license_error(
+                LICENSE_ASSET_DIGEST_MISMATCH,
+                "存量根保护材料摘要校验不一致",
+            ));
+        }
+        let (rewrapped, refreshed_digest, _) = wrap_root_material(
             &assets.key_password,
             row.package_id,
             &row.material_type,
-            new_key_version,
-            &plaintext,
+            &row.key_version,
+            &old_plaintext,
         )?;
         sqlx::query(
             r"
             UPDATE commercial_root_materials
-            SET encrypted_secret = $1, secret_digest = $2, key_version = $3
+            SET encrypted_secret = $1,
+                secret_digest = $2,
+                status = CASE WHEN key_version = $3 THEN status ELSE 'deprecated' END
             WHERE id = $4
             ",
         )
-        .bind(encrypted)
-        .bind(digest)
+        .bind(rewrapped)
+        .bind(refreshed_digest)
         .bind(new_key_version)
         .bind(row.id)
         .execute(&mut **tx)
         .await?;
     }
+
+    sqlx::query(
+        r"
+        INSERT INTO commercial_root_packages (
+            id, package_version, package_format, purpose, encrypted_package, package_sha256,
+            kdf_name, kdf_params, status, expires_at, imported_at, imported_by, metadata
+        ) VALUES (
+            $1, $2, 'commercial-license', 'commercial-license', $3, $4,
+            'x25519-hkdf-sha256', '{}', 'active', $5, NOW(), $6, '{}'
+        )
+        ON CONFLICT (id) DO UPDATE SET
+            package_version = EXCLUDED.package_version,
+            encrypted_package = EXCLUDED.encrypted_package,
+            package_sha256 = EXCLUDED.package_sha256,
+            status = 'active',
+            expires_at = EXCLUDED.expires_at
+        ",
+    )
+    .bind(verified.package_id)
+    .bind(new_key_version)
+    .bind(&verified.raw)
+    .bind(license::sha256_hex(verified.raw.as_bytes()))
+    .bind(verified.expires_at)
+    .bind(actor_id)
+    .execute(&mut **tx)
+    .await?;
+
+    insert_wrapped_material(
+        tx,
+        verified.package_id,
+        COMMERCIAL_ROOT_PROTECTION_MASTER_MATERIAL_TYPE,
+        new_key_version,
+        &assets.key_password,
+        &assets.master_key,
+        actor_id,
+    )
+    .await?;
+    insert_wrapped_material(
+        tx,
+        verified.package_id,
+        COMMERCIAL_ROOT_PROTECTION_INTEGRITY_MATERIAL_TYPE,
+        new_key_version,
+        &assets.key_password,
+        &assets.integrity_key,
+        actor_id,
+    )
+    .await?;
     Ok(())
 }
 

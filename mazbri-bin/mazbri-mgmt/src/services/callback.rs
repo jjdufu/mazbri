@@ -83,6 +83,53 @@ pub struct PaginatedDeliveries {
     pub page_size: u32,
 }
 
+/// 与 `mazbri_callback::{MAX_CALLBACK_RETRIES, MIN_BACKOFF_MULTIPLIER, MAX_BACKOFF_MULTIPLIER}` 对齐。
+pub const MAX_CALLBACK_RETRIES: i64 = 10;
+pub const MIN_BACKOFF_MULTIPLIER: f64 = 1.0;
+pub const MAX_BACKOFF_MULTIPLIER: f64 = 10.0;
+
+pub(crate) fn validate_retry_policy(raw: Option<serde_json::Value>) -> Result<serde_json::Value, ApiError> {
+    let Some(policy) = raw else {
+        return Ok(serde_json::json!({
+            "max_retries": 5,
+            "backoff_multiplier": 2.0,
+        }));
+    };
+    let Some(obj) = policy.as_object() else {
+        return Err(ApiError::validation(
+            "retry_policy 必须为 JSON 对象".to_string(),
+        ));
+    };
+    let max_retries = match obj.get("max_retries") {
+        Some(v) => v.as_i64().ok_or_else(|| {
+            ApiError::validation("retry_policy.max_retries 必须为整数".to_string())
+        })?,
+        None => 5,
+    };
+    if !(0..=MAX_CALLBACK_RETRIES).contains(&max_retries) {
+        return Err(ApiError::validation(format!(
+            "retry_policy.max_retries 必须在 0 到 {MAX_CALLBACK_RETRIES} 之间"
+        )));
+    }
+    let backoff_multiplier = match obj.get("backoff_multiplier") {
+        Some(v) => v.as_f64().ok_or_else(|| {
+            ApiError::validation("retry_policy.backoff_multiplier 必须为数值".to_string())
+        })?,
+        None => 2.0,
+    };
+    if !backoff_multiplier.is_finite()
+        || !(MIN_BACKOFF_MULTIPLIER..=MAX_BACKOFF_MULTIPLIER).contains(&backoff_multiplier)
+    {
+        return Err(ApiError::validation(format!(
+            "retry_policy.backoff_multiplier 必须在 {MIN_BACKOFF_MULTIPLIER:.1} 到 {MAX_BACKOFF_MULTIPLIER:.1} 之间"
+        )));
+    }
+    Ok(serde_json::json!({
+        "max_retries": max_retries,
+        "backoff_multiplier": backoff_multiplier,
+    }))
+}
+
 fn push_subscription_scope(
     builder: &mut QueryBuilder<sqlx::Postgres>,
     pattern: Option<&str>,
@@ -92,13 +139,13 @@ fn push_subscription_scope(
         let pat = p.to_string();
         builder.push(" AND (t.tenant_code ILIKE ");
         builder.push_bind(pat.clone());
-        builder.push(" OR t.tenant_id ILIKE ");
+        builder.push(" ESCAPE '\\' OR t.tenant_id ILIKE ");
         builder.push_bind(pat.clone());
-        builder.push(" OR p.product_id ILIKE ");
+        builder.push(" ESCAPE '\\' OR p.product_id ILIKE ");
         builder.push_bind(pat.clone());
-        builder.push(" OR s.callback_url ILIKE ");
+        builder.push(" ESCAPE '\\' OR s.callback_url ILIKE ");
         builder.push_bind(pat);
-        builder.push(")");
+        builder.push(" ESCAPE '\\')");
     }
     crate::list_query::apply_pg_filters(builder, filters)
 }
@@ -120,7 +167,7 @@ pub async fn list_subscriptions(
     let pattern = q
         .map(str::trim)
         .filter(|s| !s.is_empty())
-        .map(|s| format!("%{s}%"));
+        .map(mazbri_core::config::contains_ilike_pattern);
     let filters = crate::list_query::parse_and_validate_filters(
         filters_json,
         &crate::list_query::callback_subscriptions_catalog(),
@@ -189,11 +236,16 @@ pub async fn create_subscription(
     _username: &str,
     client_ip: Option<String>,
 ) -> Result<SubscriptionResponse, ApiError> {
+    let parsed_url = url::Url::parse(req.callback_url.trim())
+        .map_err(|e| ApiError::validation(format!("callback_url 格式非法: {e}")))?;
+    if !matches!(parsed_url.scheme(), "http" | "https") || parsed_url.host_str().is_none() {
+        return Err(ApiError::validation(
+            "callback_url 必须使用 http 或 https 协议".to_string(),
+        ));
+    }
+    let retry_policy = validate_retry_policy(req.retry_policy)?;
     let tenant_id = crate::services::tenant::resolve_tenant_id(pool, &req.tenant_code).await?;
     let product_id = resolve_product_id(pool, &req.product_code).await?;
-    let retry_policy = req
-        .retry_policy
-        .unwrap_or_else(|| serde_json::json!({ "max_retries" : 5, "backoff_multiplier" : 2 }));
     let row = sqlx::query(
             r"
         WITH inserted AS (
@@ -279,13 +331,13 @@ fn push_delivery_scope(
         let pat = p.to_string();
         builder.push(" AND (d.event_id ILIKE ");
         builder.push_bind(pat.clone());
-        builder.push(" OR s.callback_url ILIKE ");
+        builder.push(" ESCAPE '\\' OR s.callback_url ILIKE ");
         builder.push_bind(pat.clone());
-        builder.push(" OR d.status ILIKE ");
+        builder.push(" ESCAPE '\\' OR d.status ILIKE ");
         builder.push_bind(pat.clone());
-        builder.push(" OR COALESCE(d.last_error, '') ILIKE ");
+        builder.push(" ESCAPE '\\' OR COALESCE(d.last_error, '') ILIKE ");
         builder.push_bind(pat);
-        builder.push(")");
+        builder.push(" ESCAPE '\\')");
     }
     crate::list_query::apply_pg_filters(builder, filters)
 }
@@ -307,7 +359,7 @@ pub async fn list_delivery_logs(
     let pattern = q
         .map(str::trim)
         .filter(|s| !s.is_empty())
-        .map(|s| format!("%{s}%"));
+        .map(mazbri_core::config::contains_ilike_pattern);
     let filters = crate::list_query::parse_and_validate_filters(
         filters_json,
         &crate::list_query::callback_deliveries_catalog(),
@@ -380,10 +432,14 @@ pub async fn retry_delivery(pool: &PgPool, id: Uuid) -> Result<(), ApiError> {
         UPDATE mazbri_platform.callback_delivery_logs
         SET status = 'retrying',
             next_retry_at = NOW(),
+            locked_at = NULL,
             last_error = NULL,
             updated_at = NOW()
         WHERE id = $1
-          AND status IN ('failed', 'retrying', 'pending')
+          AND (
+              status IN ('failed', 'exhausted', 'retrying', 'pending')
+              OR (status = 'processing' AND locked_at < NOW() - INTERVAL '5 minutes')
+          )
         ",
     )
     .bind(id)
@@ -397,4 +453,51 @@ pub async fn retry_delivery(pool: &PgPool, id: Uuid) -> Result<(), ApiError> {
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_retry_policy_enforces_bounds() {
+        let default_pol = validate_retry_policy(None).expect("default policy");
+        assert_eq!(default_pol["max_retries"], 5);
+
+        assert!(
+            validate_retry_policy(Some(serde_json::json!({
+                "max_retries": 10,
+                "backoff_multiplier": 1.0
+            })))
+            .is_ok()
+        );
+        assert!(
+            validate_retry_policy(Some(serde_json::json!({
+                "max_retries": 11,
+                "backoff_multiplier": 2.0
+            })))
+            .is_err()
+        );
+        assert!(
+            validate_retry_policy(Some(serde_json::json!({
+                "max_retries": -1,
+                "backoff_multiplier": 2.0
+            })))
+            .is_err()
+        );
+        assert!(
+            validate_retry_policy(Some(serde_json::json!({
+                "max_retries": 3,
+                "backoff_multiplier": 0.5
+            })))
+            .is_err()
+        );
+        assert!(
+            validate_retry_policy(Some(serde_json::json!({
+                "max_retries": 3,
+                "backoff_multiplier": 10.5
+            })))
+            .is_err()
+        );
+    }
 }

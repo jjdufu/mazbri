@@ -130,6 +130,7 @@ pub struct TokenSubject<'a> {
     pub username: &'a str,
     pub user_id: &'a str,
     pub role: &'a str,
+    pub auth_epoch: i64,
     pub binding: &'a SessionBinding,
 }
 
@@ -255,6 +256,7 @@ pub fn issue_at(
         token_type: Some(kind.as_str().to_string()),
         sid: subject.binding.sid.clone(),
         sxp,
+        auth_epoch: subject.auth_epoch,
     };
     let key = EncodingKey::from_secret(secret.as_bytes())
         .map_err(|e| format!("Failed to init {} JWT key: {e}", kind.as_str()))?;

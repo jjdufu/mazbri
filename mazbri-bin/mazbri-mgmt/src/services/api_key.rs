@@ -50,6 +50,13 @@ fn generate_api_key_material() -> Result<(String, String, String, String, String
         .collect::<String>();
     Ok((full_api_key, prefix, secret_hash, key_hash, key_suffix))
 }
+async fn generate_api_key_material_async()
+-> Result<(String, String, String, String, String), ApiError> {
+    mazbri_core::panic_policy::spawn_blocking_recoverable(generate_api_key_material)
+        .await
+        .map_err(|e| ApiError::internal(format!("API key hash task join failed: {e}")))?
+        .map_err(|e| ApiError::internal(format!("API key hash task panicked: {e}")))?
+}
 fn mask_api_key(prefix: &str, suffix: &str) -> String {
     if suffix == "****" || suffix.is_empty() {
         format!("mazbri_{prefix}...")
@@ -166,7 +173,8 @@ pub async fn create_api_key(
     info!("Creating API key for tenant: {}", id_or_code);
     precheck_create_api_key(db, auth_db, id_or_code, payload.scopes.as_slice()).await?;
     let tenant_id = crate::services::tenant::resolve_tenant_id(db, id_or_code).await?;
-    let (full_api_key, prefix, secret_hash, key_hash, key_suffix) = generate_api_key_material()?;
+    let (full_api_key, prefix, secret_hash, key_hash, key_suffix) =
+        generate_api_key_material_async().await?;
     let expires_at_db = parse_expiration(payload.expires_at, payload.expires_days);
     let mut tx = auth_db
         .begin()
@@ -221,6 +229,7 @@ pub async fn create_api_key(
     tx.commit()
         .await
         .map_err(|e| ApiError::internal(format!("Failed to commit transaction: {e}")))?;
+    notify_api_key_cache_invalidation(db).await;
     info!("Created API key {} for tenant {}", prefix, tenant_id);
     audit.log(api_key_audit(
         user_id,
@@ -527,7 +536,8 @@ pub async fn rotate_api_key(params: RotateApiKeyParams<'_>) -> Result<serde_json
     let tenant_id =
         crate::services::tenant::resolve_tenant_id(params.db, params.id_or_code).await?;
     ensure_tenant_exists(params.db, tenant_id, params.id_or_code).await?;
-    let (full_api_key, new_prefix, secret_hash, key_hash, key_suffix) = generate_api_key_material()?;
+    let (full_api_key, new_prefix, secret_hash, key_hash, key_suffix) =
+        generate_api_key_material_async().await?;
     let material = GeneratedKeyMaterial {
         new_prefix: new_prefix.clone(),
         secret_hash,

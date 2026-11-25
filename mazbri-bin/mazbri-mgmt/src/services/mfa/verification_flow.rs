@@ -88,15 +88,22 @@ pub async fn disable(params: DisableParams<'_>) -> axum::response::Response {
     }
     let changed_at =
         chrono::DateTime::from_timestamp(issued_at, 0).unwrap_or_else(chrono::Utc::now);
-    if repo::disable_mfa(pool, user_id, changed_at).await.is_err() {
-        return ApiResponse::err(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            mazbri_i18n::mfa::failed_disable(),
-        );
-    }
+    let Some(new_epoch) = (match repo::disable_mfa(pool, user_id, changed_at).await {
+        Ok(epoch) => epoch,
+        Err(_) => {
+            return ApiResponse::err(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                mazbri_i18n::mfa::failed_disable(),
+            );
+        }
+    }) else {
+        return ApiResponse::err(StatusCode::NOT_FOUND, mazbri_i18n::mfa::user_not_found());
+    };
+    crate::middleware::auth::invalidate_admin_subject_state(redis, user_id).await;
     let resigned = match resign_bound_session(
         pool,
         claims,
+        new_epoch,
         jwt_secret,
         access_ttl_fallback,
         sxp,
@@ -135,6 +142,7 @@ pub struct VerifyParams<'a> {
     pub mfa_cache: &'a Arc<MfaServiceCache>,
     pub audit: &'a AuditService,
     pub jwt_secret: &'a str,
+    pub jwt_expiration_secs: u64,
     pub refresh_token_expiration_secs: u64,
     /// 已按 `mfa_pending` 类型校验过的临时令牌声明。
     pub temp_claims: &'a AdminClaims,
@@ -144,31 +152,44 @@ pub struct VerifyParams<'a> {
     pub client_ip: Option<String>,
 }
 
+struct IssueVerifiedTokenParams<'a> {
+    pool: &'a PgPool,
+    jwt_secret: &'a str,
+    username: &'a str,
+    user_id_str: &'a str,
+    role: &'a str,
+    auth_epoch: i64,
+    sid: &'a str,
+    jwt_expiration_secs: u64,
+    refresh_token_expiration_secs: u64,
+}
+
 /// MFA 校验通过后签发访问令牌与刷新令牌。
 async fn issue_verified_token(
-    pool: &PgPool,
-    jwt_secret: &str,
-    username: &str,
-    user_id_str: &str,
-    role: &str,
-    sid: &str,
-    refresh_token_expiration_secs: u64,
+    params: IssueVerifiedTokenParams<'_>,
 ) -> Result<(String, String, u64, u64), Box<axum::response::Response>> {
     let issued_at = chrono::Utc::now().timestamp();
+    let session_timeout_secs = crate::services::admin::resolve_session_timeout_secs(
+        params.pool,
+        params.refresh_token_expiration_secs,
+    )
+    .await;
     let binding = crate::middleware::admin_token::SessionBinding {
-        sid: sid.to_string(),
-        sxp: Some(
-            issued_at.saturating_add(i64::saturating_from(refresh_token_expiration_secs).max(1)),
-        ),
+        sid: params.sid.to_string(),
+        sxp: Some(issued_at.saturating_add(i64::saturating_from(session_timeout_secs).max(1))),
     };
-    let access_ttl =
-        crate::services::admin::resolve_access_token_expiration_secs(pool, 86400).await;
+    let access_ttl = crate::services::admin::resolve_access_token_expiration_secs(
+        params.pool,
+        params.jwt_expiration_secs,
+    )
+    .await;
     let token = crate::services::admin::generate_admin_jwt(
-        username,
-        user_id_str,
-        role,
+        params.username,
+        params.user_id_str,
+        params.role,
+        params.auth_epoch,
         &binding,
-        jwt_secret,
+        params.jwt_secret,
         i64::saturating_from(access_ttl),
         issued_at,
     )
@@ -180,11 +201,12 @@ async fn issue_verified_token(
         ))
     })?;
     let refresh_token = crate::services::admin::issue_refresh_token(
-        username,
-        user_id_str,
-        role,
+        params.username,
+        params.user_id_str,
+        params.role,
+        params.auth_epoch,
         &binding,
-        jwt_secret,
+        params.jwt_secret,
         issued_at,
     )
     .map_err(|error| {
@@ -203,7 +225,7 @@ async fn issue_verified_token(
             .saturating_sub(issued_at)
             .max(1),
     )
-    .unwrap_or(refresh_token_expiration_secs);
+    .unwrap_or(session_timeout_secs);
     Ok((
         token.token,
         refresh_token.token,
@@ -276,15 +298,93 @@ fn factor_login_error(
     }
 }
 
+async fn recheck_session_state_before_issue(
+    pool: &PgPool,
+    user_id: uuid::Uuid,
+    expected_auth_epoch: i64,
+) -> Result<crate::repositories::admin::AdminSessionStateRow, Box<axum::response::Response>> {
+    let session_state = match crate::repositories::admin::get_admin_session_state(pool, user_id)
+        .await
+    {
+        Ok(Some(row)) => row,
+        Ok(None) => {
+            crate::audit::set_failure_reason("session_stale");
+            crate::audit::mark_security_event();
+            return Err(Box::new(ApiResponse::err(
+                StatusCode::UNAUTHORIZED,
+                mazbri_i18n::mfa::invalid_temp_token(),
+            )));
+        }
+        Err(error) => {
+            error!("Database error rechecking account before MFA token issue: {error}");
+            return Err(Box::new(ApiResponse::err(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                mazbri_i18n::mfa::database_error(),
+            )));
+        }
+    };
+    let now_dt = chrono::Utc::now();
+    let locked = session_state.role != crate::middleware::auth::ROLE_SUPER_ADMIN
+        && session_state
+            .locked_until
+            .is_some_and(|until| until > now_dt);
+    if !session_state.is_active
+        || locked
+        || session_state.force_password_reset
+        || session_state.auth_epoch != expected_auth_epoch
+    {
+        crate::audit::set_failure_reason("session_stale");
+        crate::audit::mark_security_event();
+        return Err(Box::new(ApiResponse::err(
+            StatusCode::UNAUTHORIZED,
+            mazbri_i18n::mfa::invalid_temp_token(),
+        )));
+    }
+    Ok(session_state)
+}
+
+async fn load_enabled_mfa_state(
+    pool: &PgPool,
+    user_id: uuid::Uuid,
+) -> Result<repo::MfaVerifyState, Box<axum::response::Response>> {
+    let state = match repo::get_mfa_verify_state(pool, user_id).await {
+        Ok(Some(state)) => state,
+        Ok(None) => {
+            return Err(Box::new(ApiResponse::err(
+                StatusCode::NOT_FOUND,
+                mazbri_i18n::mfa::user_not_found(),
+            )));
+        }
+        Err(error) => {
+            error!("Database error during MFA verify: {}", error);
+            return Err(Box::new(ApiResponse::err(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                mazbri_i18n::mfa::database_error(),
+            )));
+        }
+    };
+    if !state.mfa_enabled {
+        return Err(Box::new(ApiResponse::err(
+            StatusCode::BAD_REQUEST,
+            mazbri_i18n::mfa::not_enabled(),
+        )));
+    }
+    if state.mfa_secret.is_none() {
+        return Err(Box::new(ApiResponse::err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            mazbri_i18n::mfa::not_setup(),
+        )));
+    }
+    Ok(state)
+}
+
 pub async fn verify(params: VerifyParams<'_>) -> axum::response::Response {
     let pool = params.pool;
     let mfa_cache = params.mfa_cache;
     let audit = params.audit;
     let jwt_secret = params.jwt_secret;
     let user_id = params.user_id;
-    let username = params.temp_claims.sub.as_str();
     let user_id_str = params.temp_claims.user_id.as_str();
-    let role = params.temp_claims.role.as_str();
     let totp_code = params.totp_code;
     let backup_code = params.backup_code;
     let client_ip = params.client_ip;
@@ -299,28 +399,10 @@ pub async fn verify(params: VerifyParams<'_>) -> axum::response::Response {
     {
         return factor_login_error(&error);
     }
-    let state = match repo::get_mfa_verify_state(pool, user_id).await {
+    let state = match load_enabled_mfa_state(pool, user_id).await {
         Ok(state) => state,
-        Err(error) => {
-            error!("Database error during MFA verify: {}", error);
-            return ApiResponse::err(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                mazbri_i18n::mfa::database_error(),
-            );
-        }
+        Err(response) => return *response,
     };
-    let Some(state) = state else {
-        return ApiResponse::err(StatusCode::NOT_FOUND, mazbri_i18n::mfa::user_not_found());
-    };
-    if !state.mfa_enabled {
-        return ApiResponse::err(StatusCode::BAD_REQUEST, mazbri_i18n::mfa::not_enabled());
-    }
-    if state.mfa_secret.is_none() {
-        return ApiResponse::err(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            mazbri_i18n::mfa::not_setup(),
-        );
-    }
 
     let mfa_service = match get_mfa_service(mfa_cache, MfaServiceErrorMode::InternalError).await {
         Ok(service) => service,
@@ -344,7 +426,6 @@ pub async fn verify(params: VerifyParams<'_>) -> axum::response::Response {
     let consumed = match consume_stage_token(params.redis, params.temp_claims).await {
         Ok(consumed) => consumed,
         Err(response) => {
-            // 消费失败说明因子写入需要撤销；备用码回写保持原顺序。
             if let Some(restore) = &verified.backup_restore
                 && !crate::services::mfa::second_factor::restore_backup_code(pool, user_id, restore)
                     .await
@@ -359,15 +440,26 @@ pub async fn verify(params: VerifyParams<'_>) -> axum::response::Response {
         verified.method,
         crate::services::mfa::second_factor::FactorMethod::BackupCode
     );
+    let session_state = match recheck_session_state_before_issue(pool, user_id, verified.auth_epoch)
+        .await
+    {
+        Ok(row) => row,
+        Err(response) => {
+            consumed.retain();
+            return *response;
+        }
+    };
     let response = finish_verified_login(FinishVerifiedLoginParams {
         pool,
         audit,
         jwt_secret,
+        jwt_expiration_secs: params.jwt_expiration_secs,
         refresh_token_expiration_secs: params.refresh_token_expiration_secs,
         user_id,
-        username,
+        username: &session_state.username,
         user_id_str,
-        role,
+        role: &session_state.role,
+        auth_epoch: session_state.auth_epoch,
         sid: params.temp_claims.sid.as_str(),
         created_at: state.created_at,
         used_backup_code,
@@ -382,11 +474,13 @@ struct FinishVerifiedLoginParams<'a> {
     pool: &'a PgPool,
     audit: &'a AuditService,
     jwt_secret: &'a str,
+    jwt_expiration_secs: u64,
     refresh_token_expiration_secs: u64,
     user_id: uuid::Uuid,
     username: &'a str,
     user_id_str: &'a str,
     role: &'a str,
+    auth_epoch: i64,
     sid: &'a str,
     created_at: chrono::DateTime<chrono::Utc>,
     used_backup_code: bool,
@@ -394,16 +488,19 @@ struct FinishVerifiedLoginParams<'a> {
 }
 
 async fn finish_verified_login(params: FinishVerifiedLoginParams<'_>) -> axum::response::Response {
-    let (token, refresh_token, access_ttl, refresh_max_age) = match issue_verified_token(
-        params.pool,
-        params.jwt_secret,
-        params.username,
-        params.user_id_str,
-        params.role,
-        params.sid,
-        params.refresh_token_expiration_secs,
-    )
-    .await
+    let (token, refresh_token, access_ttl, refresh_max_age) =
+        match issue_verified_token(IssueVerifiedTokenParams {
+            pool: params.pool,
+            jwt_secret: params.jwt_secret,
+            username: params.username,
+            user_id_str: params.user_id_str,
+            role: params.role,
+            auth_epoch: params.auth_epoch,
+            sid: params.sid,
+            jwt_expiration_secs: params.jwt_expiration_secs,
+            refresh_token_expiration_secs: params.refresh_token_expiration_secs,
+        })
+        .await
     {
         Ok(issued) => issued,
         Err(_response) => {

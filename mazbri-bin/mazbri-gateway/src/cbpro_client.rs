@@ -8,7 +8,6 @@ use mazbri_rpc::{
 
 type InstrumentedCBProClient =
     CBProServiceClient<RpcMetricsChannel<CBProServiceRequest, CBProServiceResponse>>;
-use mazbri_tls::ManagedCertificate;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
@@ -30,6 +29,7 @@ struct CachedClient {
 pub struct CBProClient {
     endpoint: ServiceEndpoint,
     client: Arc<RwLock<Option<CachedClient>>>,
+    connect_lock: Arc<tokio::sync::Mutex<()>>,
     tls_connector: mazbri_tls::TlsConnector,
     client_ttl: Duration,
 }
@@ -38,19 +38,18 @@ impl CBProClient {
     /// # Errors
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-    pub fn new(
+    pub fn new_dynamic(
         endpoint: ServiceEndpoint,
-        tls_ca_cert: &str,
-        client_cert: &ManagedCertificate,
+        cert_handle: &mazbri_tls::ManagedCertHandle,
         tls_config: &mazbri_tls::TlsConfig,
         client_ttl_secs: u64,
     ) -> Result<Self, CoreError> {
-        let tls_connector =
-            mazbri_tls::TlsConnector::new(tls_ca_cert, Some(client_cert), tls_config)
-                .map_err(|e| CoreError::Tls(e.to_string()))?;
+        let tls_connector = mazbri_tls::TlsConnector::from_cert_handle(cert_handle, tls_config)
+            .map_err(|e| CoreError::Tls(e.to_string()))?;
         Ok(Self {
             endpoint,
             client: Arc::new(RwLock::new(None)),
+            connect_lock: Arc::new(tokio::sync::Mutex::new(())),
             tls_connector,
             client_ttl: Duration::from_secs(client_ttl_secs.max(1)),
         })
@@ -59,6 +58,12 @@ impl CBProClient {
     #[must_use]
     pub fn url(&self) -> &str {
         self.endpoint.url()
+    }
+
+    fn rpc_context(&self) -> tarpc::context::Context {
+        let mut ctx = tarpc::context::current();
+        ctx.deadline = Instant::now() + self.endpoint.timeout().max(Duration::from_millis(50));
+        ctx
     }
 
     async fn invalidate_client(&self) {
@@ -82,15 +87,14 @@ impl CBProClient {
             }
         }
 
-        // Drop expired entry under write lock, then connect.
+        let _connect_guard = self.connect_lock.lock().await;
         {
-            let mut guard = self.client.write().await;
+            let guard = self.client.read().await;
             if let Some(cached) = guard.as_ref()
                 && cached.created_at.elapsed() < self.client_ttl
             {
                 return Ok(cached.client.clone());
             }
-            *guard = None;
         }
 
         debug!(url = %self.endpoint.url(), "Creating new CBPro client (mTLS)");
@@ -201,7 +205,8 @@ impl CBProClient {
         let rpc_result = self
             .call_with_reconnect(&DEFAULT_RETRY_CONFIG, |client| {
                 let r = request.clone();
-                async move { client.get_fallback(tarpc::context::current(), r).await }
+                let ctx = self.rpc_context();
+                async move { client.get_fallback(ctx, r).await }
             })
             .await;
 
@@ -237,8 +242,9 @@ impl CBProClient {
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn health_check(&self) -> Result<(), String> {
         match self
-            .call_with_reconnect(&DEFAULT_RETRY_CONFIG, |client| async move {
-                client.health(tarpc::context::current()).await
+            .call_with_reconnect(&DEFAULT_RETRY_CONFIG, |client| {
+                let ctx = self.rpc_context();
+                async move { client.health(ctx).await }
             })
             .await
         {
@@ -259,7 +265,8 @@ impl CBProClient {
         let rpc_result = self
             .call_with_reconnect(&DEFAULT_RETRY_CONFIG, |client| {
                 let r = request.clone();
-                async move { client.store_response(tarpc::context::current(), r).await }
+                let ctx = self.rpc_context();
+                async move { client.store_response(ctx, r).await }
             })
             .await;
 

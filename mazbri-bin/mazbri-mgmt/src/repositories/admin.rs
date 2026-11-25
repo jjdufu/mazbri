@@ -24,6 +24,7 @@ pub struct AdminUserFullRow {
     pub mfa_locked_until: Option<DateTime<Utc>>,
     pub login_attempts: i32,
     pub locked_until: Option<DateTime<Utc>>,
+    pub auth_epoch: i64,
 }
 /// 刷新令牌时复核会话所需的账号状态（只读当前值，不含口令哈希）。
 #[derive(Debug, sqlx::FromRow)]
@@ -36,6 +37,16 @@ pub struct AdminSessionStateRow {
     pub password_changed_at: DateTime<Utc>,
     pub mfa_enabled: bool,
     pub mfa_changed_at: Option<DateTime<Utc>>,
+    pub auth_epoch: i64,
+}
+/// 访问令牌短缓存复核所需的账号状态（不含口令哈希）。
+#[derive(Debug, sqlx::FromRow)]
+pub struct AdminSubjectStateRow {
+    pub role: String,
+    pub is_active: bool,
+    pub locked_until: Option<DateTime<Utc>>,
+    pub force_password_reset: bool,
+    pub auth_epoch: i64,
 }
 #[derive(Debug, sqlx::FromRow)]
 pub struct AdminUserPasswordRow {
@@ -46,11 +57,13 @@ pub struct AdminUserPasswordRow {
     pub is_active: bool,
     pub force_password_reset: bool,
     pub created_at: DateTime<Utc>,
+    pub auth_epoch: i64,
 }
 #[derive(Debug, sqlx::FromRow)]
 pub struct AdminUserBasicRow {
     pub username: String,
     pub password_hash: Option<String>,
+    pub role: String,
 }
 /// # Errors
 ///
@@ -63,7 +76,7 @@ pub async fn get_admin_user_by_username(
         r"
         SELECT id, username, password_hash, role, is_active, created_at, password_changed_at,
                force_password_reset, mfa_enabled, mfa_required, mfa_locked_until,
-               login_attempts, locked_until
+               login_attempts, locked_until, auth_epoch
         FROM admin_users
         WHERE username = $1
     ",
@@ -142,7 +155,27 @@ pub async fn get_admin_session_state(
     sqlx::query_as::<_, AdminSessionStateRow>(
         r"
         SELECT username, role, is_active, locked_until, force_password_reset,
-               password_changed_at, mfa_enabled, mfa_changed_at
+               password_changed_at, mfa_enabled, mfa_changed_at, auth_epoch
+        FROM admin_users
+        WHERE id = $1
+    ",
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await
+}
+/// 读取访问令牌实时复核所需的账号状态。
+///
+/// # Errors
+///
+/// 数据库查询失败时返回错误。
+pub async fn get_admin_subject_state(
+    pool: &PgPool,
+    user_id: uuid::Uuid,
+) -> Result<Option<AdminSubjectStateRow>, sqlx::Error> {
+    sqlx::query_as::<_, AdminSubjectStateRow>(
+        r"
+        SELECT role, is_active, locked_until, force_password_reset, auth_epoch
         FROM admin_users
         WHERE id = $1
     ",
@@ -160,7 +193,7 @@ pub async fn get_admin_user_by_id(
 ) -> Result<Option<AdminUserPasswordRow>, sqlx::Error> {
     sqlx::query_as::<_, AdminUserPasswordRow>(
         r"
-        SELECT id, username, password_hash, role, is_active, force_password_reset, created_at
+        SELECT id, username, password_hash, role, is_active, force_password_reset, created_at, auth_epoch
         FROM admin_users
         WHERE id = $1
     ",
@@ -178,7 +211,7 @@ pub async fn get_admin_user_basic_by_id(
 ) -> Result<Option<AdminUserBasicRow>, sqlx::Error> {
     sqlx::query_as::<_, AdminUserBasicRow>(
         r"
-        SELECT id, username, password_hash
+        SELECT username, password_hash, role
         FROM admin_users
         WHERE id = $1
     ",
@@ -187,44 +220,53 @@ pub async fn get_admin_user_basic_by_id(
     .fetch_optional(pool)
     .await
 }
+#[derive(Debug, sqlx::FromRow)]
+pub struct LoginFailureUpdate {
+    pub login_attempts: i32,
+    pub locked_until: Option<DateTime<Utc>>,
+}
+
+/// 原子增加非超管账号登录失败次数并返回更新后的计数与锁定截止时间。
+///
 /// # Errors
 ///
-/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub async fn update_login_failure(
+/// 数据库更新失败时返回错误。
+pub async fn record_login_failure_outcome(
     pool: &PgPool,
     user_id: uuid::Uuid,
-    new_attempts: i32,
-    locked_until: Option<DateTime<Utc>>,
-) -> Result<(), sqlx::Error> {
-    if let Some(lock_time) = locked_until {
-        let query = r"
-            UPDATE admin_users
-            SET login_attempts = $1, locked_until = $2
-            WHERE id = $3
-        ";
-        sqlx::query(query)
-            .bind(new_attempts)
-            .bind(lock_time)
-            .bind(user_id)
-            .execute(pool)
-            .await?;
-    } else {
-        let query = r"
-            UPDATE admin_users
-            SET login_attempts = $1
-            WHERE id = $2
-        ";
-        sqlx::query(query)
-            .bind(new_attempts)
-            .bind(user_id)
-            .execute(pool)
-            .await?;
-    }
-    Ok(())
+    max_attempts: i32,
+    lockout_minutes: i64,
+) -> Result<Option<LoginFailureUpdate>, sqlx::Error> {
+    sqlx::query_as::<_, LoginFailureUpdate>(
+        r"
+        WITH base AS (
+            SELECT id,
+                   CASE
+                       WHEN locked_until IS NOT NULL AND locked_until <= NOW() THEN 0
+                       ELSE login_attempts
+                   END AS n
+            FROM admin_users
+            WHERE id = $1
+              AND role <> 'R_ADMIN'
+        )
+        UPDATE admin_users AS u
+        SET login_attempts = base.n + 1,
+            locked_until = CASE
+                WHEN base.n + 1 >= $2 THEN NOW() + ($3 * interval '1 minute')
+                WHEN u.locked_until IS NOT NULL AND u.locked_until <= NOW() THEN NULL
+                ELSE u.locked_until
+            END
+        FROM base
+        WHERE u.id = base.id
+        RETURNING u.login_attempts, u.locked_until
+        ",
+    )
+    .bind(user_id)
+    .bind(max_attempts)
+    .bind(lockout_minutes)
+    .fetch_optional(pool)
+    .await
 }
-/// # Errors
-///
-/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 /// 原子增加登录失败次数。锁已过期时从 0 起算。
 ///
 /// # Errors
@@ -246,6 +288,7 @@ pub async fn record_login_failure(
                    END AS n
             FROM admin_users
             WHERE id = $1
+              AND role <> 'R_ADMIN'
         )
         UPDATE admin_users AS u
         SET login_attempts = base.n + 1,

@@ -27,12 +27,12 @@ mod routes;
 
 use client::{
     CertificateLookup, enrich_audit_details, forbidden, get_cert_proxy_config, lookup_certificate,
-    parse_json_body, proxy_request,
+    parse_json_body, proxy_request, read_proxy_body,
 };
 pub(crate) use common::*;
 // Handlers must be in parent namespace for `routes` (`use super::*` + macro-expanded names).
 pub(crate) use authorization::*;
 pub(crate) use certificates::*;
 
-pub use common::CertProxyConfig;
+pub use common::{CertProxyConfig, encode_cert_path_segment};
 pub use routes::create_cert_proxy_routes;

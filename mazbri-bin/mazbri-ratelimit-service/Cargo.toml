@@ -37,6 +37,7 @@ tracing = { workspace = true }
 anyhow = { workspace = true }
 chrono = { workspace = true }
 uuid = { workspace = true }
+ipnetwork = { workspace = true }
 mimalloc = { workspace = true }
 
 [dev-dependencies]

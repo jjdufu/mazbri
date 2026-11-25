@@ -173,24 +173,29 @@ impl MazbriBypassServiceImpl {
     ) -> Result<Option<CachedSupplierConfig>, String> {
         let hash = hash.trim();
         let full = full.trim();
+        if !full.is_empty() {
+            let computed = hash_config_json(full);
+            if !hash.is_empty() && !computed.eq_ignore_ascii_case(hash) {
+                UpstreamMetricsRecorder::record_config_cache("supplier", "invalid");
+                return Err(
+                    "CONFIG_INVALID: supplier_config_json sha256 does not match supplier_config_hash"
+                        .to_string(),
+                );
+            }
+            let entry = self
+                .supplier_config_cache
+                .try_get_with(computed.clone(), || {
+                    parse_cached_supplier_config(computed, full)
+                })
+                .map_err(|e| e.as_ref().clone())?;
+            return Ok(Some(entry));
+        }
         if !hash.is_empty()
             && let Some(cached) = self.supplier_config_cache.get(hash)
-            && (full.is_empty() || cached.hash == hash)
+            && cached.hash.eq_ignore_ascii_case(hash)
         {
             UpstreamMetricsRecorder::record_config_cache("supplier", "hit");
             return Ok(Some(cached));
-        }
-        if !full.is_empty() {
-            let key = if hash.is_empty() {
-                hash_config_json(full)
-            } else {
-                hash.to_string()
-            };
-            let entry = self
-                .supplier_config_cache
-                .try_get_with(key.clone(), || parse_cached_supplier_config(key, full))
-                .map_err(|e| e.as_ref().clone())?;
-            return Ok(Some(entry));
         }
         if !hash.is_empty() {
             UpstreamMetricsRecorder::record_config_cache("supplier", "miss");
@@ -205,32 +210,32 @@ impl MazbriBypassServiceImpl {
     fn resolve_egress_spec(&self, hash: &str, full: &str) -> Result<Arc<ChannelEgressSpec>, String> {
         let hash = hash.trim();
         let full = full.trim();
+        if !full.is_empty() {
+            let computed = hash_egress_spec_json(full);
+            if !hash.is_empty() && !computed.eq_ignore_ascii_case(hash) {
+                UpstreamMetricsRecorder::record_config_cache("egress", "invalid");
+                return Err(
+                    "SPEC_INVALID: egress_spec_json sha256 does not match egress_spec_hash".into(),
+                );
+            }
+            return self
+                .egress_spec_cache
+                .try_get_with(computed.clone(), || parse_cached_egress_spec(computed, full))
+                .map(|c| c.spec)
+                .map_err(|e| e.as_ref().clone());
+        }
         if !hash.is_empty()
             && let Some(cached) = self.egress_spec_cache.get(hash)
-            && (full.is_empty() || cached.hash == hash)
+            && cached.hash.eq_ignore_ascii_case(hash)
         {
             UpstreamMetricsRecorder::record_config_cache("egress", "hit");
             return Ok(cached.spec);
         }
-        if full.is_empty() {
-            if hash.is_empty() {
-                return Err("SPEC_INVALID: missing egress_spec_json".into());
-            }
-            UpstreamMetricsRecorder::record_config_cache("egress", "miss");
-            return Err(
-                "CONFIG_CACHE_MISS: egress spec hash not in bypass cache; resend egress_spec_json"
-                    .into(),
-            );
+        if hash.is_empty() {
+            return Err("SPEC_INVALID: missing egress_spec_json".into());
         }
-        let key = if hash.is_empty() {
-            hash_egress_spec_json(full)
-        } else {
-            hash.to_string()
-        };
-        self.egress_spec_cache
-            .try_get_with(key.clone(), || parse_cached_egress_spec(key, full))
-            .map(|c| c.spec)
-            .map_err(|e| e.as_ref().clone())
+        UpstreamMetricsRecorder::record_config_cache("egress", "miss");
+        Err("CONFIG_CACHE_MISS: egress spec hash not in bypass cache; resend egress_spec_json".into())
     }
 
     async fn load_artifact(&self, artifact_id: &str) -> Result<Option<CachedArtifact>, String> {
@@ -289,7 +294,6 @@ impl MazbriBypassServiceImpl {
         req: upstream_proto::InvokeRequest,
     ) -> upstream_proto::InvokeResponse {
         let options = ExecuteOptions {
-            follow_redirects: false,
             max_body_capture_bytes: 0,
             mask_secrets: false,
             collect_trace: false,
@@ -304,7 +308,6 @@ impl MazbriBypassServiceImpl {
     pub async fn execute_probe_invoke(&self, probe_req: ProbeInvokeRequest) -> ProbeInvokeResponse {
         let req: upstream_proto::InvokeRequest = probe_req.into();
         let options = ExecuteOptions {
-            follow_redirects: false,
             max_body_capture_bytes: 64 * 1024,
             mask_secrets: true,
             collect_trace: true,

@@ -389,21 +389,17 @@ struct UpstreamAggRow {
     p99_ms: f64,
 }
 
-fn upstream_sql(start: i64, end: i64) -> String {
-    let start_dt = crate::clickhouse::queries::ch_datetime_utc(start);
-    let end_dt = crate::clickhouse::queries::ch_datetime_utc(end);
-    format!(
-        "SELECT supplier_code, toUInt64(count()) AS calls, \
-         toUInt64(countIf(status_code >= 500 OR error_class IN ('timeout','upstream_error','connect_error'))) AS errors, \
-         toFloat64(quantileTDigest(0.99)(duration_ms)) AS p99_ms \
-         FROM request_logs \
-         WHERE event_target = 'gateway' \
-           AND timestamp >= {start_dt} AND timestamp < {end_dt} \
-           AND supplier_code != '' \
-         GROUP BY supplier_code \
-         ORDER BY calls DESC \
-         LIMIT 50"
-    )
+fn upstream_sql() -> &'static str {
+    "SELECT supplier_code, toUInt64(count()) AS calls, \
+     toUInt64(countIf(status_code >= 500 OR error_class IN ('timeout','upstream_error','connect_error'))) AS errors, \
+     toFloat64(quantileTDigest(0.99)(duration_ms)) AS p99_ms \
+     FROM request_logs FINAL \
+     WHERE event_target = 'bypass' \
+       AND timestamp >= toDateTime(?, 'UTC') AND timestamp < toDateTime(?, 'UTC') \
+       AND supplier_code != '' \
+     GROUP BY supplier_code \
+     ORDER BY calls DESC \
+     LIMIT 50"
 }
 
 fn ch_upstream_edges(rows: &[UpstreamAggRow], window_secs: f64) -> Vec<TopologyEdge> {
@@ -414,7 +410,7 @@ fn ch_upstream_edges(rows: &[UpstreamAggRow], window_secs: f64) -> Vec<TopologyE
             let qps = if window_secs > 0.0 { calls_f / window_secs } else { 0.0 };
             let error_rate = ratio_u64(r.errors, r.calls);
             TopologyEdge {
-                source: "mazbri-gateway".into(),
+                source: "mazbri-bypass".into(),
                 target: format!("upstream:{}", r.supplier_code),
                 kind: "upstream".into(),
                 origin: "request_log".into(),
@@ -481,8 +477,12 @@ pub async fn build_topology(
         }
     };
 
+    let ch_binds = [
+        crate::list_query::BoundValue::I64(start),
+        crate::list_query::BoundValue::I64(end),
+    ];
     let ch_edges = match clickhouse
-        .execute_query::<UpstreamAggRow>(&upstream_sql(start, end))
+        .execute_bound_query::<UpstreamAggRow>(upstream_sql(), &ch_binds)
         .await
     {
         Ok(rows) => ch_upstream_edges(&rows, window_secs),
@@ -590,22 +590,23 @@ mod tests {
     }
 
     #[test]
-    fn upstream_sql_uses_utc_datetime() {
-        let sql = upstream_sql(1_700_000_000, 1_700_003_600);
-        assert!(
-            sql.contains("toDateTime(1700000000, 'UTC')"),
-            "start bound must be UTC: {sql}"
+    fn upstream_sql_uses_final_utc_and_bypass_source() {
+        let sql = upstream_sql();
+        assert!(sql.contains("FROM request_logs FINAL"));
+        assert!(sql.contains("event_target = 'bypass'"));
+        assert!(sql.contains("toDateTime(?, 'UTC')"));
+        let edges = ch_upstream_edges(
+            &[UpstreamAggRow {
+                supplier_code: "upupt".into(),
+                calls: 10,
+                errors: 1,
+                p99_ms: 42.0,
+            }],
+            10.0,
         );
-        assert!(
-            sql.contains("toDateTime(1700003600, 'UTC')"),
-            "end bound must be UTC: {sql}"
-        );
-        assert!(
-            !sql.contains("toDateTime(1700000000) AND")
-                && !sql.contains(">= toDateTime(1700000000) "),
-            "bare toDateTime(unix) without UTC must not appear: {sql}"
-        );
-        assert!(sql.contains("event_target = 'gateway'"));
+        assert_eq!(edges.len(), 1);
+        assert_eq!(edges[0].source, "mazbri-bypass");
+        assert_eq!(edges[0].target, "upstream:upupt");
     }
 
     #[test]

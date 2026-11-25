@@ -7,6 +7,10 @@ use std::collections::HashMap;
 pub struct CacheServiceConfig {
     pub server: mazbri_core::ServerConfig,
     pub database: mazbri_core::DatabaseConfig,
+    #[serde(default)]
+    pub platform_database: Option<mazbri_core::DatabaseConfig>,
+    #[serde(default)]
+    pub config_watch: mazbri_core::config_watch::ConfigWatchConfig,
     pub redis: mazbri_core::redis::RedisConfig,
     #[serde(default)]
     pub cache: CacheConfig,
@@ -62,6 +66,7 @@ impl ServiceConfig for CacheServiceConfig {
 impl ValidateConfig for CacheServiceConfig {
     fn validate(&self) -> Result<()> {
         self.redis.validate()?;
+        self.config_watch.validate()?;
         Ok(())
     }
 }

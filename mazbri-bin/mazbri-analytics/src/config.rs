@@ -12,6 +12,8 @@ pub struct AnalyticsConfig {
     pub log_routes: Vec<LogRouteConfig>,
     pub server: mazbri_core::ServerConfig,
     #[serde(default)]
+    pub auth: AnalyticsAuthConfig,
+    #[serde(default)]
     pub greptimedb: Option<GreptimeDBConfig>,
     pub clickhouse: ClickHouseConfig,
     pub admin: mazbri_admin::AdminConfig,
@@ -25,6 +27,40 @@ pub struct AnalyticsConfig {
     pub anomaly: Option<crate::anomaly::AnomalyConfig>,
     #[serde(default)]
     pub slo: Option<crate::slo::SloConfig>,
+}
+
+#[derive(Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AnalyticsAuthConfig {
+    #[serde(default)]
+    pub internal_token: String,
+}
+
+impl std::fmt::Debug for AnalyticsAuthConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AnalyticsAuthConfig")
+            .field(
+                "internal_token",
+                &if self.internal_token.is_empty() {
+                    ""
+                } else {
+                    "***"
+                },
+            )
+            .finish()
+    }
+}
+
+impl AnalyticsAuthConfig {
+    /// # Errors
+    ///
+    /// 当 `internal_token` 含有空白字符时返回错误。
+    pub fn validate(&self) -> Result<(), String> {
+        if !self.internal_token.is_empty() && self.internal_token.chars().any(char::is_whitespace) {
+            return Err("auth.internal_token 不能包含空白字符".to_string());
+        }
+        Ok(())
+    }
 }
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -160,6 +196,9 @@ impl GreptimeDBConfig {
 }
 impl ValidateConfig for AnalyticsConfig {
     fn validate(&self) -> Result<()> {
+        self.auth
+            .validate()
+            .map_err(|e| anyhow::anyhow!("鉴权配置无效: {e}"))?;
         if let Some(ref greptimedb) = self.greptimedb {
             greptimedb
                 .validate()

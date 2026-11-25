@@ -96,6 +96,7 @@ pub async fn get_usage_analytics(
     db: &PgPool,
     billing_db: &PgPool,
     id_or_code: &str,
+    claims: &crate::middleware::auth::AdminClaims,
     params: &AnalyticsParams,
 ) -> axum::response::Response {
     info!("Fetching usage analytics for tenant: {}", id_or_code);
@@ -180,6 +181,10 @@ pub async fn get_usage_analytics(
             .collect::<Vec<_>>(),
         Err(_) => Vec::new(),
     };
+    let mut analytics = analytics;
+    let mut top_endpoints = top_endpoints;
+    crate::middleware::role_projection::RoleDataProjection::for_claims(claims)
+        .project_tenant_usage_analytics(&mut analytics, &mut top_endpoints);
     ApiResponse::ok(serde_json::json!(
         { "time_range" : { "start" : params.start_time, "end" : params.end_time
         }, "group_by" : params.group_by.clone().unwrap_or_else(|| "day"
@@ -317,69 +322,6 @@ pub async fn get_ratelimit_analytics(
         .to_string()), "analytics" : analytics, "denial_reasons" :
         denial_reasons, "scope_breakdown" : scope_breakdown, "top_denied_apis" :
         top_denied_apis, }
-    ))
-    .into_response()
-}
-pub async fn get_ratelimit_platform_stats(
-    ratelimit_db: &PgPool,
-    params: &RateLimitAnalyticsParams,
-) -> axum::response::Response {
-    info!("Fetching platform-wide rate limit statistics");
-    let mut overall_builder =
-        repo::build_ratelimit_platform_overall_query(params.start_time, params.end_time);
-    let overall_stats = match overall_builder.build().fetch_one(ratelimit_db).await {
-        Ok(row) => {
-            let total_checks = row.get::<i64, _>("total_checks");
-            let total_denied = row.get::<i64, _>("total_denied");
-            serde_json::json!(
-                { "total_checks" : total_checks, "total_allowed" : row.get::< i64, _ >
-                ("total_allowed"), "total_denied" : total_denied, "active_tenants" : row
-                .get::< i64, _ > ("active_tenants"), "overall_deny_rate" : if
-                total_checks > 0 { (mazbri_core::num::i64_to_f64(total_denied) / mazbri_core::num::i64_to_f64(total_checks)) * 100.0 }
-                else { 0.0 }, }
-            )
-        }
-        Err(_) => serde_json::json!(null),
-    };
-    let mut top_tenants_builder =
-        repo::build_ratelimit_platform_top_tenants_query(params.start_time, params.end_time);
-    let top_tenants = match top_tenants_builder.build().fetch_all(ratelimit_db).await {
-        Ok(rows) => rows
-            .into_iter()
-            .map(|row: sqlx::postgres::PgRow| {
-                serde_json::json!(
-                    { "tenant_id" : row.get::< uuid::Uuid, _ > ("tenant_id"),
-                    "tenant_name" : row.get::< Option < String >, _ >
-                    ("tenant_name"), "total_checks" : row.get::< i64, _ >
-                    ("total_checks"), "denied_count" : row.get::< i64, _ >
-                    ("denied_count"), }
-                )
-            })
-            .collect::<Vec<_>>(),
-        Err(_) => Vec::new(),
-    };
-    let mut scope_dist_builder =
-        repo::build_ratelimit_platform_scope_dist_query(params.start_time, params.end_time);
-    let scope_distribution = match scope_dist_builder.build().fetch_all(ratelimit_db).await {
-        Ok(rows) => rows
-            .into_iter()
-            .map(|row: sqlx::postgres::PgRow| {
-                serde_json::json!(
-                    { "scope" : row.get::< String, _ > ("scope"), "counter_type" :
-                    row.get::< String, _ > ("counter_type"), "total_checks" : row
-                    .get::< i64, _ > ("total_checks"), "denied_count" : row.get::<
-                    i64, _ > ("denied_count"), }
-                )
-            })
-            .collect::<Vec<_>>(),
-        Err(_) => Vec::new(),
-    };
-    let active_configs = repo::get_active_rate_limit_configs(ratelimit_db).await;
-    ApiResponse::ok(serde_json::json!(
-        { "time_range" : { "start" : params.start_time, "end" : params.end_time
-        }, "overall_stats" : overall_stats, "top_tenants_by_denials" :
-        top_tenants, "scope_distribution" : scope_distribution, "active_configs"
-        : active_configs, }
     ))
     .into_response()
 }
@@ -689,6 +631,7 @@ pub async fn get_call_monitor_logs(
     db: &PgPool,
     analytics_client: &AnalyticsHttpClient,
     kind: &str,
+    claims: &crate::middleware::auth::AdminClaims,
     params: &CallMonitorParams,
 ) -> axum::response::Response {
     let page = params.page.unwrap_or(1).max(1);
@@ -728,9 +671,14 @@ pub async fn get_call_monitor_logs(
         tokio::join!(load_tenant_names(db, &data), load_channel_names(db, &data));
     let tenant_names = tenant_names.unwrap_or_default();
     let channel_names = channel_names.unwrap_or_default();
+    let projection = crate::middleware::role_projection::RoleDataProjection::for_claims(claims);
     let items = data
         .into_iter()
-        .map(|row| map_call_monitor_item(row, &tenant_names, &channel_names, kind))
+        .map(|row| {
+            let mut item = map_call_monitor_item(row, &tenant_names, &channel_names, kind);
+            projection.project_call_monitor_item(&mut item);
+            item
+        })
         .collect::<Vec<_>>();
     ApiResponse::ok(CallMonitorResponse {
         total,
@@ -776,6 +724,7 @@ pub struct CallStageParams {
 /// 单请求阶段耗时与关联 access 行（gateway + bypass）。
 pub async fn get_call_stages(
     analytics_client: &AnalyticsHttpClient,
+    claims: &crate::middleware::auth::AdminClaims,
     params: &CallStageParams,
 ) -> axum::response::Response {
     let mut request_params = Vec::new();
@@ -797,7 +746,11 @@ pub async fn get_call_stages(
         return ApiResponse::err(StatusCode::BAD_REQUEST, "request_id 与 trace_id 需二选一");
     }
     match analytics_client.request_stages(&request_params).await {
-        Ok(body) => ApiResponse::ok(body).into_response(),
+        Ok(mut body) => {
+            crate::middleware::role_projection::RoleDataProjection::for_claims(claims)
+                .project_call_stages(&mut body);
+            ApiResponse::ok(body).into_response()
+        }
         Err(e) => e.into_response("查询阶段耗时"),
     }
 }
@@ -1122,9 +1075,14 @@ pub struct MetricsOverviewParams {
 }
 pub async fn get_metrics_catalog(
     analytics_client: &AnalyticsHttpClient,
+    claims: &crate::middleware::auth::AdminClaims,
 ) -> axum::response::Response {
     match analytics_client.metrics_catalog().await {
-        Ok(body) => ApiResponse::ok(body).into_response(),
+        Ok(mut body) => {
+            crate::middleware::role_projection::RoleDataProjection::for_claims(claims)
+                .project_metrics_catalog(&mut body);
+            ApiResponse::ok(body).into_response()
+        }
         Err(e) => e.into_response("指标目录"),
     }
 }
@@ -1135,19 +1093,6 @@ pub async fn get_services_health(
         Ok(body) => ApiResponse::ok(body).into_response(),
         Err(e) => e.into_response("服务健康"),
     }
-}
-
-/// 金额类 OLAP 模板（成本）：与 analytics `OlapQuery::is_money` 口径一致。
-fn olap_is_money(body: &serde_json::Value) -> bool {
-    let template = body.get("template").and_then(serde_json::Value::as_str);
-    let metric = body
-        .get("params")
-        .and_then(|p| p.get("metric"))
-        .and_then(serde_json::Value::as_str);
-    matches!(
-        (template, metric),
-        (Some("cost_trend"), _) | (Some("top_by_dim"), Some("cost"))
-    )
 }
 
 pub async fn get_metrics_topology(
@@ -1166,25 +1111,31 @@ pub async fn olap_query(
     claims: &crate::middleware::auth::AdminClaims,
     body: &serde_json::Value,
 ) -> axum::response::Response {
-    if olap_is_money(body) && !crate::middleware::route_access::BIZ.contains(&claims.role.as_str())
-    {
-        return ApiResponse::err(
-            StatusCode::FORBIDDEN,
-            "金额类模板仅 R_ADMIN、R_FINANCE 可查询",
-        );
-    }
+    let projection = crate::middleware::role_projection::RoleDataProjection::for_claims(claims);
+    let kind = match projection.authorize_olap(body) {
+        Ok(kind) => kind,
+        Err((status, msg)) => return ApiResponse::err(status, msg),
+    };
     match analytics_client.olap_query(body).await {
-        Ok(data) => ApiResponse::ok(data).into_response(),
+        Ok(mut data) => {
+            projection.project_olap_response(kind, &mut data);
+            ApiResponse::ok(data).into_response()
+        }
         Err(e) => e.into_response("OLAP 查询"),
     }
 }
 
 pub async fn get_metric_timeseries(
     analytics_client: &AnalyticsHttpClient,
+    claims: &crate::middleware::auth::AdminClaims,
     params: &MetricsTimeseriesParams,
 ) -> axum::response::Response {
     use crate::services::analytics_window::resolve_timeseries_window;
 
+    let projection = crate::middleware::role_projection::RoleDataProjection::for_claims(claims);
+    if !projection.can_read_metric(&params.metric) {
+        return ApiResponse::err(StatusCode::FORBIDDEN, "当前角色无权查看该时序指标");
+    }
     let window = match resolve_timeseries_window(params.start, params.end) {
         Ok(window) => window,
         Err(message) => return ApiResponse::err(StatusCode::BAD_REQUEST, message),
@@ -1201,22 +1152,5 @@ pub async fn get_metric_timeseries(
     {
         Ok(body) => ApiResponse::ok(body).into_response(),
         Err(e) => e.into_response("指标时序"),
-    }
-}
-#[cfg(test)]
-mod olap_tests {
-    use super::olap_is_money;
-
-    #[test]
-    fn money_templates_are_detected() {
-        assert!(olap_is_money(
-            &serde_json::json!({"template": "cost_trend", "params": {}})
-        ));
-        assert!(olap_is_money(
-            &serde_json::json!({"template": "top_by_dim", "params": {"dim": "tenant_code", "metric": "cost"}})
-        ));
-        assert!(!olap_is_money(
-            &serde_json::json!({"template": "top_by_dim", "params": {"dim": "tenant_code", "metric": "p95"}})
-        ));
     }
 }

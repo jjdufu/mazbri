@@ -45,6 +45,22 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: 租户停用或源 IP 不在白名单
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "429":
+          description: 源 IP 换票限流
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
   /api/v1/gateway:
     post:
       summary: 唯一业务调用入口
@@ -78,6 +94,18 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Error"
+        "409":
+          description: 信封 nonce 重放或同幂等指纹仍在处理（E4090）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "422":
+          description: 幂等指纹复用但业务载荷摘要不一致（E4221）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "429":
           $ref: "#/components/responses/Error"
 components:
@@ -205,9 +233,10 @@ components:
     TransportEnvelope:
       type: object
       description: |
-        租户传输信封（camelCase）。`dataAlg` / `macAlg` 为 mazbri-crypto 闭集 kebab-case id
-       （如 `aes-256-gcm`、`hmac-sha256`）。禁止历史大写别名（如 AES-256-GCM）。
-        行为由租户 Profile 的 mode 决定：`none` 明文；`request` 仅请求加密；`full` 请求+响应双向。
+        租户传输信封 v1（camelCase）。`dataAlg` / `macAlg` 为 mazbri-crypto 闭集 kebab-case id
+       （如 `aes-256-gcm`、`hmac-sha256`）。行为由租户 Profile 的 mode 决定：`none` 明文；
+        `request` 仅请求加密（方向 `c2g`）；`full` 请求（`c2g`）+ 响应（`g2c`）四向 HKDF 子密钥隔离。
+        AEAD AAD 与外挂 MAC 均绑定 `(v1, direction, tenant_id, http_path, keyVersion, dataAlg, macAlg, timestamp, nonce, iv)`。
       required:
         - encrypted
         - keyVersion
@@ -306,6 +335,6 @@ components:
           type: string
         code:
           type: string
-          description: 绑定失败时的 machine code（40110–40114）
+          description: 机器错误码（如 40110–40114、E4221、IDEMPOTENCY_UNAVAILABLE）
 security:
   - bearerAuth: []

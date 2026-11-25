@@ -44,8 +44,12 @@ pub struct ConfigListParams {
     #[serde(default = "default_page_size")]
     pub page_size: u32,
 }
-#[derive(Debug, Deserialize)]
-pub struct ExportParams {}
+#[derive(Debug, Default, Deserialize)]
+pub struct ExportParams {
+    /// 可选逗号分隔服务名白名单（如 `mazbri-gateway,mazbri-auth`）；为空则导出全量。
+    #[serde(default)]
+    pub service_names: Option<String>,
+}
 #[derive(Debug, Deserialize)]
 pub struct ImportParams {}
 #[derive(Debug, Deserialize)]
@@ -62,6 +66,9 @@ pub struct CreateConfigRequest {
 pub struct UpdateConfigRequest {
     pub content: String,
     pub updated_by: Option<String>,
+    /// 乐观并发控制 CAS：传入上次读取到的 `content_hash`，不匹配返回 `409 Conflict`。
+    #[serde(default)]
+    pub expected_content_hash: Option<String>,
 }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]

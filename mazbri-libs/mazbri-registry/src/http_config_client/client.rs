@@ -2,24 +2,35 @@ use crate::config_client::ConfigCache;
 use crate::http_config_client::error::HttpConfigClientError;
 use crate::http_config_client::types::{ConfigResponse, HeartbeatResponse, RegisterNodeResponse};
 use reqwest::Client;
+use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
 use tracing::info;
+
 #[path = "heartbeat.rs"]
 mod heartbeat;
 #[path = "registration.rs"]
 mod registration;
+
+#[derive(Deserialize)]
+struct JsonConfigEnvelope {
+    content: String,
+    #[serde(default)]
+    version: Option<i32>,
+}
+
 pub struct HttpConfigClient {
     http_client: Client,
     service_name: String,
     cert_service_url: String,
     cert_service_token: String,
     cache: Arc<RwLock<ConfigCache>>,
-    _heartbeat_interval: Duration,
+    heartbeat_interval: Duration,
     request_timeout: Duration,
 }
+
 pub struct HttpConfigClientBuilder {
     service_name: String,
     cert_service_url: String,
@@ -28,6 +39,7 @@ pub struct HttpConfigClientBuilder {
     heartbeat_interval: Duration,
     request_timeout: Duration,
 }
+
 impl HttpConfigClientBuilder {
     pub fn new(
         service_name: impl Into<String>,
@@ -43,21 +55,25 @@ impl HttpConfigClientBuilder {
             request_timeout: Duration::from_secs(10),
         }
     }
+
     #[must_use]
     pub fn heartbeat_interval(mut self, interval: Duration) -> Self {
         self.heartbeat_interval = interval;
         self
     }
+
     #[must_use]
     pub fn request_timeout(mut self, timeout: Duration) -> Self {
         self.request_timeout = timeout;
         self
     }
+
     #[must_use]
     pub fn http_client(mut self, client: Client) -> Self {
         self.http_client = Some(client);
         self
     }
+
     /// # Errors
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
@@ -77,22 +93,38 @@ impl HttpConfigClientBuilder {
             cert_service_url: self.cert_service_url,
             cert_service_token: self.cert_service_token,
             cache: Arc::new(RwLock::new(ConfigCache::default())),
-            _heartbeat_interval: self.heartbeat_interval,
+            heartbeat_interval: self.heartbeat_interval.max(Duration::from_secs(1)),
             request_timeout: self.request_timeout,
         };
         client.refresh().await?;
         Ok(client)
     }
 }
+
 impl HttpConfigClient {
+    #[must_use]
+    pub fn heartbeat_interval(&self) -> Duration {
+        self.heartbeat_interval
+    }
+
     pub async fn get_content(&self) -> String {
         let cache = self.cache.read().await;
         cache.content.clone()
     }
+
     pub async fn get_content_with_metadata(&self) -> (String, i32, Option<std::time::Instant>) {
         let cache = self.cache.read().await;
         (cache.content.clone(), cache.version, cache.last_updated)
     }
+
+    pub async fn update_cached_config(&self, content: String, content_hash: String, version: i32) {
+        let mut cache = self.cache.write().await;
+        cache.content = content;
+        cache.content_hash = content_hash;
+        cache.version = version;
+        cache.last_updated = Some(std::time::Instant::now());
+    }
+
     /// # Errors
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
@@ -114,32 +146,56 @@ impl HttpConfigClient {
                 message: error_body,
             });
         }
-        let content = response
+        let header_version = response
+            .headers()
+            .get("x-config-version")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| s.trim().parse::<i32>().ok());
+        let is_json = response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|ct| ct.to_ascii_lowercase().starts_with("application/json"));
+        let raw_body = response
             .text()
             .await
             .map_err(|e| HttpConfigClientError::RequestFailed(e.to_string()))?;
+        let (content, parsed_version) = if is_json {
+            match serde_json::from_str::<JsonConfigEnvelope>(&raw_body) {
+                Ok(env) => (env.content, env.version.or(header_version)),
+                Err(_) => (raw_body, header_version),
+            }
+        } else {
+            (raw_body, header_version)
+        };
         let content_hash = hex::encode(Sha256::digest(content.as_bytes()));
+        let fallback_version = self.cache.read().await.version;
+        let version = parsed_version.unwrap_or(fallback_version);
         Ok(ConfigResponse {
             content,
             content_hash,
-            version: 0,
+            version,
         })
     }
+
     /// # Errors
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn refresh(&self) -> Result<(), HttpConfigClientError> {
         let config = self.fetch_config().await?;
-        let mut cache = self.cache.write().await;
-        cache.content = config.content;
-        cache.content_hash = config.content_hash;
-        cache.version = config.version;
-        cache.last_updated = Some(std::time::Instant::now());
+        let content_len = config.content.len();
+        let version = config.version;
+        self.update_cached_config(config.content, config.content_hash, version)
+            .await;
         info!(
-            service = % self.service_name, content_len = cache.content.len(), "配置已刷新"
+            service = %self.service_name,
+            content_len,
+            version,
+            "配置已刷新"
         );
         Ok(())
     }
+
     /// # Errors
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
@@ -175,11 +231,19 @@ impl HttpConfigClient {
             let error_body = response.text().await.unwrap_or_default();
             return Err(HttpConfigClientError::RegistrationFailed(error_body));
         }
-        response
+        let reg = response
             .json::<RegisterNodeResponse>()
             .await
-            .map_err(|e| HttpConfigClientError::ResponseParseFailed(e.to_string()))
+            .map_err(|e| HttpConfigClientError::ResponseParseFailed(e.to_string()))?;
+        if reg.config_version > 0 {
+            let mut cache = self.cache.write().await;
+            if cache.version == 0 {
+                cache.version = reg.config_version;
+            }
+        }
+        Ok(reg)
     }
+
     /// # Errors
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。

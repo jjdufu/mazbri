@@ -297,6 +297,34 @@
         </div>
       </div>
 
+      <div class="field-block">
+        <div class="field-label">{{ $t("upstreamConnector.cryptoDirection") }}</div>
+        <div class="cpe-grid">
+          <CommonSwitchRow v-if="needsSign">
+            <ElSwitch
+              :model-value="Boolean(local.verify_response)"
+              :disabled="disabled || !local.sign?.alg"
+              :aria-label="$t('upstreamConnector.cryptoVerifyResponse')"
+              @update:model-value="onVerifyResponseChange"
+            />
+            <span class="switch-text ml-2">{{
+              $t("upstreamConnector.cryptoVerifyResponse")
+            }}</span>
+          </CommonSwitchRow>
+          <CommonSwitchRow>
+            <ElSwitch
+              :model-value="Boolean(local.decrypt_response)"
+              :disabled="disabled || (!needsCrypt && !local.response_crypt?.alg)"
+              :aria-label="$t('upstreamConnector.cryptoDecryptResponse')"
+              @update:model-value="onDecryptResponseChange"
+            />
+            <span class="switch-text ml-2">{{
+              $t("upstreamConnector.cryptoDecryptResponse")
+            }}</span>
+          </CommonSwitchRow>
+        </div>
+      </div>
+
       <ElCollapse v-model="advancedOpen" class="cpe-advanced">
         <ElCollapseItem
           name="response"
@@ -310,7 +338,11 @@
               :aria-label="$t('upstreamConnector.cryptoResponseCrypt')"
               clearable
               filterable
-              :placeholder="$t('upstreamConnector.cryptoSelectAlgOptional')"
+              :placeholder="
+                local.decrypt_response
+                  ? $t('upstreamConnector.cryptoReuseRequestCipher')
+                  : $t('upstreamConnector.cryptoSelectAlgOptional')
+              "
               @update:model-value="onResponseCryptAlgChange"
             >
               <ElOption
@@ -547,10 +579,25 @@ function onCryptAlgChange(alg: string | null | undefined) {
   emitSerialized(next);
 }
 
+function onVerifyResponseChange(value: boolean | string | number) {
+  if (!local.value) return;
+  patch({ verify_response: Boolean(value) });
+}
+
+function onDecryptResponseChange(value: boolean | string | number) {
+  if (!local.value) return;
+  const enabledDecrypt = Boolean(value);
+  patch({
+    decrypt_response: enabledDecrypt,
+    ...(enabledDecrypt ? {} : { response_crypt: null }),
+  });
+}
+
 function onResponseCryptAlgChange(alg: string | null | undefined) {
   if (!local.value) return;
   const next = {
     ...local.value,
+    decrypt_response: alg ? true : Boolean(local.value.decrypt_response),
     response_crypt: alg
       ? {
           ...(local.value.response_crypt || { alg: "", fields: [] }),

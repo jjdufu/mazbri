@@ -1,9 +1,29 @@
 //! 密钥材料引用与 nonce 策略（软件 only，无 HSM 句柄）。
 
 use serde::{Deserialize, Serialize};
-use zeroize::{Zeroize, ZeroizeOnDrop};
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use crate::traits::CryptoError;
+
+mod serde_zeroizing_string {
+    use serde::{Deserialize, Deserializer, Serializer};
+    use zeroize::Zeroizing;
+
+    pub fn serialize<S>(value: &Zeroizing<String>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(value.as_str())
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Zeroizing<String>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(Zeroizing::new(s))
+    }
+}
 
 /// 密钥用途标记（与具体算法解耦）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -66,8 +86,7 @@ impl<'de> Deserialize<'de> for ZeroizingBytes {
 
 /// 密钥材料引用。
 ///
-/// 本步仅定义形态；后续步骤由实现侧校验长度/格式。
-/// 原始字节在 drop 时 zeroize。
+/// 原始字节与 PEM 文本均在 drop 时自动清零（`Zeroizing`）。
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(tag = "form", rename_all = "snake_case")]
 pub enum KeyRef {
@@ -78,12 +97,13 @@ pub enum KeyRef {
         /// 密钥字节（敏感）。
         bytes: ZeroizingBytes,
     },
-    /// PEM 文本（公钥或私钥，由用途约束）。
+    /// PEM 文本（公钥或私钥，由用途约束，析构自动清零）。
     Pem {
         /// 用途。
         purpose: KeyPurpose,
-        /// PEM 文本。
-        pem: String,
+        /// PEM 文本（敏感）。
+        #[serde(with = "serde_zeroizing_string")]
+        pem: Zeroizing<String>,
     },
 }
 
@@ -119,10 +139,9 @@ impl KeyRef {
     pub fn pem(purpose: KeyPurpose, pem: impl Into<String>) -> Self {
         Self::Pem {
             purpose,
-            pem: pem.into(),
+            pem: Zeroizing::new(pem.into()),
         }
     }
-
 
     /// 取原始密钥字节。
     ///

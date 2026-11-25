@@ -5,7 +5,7 @@ mod error;
 pub mod metrics;
 mod tarpc_transport;
 mod transport;
-pub use cert_client::CertClient;
+pub use cert_client::{CertClient, RevokedSerialsResponse};
 pub use cert_manager::{
     CertExpiryInfo, CertManager, ManagedCertHandle, ManagedCertificate, RenewalTaskHandle,
 };
@@ -17,4 +17,8 @@ pub use metrics::{
 };
 pub use tarpc_transport::tls_connect_with_server_name;
 pub use tarpc_transport::{TlsTarpcConnector, TlsTarpcListener, tls_connect, tls_listen};
-pub use transport::{ConnectTarget, TlsAcceptor, TlsConnector, resolve_connect_target};
+pub use tokio_rustls::server::TlsStream as ServerTlsStream;
+pub use transport::{
+    ConnectTarget, DynamicCertResolver, TlsAcceptor, TlsConnector, normalize_serial_bytes,
+    resolve_connect_target, verify_peer_san_acl,
+};

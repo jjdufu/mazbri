@@ -6,21 +6,23 @@ use chrono::Utc;
 use mazbri_core::crypto::request_binding::{
     binding_key_ref, parse_binding_alg, public_key_digest_scope,
 };
+use mazbri_core::crypto::supplier_secrets::{
+    RootMaterialKeyring, install_root_material_keyring,
+};
 use mazbri_core::crypto::tenant_key::{
-    RootProtectionMaterialBundle, decode_configured_key, unwrap_tenant_key,
+    fetch_root_protection_keyring, unwrap_and_verify_tenant_key_with_keyring,
     verify_secret_key_digest,
 };
 use mazbri_core::crypto::transport::{
-    SealEnvelopeParams, TransportEnvelope, open_envelope, seal_envelope,
+    EnvelopeDirection, SealEnvelopeParams, TransportEnvelope, open_envelope, seal_envelope,
 };
 use mazbri_core::crypto::{
     AlgorithmId, AlgorithmKind, AlgorithmRegistry, CryptoError, KeyRef, KeySelection, TenantTransportProfile,
     TransportMode, parse_algorithm_id,
 };
 use mazbri_core::metrics::{MetricsBuilder, REGISTRY, register_collector_once};
-use mazbri_core::num::SaturatingFrom;
 use prometheus::{CounterVec, HistogramOpts, HistogramVec};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use sqlx::PgPool;
 use std::collections::HashSet;
 use std::future::Future;
@@ -28,42 +30,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tracing::{info, warn};
 use uuid::Uuid;
-
-const IDEMPOTENCY_PROCESSING: &str = r#"{"status":"processing"}"#;
-
-/// Stored under Redis idempotency key after successful first completion.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct IdempotencyRecord {
-    pub status: String,
-    #[serde(default)]
-    pub http_status: u16,
-    #[serde(default)]
-    pub body: Vec<u8>,
-    #[serde(default)]
-    pub content_type: Option<String>,
-}
-
-impl IdempotencyRecord {
-    #[must_use]
-    pub fn done(http_status: u16, body: Vec<u8>, content_type: Option<String>) -> Self {
-        Self {
-            status: "done".to_string(),
-            http_status,
-            body,
-            content_type,
-        }
-    }
-}
-
-#[derive(Debug)]
-pub enum IdempotencyOutcome {
-    /// First logical call; proceed and complete later.
-    Acquired,
-    /// Same fingerprint still processing.
-    InProgress,
-    /// Prior success; replay body without re-billing.
-    Completed(IdempotencyRecord),
-}
+use zeroize::Zeroizing;
 
 pub static GATEWAY_CRYPTO_CACHE_TOTAL: std::sync::LazyLock<CounterVec> =
     std::sync::LazyLock::new(|| {
@@ -245,9 +212,9 @@ pub struct EnvelopeNoncePrechecked;
 pub struct TenantCryptoState {
     db: Arc<PgPool>,
     profile_cache: moka::sync::Cache<Uuid, TenantCryptoProfile>,
-    key_cache: moka::sync::Cache<String, Vec<u8>>,
+    key_cache: moka::sync::Cache<String, Arc<Zeroizing<Vec<u8>>>>,
     request_key_cache: moka::sync::Cache<(Uuid, String), Arc<RequestBindingKey>>,
-    root_material_cache: moka::sync::Cache<String, RootProtectionMaterialBundle>,
+    root_material_cache: moka::sync::Cache<String, Arc<RootMaterialKeyring>>,
     root_material_refresh_lock: Arc<tokio::sync::Mutex<()>>,
     http_client: reqwest::Client,
     redis: RedisClient,
@@ -472,14 +439,8 @@ impl TenantCryptoState {
             ProxyError::InternalError(format!("crypto snapshot refresh failed: {error}"))
         })?;
         let mut active_tenants = HashSet::with_capacity(snapshots.len());
-        let root_materials = match self.root_materials().await {
-            Ok(materials) => match decode_root_materials(&materials) {
-                Ok(decoded) => Some(decoded),
-                Err(error) => {
-                    warn!(error = %error, "Tenant crypto root material decode failed during snapshot refresh");
-                    None
-                }
-            },
+        let root_keyring = match self.root_materials().await {
+            Ok(keyring) => Some(keyring),
             Err(error) => {
                 warn!(error = %error, "Tenant crypto root material lookup failed during snapshot refresh");
                 None
@@ -490,8 +451,8 @@ impl TenantCryptoState {
             let profile = Self::profile_from_snapshot(&snapshot);
             self.profile_cache.insert(snapshot.tenant_id, profile);
             if let Some(key_row) = Self::key_from_snapshot(&snapshot) {
-                if let Some((master_key, integrity_key)) = root_materials.as_ref() {
-                    match Self::materialize_key_row(&key_row, master_key, integrity_key) {
+                if let Some(keyring) = root_keyring.as_deref() {
+                    match Self::materialize_key_row(&key_row, keyring) {
                         Ok(key) => {
                             self.key_cache.insert(
                                 Self::cache_key(&key_row.tenant_id, &key_row.key_version),
@@ -524,6 +485,42 @@ impl TenantCryptoState {
                 );
             }
         }
+        self.evict_stale_crypto_caches(active_tenants).await
+    }
+
+    async fn evict_stale_crypto_caches(
+        &self,
+        active_tenants: HashSet<Uuid>,
+    ) -> Result<(), ProxyError> {
+        let usable_key_rows = sqlx::query_as::<_, (Uuid, String)>(
+            r"
+            SELECT k.tenant_id, k.key_version
+            FROM tenant_crypto_keys k
+            JOIN tenant_crypto_profiles p ON p.tenant_id = k.tenant_id
+            WHERE p.encryption_mode <> 'none'
+              AND k.status IN ('active', 'deprecated')
+            ",
+        )
+        .fetch_all(self.db.as_ref())
+        .await
+        .map_err(|error| {
+            ProxyError::InternalError(format!("usable crypto keys query failed: {error}"))
+        })?;
+        let mut usable_cache_keys = HashSet::with_capacity(usable_key_rows.len());
+        for (tid, kver) in usable_key_rows {
+            usable_cache_keys.insert(Self::cache_key(&tid, &kver));
+        }
+        let usable_cache_keys = Arc::new(usable_cache_keys);
+        if let Err(error) = self.key_cache.invalidate_entries_if({
+            let usable_cache_keys = Arc::clone(&usable_cache_keys);
+            move |cache_key, _| !usable_cache_keys.contains(cache_key)
+        }) {
+            warn!(
+                error = % error,
+                "Tenant crypto key cache invalidation closure is unavailable"
+            );
+        }
+
         let active_tenants = Arc::new(active_tenants);
         let invalidate_result = self.profile_cache.invalidate_entries_if({
             let active_tenants = Arc::clone(&active_tenants);
@@ -544,17 +541,8 @@ impl TenantCryptoState {
     pub async fn refresh_root_material_cache(&self) -> Result<(), ProxyError> {
         let cache_key = "active".to_string();
         let _guard = self.root_material_refresh_lock.lock().await;
-        let materials = mazbri_core::crypto::tenant_key::fetch_root_protection_material_bundle(
-            &self.http_client,
-            &self.cert_service_url,
-            &self.cert_service_token,
-        )
-        .await
-        .map_err(|error| {
-            ProxyError::InternalError(format!("tenant crypto root material fetch failed: {error}"))
-        })?;
-        self.root_material_cache
-            .insert(cache_key, materials.clone());
+        let keyring = self.fetch_and_install_keyring().await?;
+        self.root_material_cache.insert(cache_key, keyring);
         Ok(())
     }
 
@@ -616,44 +604,44 @@ impl TenantCryptoState {
 
     fn materialize_key_row(
         row: &TenantCryptoKey,
-        master_key: &[u8],
-        integrity_key: &[u8],
-    ) -> Result<Vec<u8>, ProxyError> {
+        keyring: &RootMaterialKeyring,
+    ) -> Result<Arc<Zeroizing<Vec<u8>>>, ProxyError> {
         if !matches!(row.status.as_str(), "active" | "deprecated") {
             return Err(ProxyError::Forbidden(
                 "Invalid encrypted request".to_string(),
             ));
         }
-        let key = unwrap_tenant_key(
+        let key = unwrap_and_verify_tenant_key_with_keyring(
             &row.encrypted_secret_key,
             &row.tenant_id.to_string(),
             &row.key_version,
-            master_key,
-        )
-        .map_err(|_| ProxyError::Forbidden("Invalid encrypted request".to_string()))?;
-        let digest_ok = verify_secret_key_digest(
-            integrity_key,
-            &row.tenant_id.to_string(),
-            &row.key_version,
-            &key,
             &row.secret_key_digest,
+            keyring,
         )
         .map_err(|_| ProxyError::Forbidden("Invalid encrypted request".to_string()))?;
-        if !digest_ok {
-            return Err(ProxyError::Forbidden(
-                "Invalid encrypted request".to_string(),
-            ));
-        }
-        Ok(key)
+        Ok(Arc::new(key))
     }
 
     async fn materialize_key_row_with_root(
         &self,
         row: &TenantCryptoKey,
-    ) -> Result<Vec<u8>, ProxyError> {
-        let materials = self.root_materials().await?;
-        let (master_key, integrity_key) = decode_root_materials(&materials)?;
-        Self::materialize_key_row(row, &master_key, &integrity_key)
+    ) -> Result<Arc<Zeroizing<Vec<u8>>>, ProxyError> {
+        let keyring = self.root_materials().await?;
+        if let Ok(key) = Self::materialize_key_row(row, &keyring) {
+            self.key_cache.insert(
+                Self::cache_key(&row.tenant_id, &row.key_version),
+                Arc::clone(&key),
+            );
+            return Ok(key);
+        }
+        self.refresh_root_material_cache().await?;
+        let refreshed = self.root_materials().await?;
+        let key = Self::materialize_key_row(row, &refreshed)?;
+        self.key_cache.insert(
+            Self::cache_key(&row.tenant_id, &row.key_version),
+            Arc::clone(&key),
+        );
+        Ok(key)
     }
 
     /// # Errors
@@ -700,24 +688,16 @@ impl TenantCryptoState {
                 let preflight_started_at = Instant::now();
                 validate_timestamp(&envelope, profile.clock_skew_seconds)?;
                 timing.preflight = mazbri_core::num::millis_u64(preflight_started_at.elapsed());
-                if !envelope_nonce_prechecked {
-                    self.check_nonce(tenant_id, &envelope, profile.nonce_ttl_seconds, &mut timing)
-                        .await?;
-                }
                 let tenant_key = self
                     .tenant_key(tenant_id, &envelope.key_version, &mut timing)
                     .await?;
-                let mac_key = envelope
-                    .mac_alg
-                    .as_ref()
-                    .map(|_| tenant_key.as_slice());
                 let signature_started_at = Instant::now();
                 let decrypt_started_at = Instant::now();
                 let plaintext = open_envelope(
                     &transport,
                     AlgorithmRegistry::global(),
-                    &tenant_key,
-                    mac_key,
+                    tenant_key.as_slice(),
+                    EnvelopeDirection::ClientToGateway,
                     &tenant_id_str,
                     http_path,
                     &envelope,
@@ -725,6 +705,10 @@ impl TenantCryptoState {
                 .map_err(map_transport_crypto_error)?;
                 timing.signature = mazbri_core::num::millis_u64(signature_started_at.elapsed());
                 timing.decrypt = mazbri_core::num::millis_u64(decrypt_started_at.elapsed());
+                if !envelope_nonce_prechecked {
+                    self.check_nonce(tenant_id, &envelope, profile.nonce_ttl_seconds, &mut timing)
+                        .await?;
+                }
                 let parse_started_at = Instant::now();
                 let req = serde_json::from_slice::<GatewayRequest>(&plaintext).map_err(|_| {
                     ProxyError::BadRequest("Decrypted request body is invalid".to_string())
@@ -758,13 +742,11 @@ impl TenantCryptoState {
         let mut timing = TenantCryptoTiming::default();
         let tenant_key = self.tenant_key(tenant_id, key_version, &mut timing).await?;
         let tenant_id_str = tenant_id.to_string();
-        let (_, mac_alg) = transport.effective_algs().map_err(map_crypto_profile_error)?;
-        let mac_key = mac_alg.map(|_| tenant_key.as_slice());
         seal_envelope(SealEnvelopeParams {
             profile: &transport,
             registry: AlgorithmRegistry::global(),
-            data_key: &tenant_key,
-            mac_key,
+            master_key: tenant_key.as_slice(),
+            direction: EnvelopeDirection::GatewayToClient,
             key_version,
             tenant_id: &tenant_id_str,
             http_path,
@@ -779,7 +761,7 @@ impl TenantCryptoState {
         tenant_id: Uuid,
         key_version: &str,
         timing: &mut TenantCryptoTiming,
-    ) -> Result<Vec<u8>, ProxyError> {
+    ) -> Result<Arc<Zeroizing<Vec<u8>>>, ProxyError> {
         let started_at = Instant::now();
         let cache_key = Self::cache_key(&tenant_id, key_version);
         if let Some(key) = self.key_cache.get(&cache_key) {
@@ -813,118 +795,57 @@ impl TenantCryptoState {
             ));
         }
         let root_material_started_at = Instant::now();
-        let materials = self.root_materials().await;
+        let mut keyring = self.root_materials().await?;
         timing.tenant_key_root_material =
             mazbri_core::num::millis_u64(root_material_started_at.elapsed());
-        let materials = materials?;
         let local_started_at = Instant::now();
-        let (master_key, integrity_key) = decode_root_materials(&materials)?;
-        let key = Self::materialize_key_row(&row, &master_key, &integrity_key)?;
+        let key = if let Ok(materialized) = Self::materialize_key_row(&row, &keyring) {
+            materialized
+        } else {
+            self.refresh_root_material_cache().await?;
+            keyring = self.root_materials().await?;
+            Self::materialize_key_row(&row, &keyring)?
+        };
         timing.tenant_key_local = mazbri_core::num::millis_u64(local_started_at.elapsed());
         timing.tenant_key = mazbri_core::num::millis_u64(started_at.elapsed());
-        self.key_cache.insert(cache_key, key.clone());
+        self.key_cache.insert(cache_key, Arc::clone(&key));
         record_crypto_lookup_duration("key", "miss", started_at.elapsed());
         Ok(key)
     }
 
-    async fn root_materials(&self) -> Result<RootProtectionMaterialBundle, ProxyError> {
-        let cache_key = "active".to_string();
-        if let Some(materials) = self.root_material_cache.get(&cache_key) {
-            return Ok(materials);
-        }
-        let _guard = self.root_material_refresh_lock.lock().await;
-        if let Some(materials) = self.root_material_cache.get(&cache_key) {
-            return Ok(materials);
-        }
-        let materials = mazbri_core::crypto::tenant_key::fetch_root_protection_material_bundle(
+    async fn fetch_and_install_keyring(&self) -> Result<Arc<RootMaterialKeyring>, ProxyError> {
+        let protection = fetch_root_protection_keyring(
             &self.http_client,
             &self.cert_service_url,
             &self.cert_service_token,
         )
         .await
         .map_err(|error| {
-            ProxyError::InternalError(format!("tenant crypto root material fetch failed: {error}"))
+            ProxyError::InternalError(format!("tenant crypto root keyring fetch failed: {error}"))
         })?;
-        self.root_material_cache
-            .insert(cache_key, materials.clone());
-        Ok(materials)
+        let keyring =
+            RootMaterialKeyring::from_protection_keyring(&protection).map_err(|error| {
+                ProxyError::InternalError(format!(
+                    "tenant crypto root keyring decode failed: {error}"
+                ))
+            })?;
+        install_root_material_keyring(keyring.clone());
+        Ok(Arc::new(keyring))
     }
 
-    /// Acquire fingerprint lock or return prior result.
-    ///
-    /// - `Acquired`: first call; caller must complete and `complete_idempotency`.
-    /// - `InProgress`: same fingerprint still running → 409.
-    /// - `Completed`: prior success body; return without re-billing.
-    ///
-    /// Redis failure policy: **fail-closed** — any Redis error returns
-    /// `ProxyError::IdempotencyUnavailable` (503 + Retry-After, code
-    /// `IDEMPOTENCY_UNAVAILABLE`), logged and counted. Only keyed requests call this.
-    ///
-    /// # Errors
-    ///
-    /// Redis 不可用时返回 `ProxyError::IdempotencyUnavailable`。
-    pub async fn check_idempotency(
-        &self,
-        fingerprint: &str,
-        ttl_secs: u64,
-    ) -> Result<IdempotencyOutcome, ProxyError> {
-        let ttl_secs = usize::saturating_from(ttl_secs.max(1));
-        let key = self.redis.idempotency_key(fingerprint);
-        match self
-            .redis
-            .set_nx_ex(&key, IDEMPOTENCY_PROCESSING.as_bytes(), ttl_secs)
-            .await
-        {
-            Ok(true) => Ok(IdempotencyOutcome::Acquired),
-            Ok(false) => match self.redis.get_bytes(&key).await {
-                Ok(Some(bytes)) => match serde_json::from_slice::<IdempotencyRecord>(&bytes) {
-                    Ok(record) if record.status == "done" => {
-                        Ok(IdempotencyOutcome::Completed(record))
-                    }
-                    _ => Ok(IdempotencyOutcome::InProgress),
-                },
-                Ok(None) => {
-                    // Race: key expired between NX miss and GET → re-acquire
-                    match self
-                        .redis
-                        .set_nx_ex(&key, IDEMPOTENCY_PROCESSING.as_bytes(), ttl_secs)
-                        .await
-                    {
-                        Ok(true) => Ok(IdempotencyOutcome::Acquired),
-                        Ok(false) => Ok(IdempotencyOutcome::InProgress),
-                        Err(error) => {
-                            Err(idempotency_unavailable("re-acquire", fingerprint, &error))
-                        }
-                    }
-                }
-                Err(error) => Err(idempotency_unavailable("GET", fingerprint, &error)),
-            },
-            Err(error) => Err(idempotency_unavailable("SET NX", fingerprint, &error)),
+    async fn root_materials(&self) -> Result<Arc<RootMaterialKeyring>, ProxyError> {
+        let cache_key = "active".to_string();
+        if let Some(keyring) = self.root_material_cache.get(&cache_key) {
+            return Ok(keyring);
         }
-    }
-
-    /// Store successful response for fingerprint so transport retries replay without re-charge.
-    ///
-    /// # Errors
-    ///
-    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-    pub async fn complete_idempotency(
-        &self,
-        fingerprint: &str,
-        ttl_secs: u64,
-        record: &IdempotencyRecord,
-    ) -> Result<(), ProxyError> {
-        let ttl_secs = usize::saturating_from(ttl_secs.max(1));
-        let key = self.redis.idempotency_key(fingerprint);
-        let bytes = serde_json::to_vec(record).map_err(|error| {
-            ProxyError::InternalError(format!("idempotency serialize failed: {error}"))
-        })?;
-        self.redis
-            .set_ex_bytes(&key, &bytes, ttl_secs)
-            .await
-            .map_err(|error| {
-                ProxyError::InternalError(format!("idempotency complete redis failed: {error}"))
-            })
+        let _guard = self.root_material_refresh_lock.lock().await;
+        if let Some(keyring) = self.root_material_cache.get(&cache_key) {
+            return Ok(keyring);
+        }
+        let keyring = self.fetch_and_install_keyring().await?;
+        self.root_material_cache
+            .insert(cache_key, Arc::clone(&keyring));
+        Ok(keyring)
     }
 
     async fn check_nonce(
@@ -1066,32 +987,53 @@ impl TenantCryptoState {
         &self,
         row: &TenantRequestKeyRow,
         alg: AlgorithmId,
-    ) -> Result<Vec<u8>, ProxyError> {
+    ) -> Result<Zeroizing<Vec<u8>>, ProxyError> {
         let invalid = || ProxyError::Forbidden("Invalid request binding key".to_string());
-        let materials = self.root_materials().await?;
-        let (master_key, integrity_key) = decode_root_materials(&materials)?;
+        let mut keyring = self.root_materials().await?;
         let tenant = row.tenant_id.to_string();
-        let (material, scope) = if alg.kind() == AlgorithmKind::Mac {
+        if alg.kind() == AlgorithmKind::Mac {
             let wrapped = row.encrypted_material.as_deref().ok_or_else(invalid)?;
-            let key = unwrap_tenant_key(wrapped, &tenant, &row.kid, &master_key)
-                .map_err(|_| invalid())?;
-            (key, row.kid.clone())
-        } else {
-            let public = row.public_key.as_deref().ok_or_else(invalid)?;
-            (public.as_bytes().to_vec(), public_key_digest_scope(&row.kid))
-        };
-        let digest_ok = verify_secret_key_digest(
-            &integrity_key,
-            &tenant,
-            &scope,
-            &material,
-            &row.material_digest,
-        )
-        .map_err(|_| invalid())?;
-        if !digest_ok {
-            return Err(invalid());
+            if let Ok(key) = unwrap_and_verify_tenant_key_with_keyring(
+                wrapped,
+                &tenant,
+                &row.kid,
+                &row.material_digest,
+                &keyring,
+            ) {
+                return Ok(key);
+            }
+            self.refresh_root_material_cache().await?;
+            keyring = self.root_materials().await?;
+            return unwrap_and_verify_tenant_key_with_keyring(
+                wrapped,
+                &tenant,
+                &row.kid,
+                &row.material_digest,
+                &keyring,
+            )
+            .map_err(|_| invalid());
         }
-        Ok(material)
+
+        let public = row.public_key.as_deref().ok_or_else(invalid)?;
+        let material = Zeroizing::new(public.as_bytes().to_vec());
+        let scope = public_key_digest_scope(&row.kid);
+        let verify_with_ring = |ring: &RootMaterialKeyring| -> bool {
+            ring.versions().into_iter().any(|ver| {
+                ring.integrity_key_for_version(ver).is_some_and(|ik| {
+                    verify_secret_key_digest(ik, &tenant, &scope, &material, &row.material_digest)
+                        .unwrap_or(false)
+                })
+            })
+        };
+        if verify_with_ring(&keyring) {
+            return Ok(material);
+        }
+        self.refresh_root_material_cache().await?;
+        keyring = self.root_materials().await?;
+        if verify_with_ring(&keyring) {
+            return Ok(material);
+        }
+        Err(invalid())
     }
 }
 
@@ -1156,18 +1098,6 @@ struct PlatformSigningKeyRow {
     pub material: String,
     pub not_before: Option<chrono::DateTime<Utc>>,
     pub not_after: Option<chrono::DateTime<Utc>>,
-}
-
-fn decode_root_materials(
-    materials: &RootProtectionMaterialBundle,
-) -> Result<(Vec<u8>, Vec<u8>), ProxyError> {
-    let master_key = decode_configured_key(&materials.master_key).map_err(|error| {
-        ProxyError::InternalError(format!("tenant crypto master key error: {error}"))
-    })?;
-    let integrity_key = decode_configured_key(&materials.integrity_key).map_err(|error| {
-        ProxyError::InternalError(format!("tenant crypto integrity key error: {error}"))
-    })?;
-    Ok((master_key, integrity_key))
 }
 
 fn record_crypto_cache_result(cache: &'static str, result: &'static str) {
@@ -1296,30 +1226,6 @@ fn map_transport_crypto_error(
     }
 }
 
-/// Suggested Retry-After when the idempotency store is unavailable.
-pub const IDEMPOTENCY_UNAVAILABLE_RETRY_AFTER_SECS: u64 = 1;
-
-/// Fail-closed: a keyed request must not run without the idempotency guard
-/// (would risk double charge). Logs, bumps the metric, returns 503 error.
-pub(crate) fn idempotency_unavailable(
-    op: &str,
-    fingerprint: &str,
-    error: &dyn std::fmt::Display,
-) -> ProxyError {
-    crate::gateway::metrics::GATEWAY_IDEMPOTENCY_UNAVAILABLE_TOTAL.inc();
-    tracing::error!(
-        target: "gateway.stage",
-        event = "idempotency_unavailable",
-        op = op,
-        fingerprint = %fingerprint,
-        error = %error,
-        "Idempotency store failed; rejecting keyed request (fail-closed)"
-    );
-    ProxyError::IdempotencyUnavailable {
-        retry_after_secs: IDEMPOTENCY_UNAVAILABLE_RETRY_AFTER_SECS,
-    }
-}
-
 #[cfg(test)]
 mod transport_profile_tests {
     use super::{
@@ -1328,7 +1234,7 @@ mod transport_profile_tests {
     };
     use crate::gateway::ProxyError;
     use mazbri_core::crypto::transport::{
-        SealEnvelopeParams, open_envelope, seal_envelope, TransportCryptoError,
+        EnvelopeDirection, SealEnvelopeParams, open_envelope, seal_envelope, TransportCryptoError,
     };
     use mazbri_core::crypto::{
         AlgorithmId, AlgorithmRegistry, CryptoError, KeySelection, TransportMode,
@@ -1387,8 +1293,8 @@ mod transport_profile_tests {
         let sealed = seal_envelope(SealEnvelopeParams {
             profile: &transport,
             registry,
-            data_key: &key,
-            mac_key: None,
+            master_key: &key,
+            direction: EnvelopeDirection::ClientToGateway,
             key_version: "v1",
             tenant_id: "11111111-1111-1111-1111-111111111111",
             http_path: "/api/v1/gateway",
@@ -1401,13 +1307,25 @@ mod transport_profile_tests {
             &transport,
             registry,
             &key,
-            None,
+            EnvelopeDirection::ClientToGateway,
             "11111111-1111-1111-1111-111111111111",
             "/api/v1/gateway",
             &sealed,
         )
         .expect("open");
         assert_eq!(opened, plaintext);
+        assert!(
+            open_envelope(
+                &transport,
+                registry,
+                &key,
+                EnvelopeDirection::GatewayToClient,
+                "11111111-1111-1111-1111-111111111111",
+                "/api/v1/gateway",
+                &sealed,
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -1455,35 +1373,5 @@ mod transport_profile_tests {
             Some(KeySelection::Latest { key_id }) => assert_eq!(key_id, "v1"),
             other => panic!("unexpected key {other:?}"),
         }
-    }
-}
-
-#[cfg(test)]
-mod idempotency_fail_closed_tests {
-    use super::idempotency_unavailable;
-    use crate::gateway::metrics::GATEWAY_IDEMPOTENCY_UNAVAILABLE_TOTAL;
-    use axum::http::StatusCode;
-    use axum::response::IntoResponse;
-
-    #[tokio::test]
-    async fn redis_failure_maps_to_503_with_retry_after_and_code() {
-        let before = GATEWAY_IDEMPOTENCY_UNAVAILABLE_TOTAL.get();
-        let err = idempotency_unavailable("SET NX", "fp-1", &"connection refused");
-        assert!(GATEWAY_IDEMPOTENCY_UNAVAILABLE_TOTAL.get() > before);
-        assert_eq!(err.error_code(), "IDEMPOTENCY_UNAVAILABLE");
-        let response = err.into_response();
-        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
-        assert_eq!(
-            response
-                .headers()
-                .get(axum::http::header::RETRY_AFTER)
-                .and_then(|v| v.to_str().ok()),
-            Some("1")
-        );
-        let body = axum::body::to_bytes(response.into_body(), 1 << 16)
-            .await
-            .expect("body");
-        let text = String::from_utf8(body.to_vec()).expect("utf8");
-        assert!(text.contains("IDEMPOTENCY_UNAVAILABLE"));
     }
 }

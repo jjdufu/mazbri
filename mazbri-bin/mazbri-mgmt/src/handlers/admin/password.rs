@@ -70,6 +70,7 @@ pub async fn change_password(
         .map_err(|e| ApiError::internal(format!("Token 中的用户 ID 无效: {e}")))?;
     let data = admin::change_password(&state.admin_db, &state.password_policy_cache, user_id, &req)
         .await?;
+    crate::middleware::auth::invalidate_admin_subject_state(&state.redis, user_id).await;
     let client_ip = extract_client_ip(&headers, Some(addr));
     state.audit.log(create_audit_log(
         user_id,

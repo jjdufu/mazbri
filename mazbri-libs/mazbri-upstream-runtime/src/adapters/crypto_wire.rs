@@ -10,7 +10,7 @@ use serde_json::Value;
 
 use crate::crypto_pipeline::{
     PipelineContext, PipelineError, PipelineKeys, RequestParts, default_slots_json_cipher_sign_iv,
-    default_slots_sign_form, open_response_with_validation, parts_from_json_object,
+    default_slots_sign_form, open_response_with_validation, parts_from_response,
     seal_request_with_validation,
 };
 use crate::types::{BodyKind, ExecuteError};
@@ -231,77 +231,123 @@ pub(crate) fn encode_merged_form(
         .join("&")
 }
 
-/// 若响应 JSON 含 profile 声明的 cipher/sign 槽，则尝试 `open_response`；否则原样返回。
-pub(crate) fn maybe_open_json_body(
+/// 根据 `verify_response` / `should_decrypt_response()` 裁剪响应侧生效的 `UpstreamCryptoProfile`。
+fn profile_for_response_open(profile: &UpstreamCryptoProfile) -> Cow<'_, UpstreamCryptoProfile> {
+    let want_verify = profile.verify_response;
+    let want_decrypt = profile.should_decrypt_response();
+    let effective = profile_with_slots(profile, false);
+    let order = match (want_verify, want_decrypt, effective.order) {
+        (true, false, _) => CryptoOrder::SignOnly,
+        (false, true, CryptoOrder::AeadOnly) => CryptoOrder::AeadOnly,
+        (false, true, _) => {
+            let is_aead = effective
+                .response_crypt
+                .as_ref()
+                .or(effective.crypt.as_ref())
+                .is_some_and(|c| c.alg.kind() == mazbri_crypto::AlgorithmKind::Aead);
+            if is_aead {
+                CryptoOrder::AeadOnly
+            } else {
+                CryptoOrder::EncryptOnly
+            }
+        }
+        (true, true, existing) | (false, false, existing) => existing,
+    };
+    if order == effective.order {
+        return effective;
+    }
+    let mut owned = effective.into_owned();
+    owned.order = order;
+    if !want_decrypt {
+        owned.crypt = None;
+        owned.response_crypt = None;
+    }
+    if !want_verify {
+        owned.sign = None;
+    }
+    Cow::Owned(owned)
+}
+
+/// 严格解封响应体（Fail-Closed）：
+/// - 若 `profile.should_open_response() == false`（单向仅保护请求），直接原样返回响应字节；
+/// - 若启用了 `verify_response` 或响应解密，则把响应 `headers` 与 `body` 一并装填进 `SlotBags`
+///   并执行 `open_response`，任何缺槽位、验签失败或解密失败一律返回 `Err(ExecuteError)`，
+///   严禁静默回退明文 JSON。
+pub(crate) fn open_response_body_strict(
     body: &[u8],
+    headers: &HashMap<String, String>,
     profile: &UpstreamCryptoProfile,
     keys: &PipelineKeys,
     registry: &AlgorithmRegistry,
     canon_fields: &[(String, String)],
     skip_validate: bool,
-) -> Vec<u8> {
-    let Ok(Value::Object(map)) = serde_json::from_slice::<Value>(body) else {
-        return body.to_vec();
-    };
-    let interested: Vec<&str> = profile
-        .slots
-        .iter()
-        .filter(|s| {
-            s.location == SlotLocation::Json
-                && matches!(
-                    s.role.as_str(),
-                    crate::slots::role::CIPHER
-                        | crate::slots::role::SIGN
-                        | crate::slots::role::IV
-                        | crate::slots::role::BIZ
-                )
-        })
-        .map(|s| s.name.as_str())
-        .collect();
-    if interested.is_empty() || !interested.iter().any(|n| map.contains_key(*n)) {
-        return body.to_vec();
+) -> Result<Vec<u8>, ExecuteError> {
+    if !profile.should_open_response() {
+        return Ok(body.to_vec());
     }
-    let parts = parts_from_json_object(&map, profile);
+    let open_profile = profile_for_response_open(profile);
+    let derived;
+    let fields: &[(String, String)] = if canon_fields.is_empty() {
+        if matches!(open_profile.canon, CanonStyle::SortedKv | CanonStyle::Concat) {
+            derived = derive_canon_fields_from_body(body, &open_profile)?;
+            derived.as_slice()
+        } else {
+            &[]
+        }
+    } else {
+        canon_fields
+    };
+    let parts = parts_from_response(body, headers, &open_profile);
     let ctx = PipelineContext {
         registry,
-        canon_fields,
+        canon_fields: fields,
         canon_sep: "&",
         aad: &[],
         field_iv: None,
     };
-    match open_response_with_validation(&parts, profile, keys, &ctx, skip_validate) {
-        Ok(plain) => plain,
-        Err(err) => {
-            tracing::debug!(error = %err, "open_response skipped; using raw JSON body");
-            body.to_vec()
-        }
-    }
+    open_response_with_validation(&parts, &open_profile, keys, &ctx, skip_validate)
+        .map_err(|e| map_pipeline_err(&e))
 }
 
-/// 响应对象验签（软失败：仅 warn，与历史 `sign_form` 行为一致）。
-pub(crate) fn soft_verify_signed_object(
+/// 严格响应对象验签（Fail-Closed）：
+/// 仅在 `profile.verify_response == true` 时启用；缺签名或验签不通过一律返回 `Err(ExecuteError)`。
+pub(crate) fn verify_signed_object_strict(
     obj: &Value,
+    headers: &HashMap<String, String>,
     profile: &UpstreamCryptoProfile,
     keys: &PipelineKeys,
     registry: &AlgorithmRegistry,
-) {
-    let Some(map) = obj.as_object() else {
-        return;
-    };
-    if profile.sign.is_none() {
-        return;
+) -> Result<(), ExecuteError> {
+    if !profile.verify_response || profile.sign.is_none() {
+        return Ok(());
     }
-    let sign_name = profile
+    let map = obj.as_object().ok_or_else(|| {
+        ExecuteError::AdapterFailed("signed response payload must be a JSON object".into())
+    })?;
+    let sign_spec = profile
         .slots
         .iter()
-        .find(|s| s.role == crate::slots::role::SIGN)
-        .map_or("sign", |s| s.name.as_str());
-    let Some(Value::String(sig)) = map.get(sign_name) else {
-        return;
-    };
+        .find(|s| s.role == crate::slots::role::SIGN);
+    let (sign_location, sign_name) = sign_spec.map_or(
+        (SlotLocation::Json, "sign"),
+        |s| (s.location, s.name.as_str()),
+    );
+    let sig = match sign_location {
+        SlotLocation::Header => headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case(sign_name))
+            .map(|(_, v)| v.clone())
+            .or_else(|| map.get(sign_name).and_then(Value::as_str).map(str::to_owned)),
+        _ => map.get(sign_name).and_then(Value::as_str).map(str::to_owned),
+    }
+    .filter(|s| !s.is_empty())
+    .ok_or_else(|| {
+        ExecuteError::AdapterFailed(format!("missing response signature slot '{sign_name}'"))
+    })?;
+
     let mut fields: Vec<(String, String)> = Vec::new();
     for (k, v) in map {
-        if k == sign_name {
+        if sign_location == SlotLocation::Json && k == sign_name {
             continue;
         }
         let s = match v {
@@ -320,6 +366,7 @@ pub(crate) fn soft_verify_signed_object(
     verify_profile.canon = CanonStyle::SortedKv;
     verify_profile.order = CryptoOrder::SignOnly;
     verify_profile.crypt = None;
+    verify_profile.response_crypt = None;
     verify_profile.slots = vec![mazbri_crypto::SlotSpec {
         role: crate::slots::role::SIGN.into(),
         location: SlotLocation::Json,
@@ -327,7 +374,7 @@ pub(crate) fn soft_verify_signed_object(
     }];
 
     let mut parts = RequestParts::blank();
-    let _ = parts.slots.write(SlotLocation::Json, sign_name, sig.clone());
+    let _ = parts.slots.write(SlotLocation::Json, sign_name, sig);
     parts.body = Vec::new();
 
     let ctx = PipelineContext {
@@ -337,7 +384,123 @@ pub(crate) fn soft_verify_signed_object(
         aad: &[],
         field_iv: None,
     };
-    if let Err(err) = open_response_with_validation(&parts, &verify_profile, keys, &ctx, true) {
-        tracing::warn!(error = %err, "response signature verify failed");
+    open_response_with_validation(&parts, &verify_profile, keys, &ctx, true)
+        .map_err(|e| map_pipeline_err(&e))?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mazbri_crypto::{
+        AlgorithmId, CanonKeyAffix, CipherScope, CryptSpec, IvSource, KeyPurpose, KeyRef, SignSpec,
+        SlotSpec, WireEncodings,
+    };
+
+    #[test]
+    fn request_only_profile_leaves_plaintext_response_untouched() {
+        let registry = AlgorithmRegistry::default_registry();
+        let profile = UpstreamCryptoProfile {
+            version: 1,
+            order: CryptoOrder::AeadOnly,
+            scope: CipherScope::WholeBody,
+            crypt: Some(CryptSpec {
+                alg: AlgorithmId::Aes256Gcm,
+                fields: Vec::new(),
+                encoding: None,
+            }),
+            response_crypt: None,
+            verify_response: false,
+            decrypt_response: false,
+            sign: None,
+            wrap: None,
+            canon: CanonStyle::Raw,
+            canon_key_affix: CanonKeyAffix::None,
+            iv: IvSource::Random,
+            encodings: WireEncodings::base64_all(),
+            slots: Vec::new(),
+            allow_insecure: false,
+        };
+        let keys = PipelineKeys {
+            data: Some(KeyRef::raw(KeyPurpose::DataEncryption, vec![0x42; 32])),
+            ..PipelineKeys::empty()
+        };
+        let raw = br#"{"payload":"plain-upstream-field","code":0}"#;
+        let out = open_response_body_strict(
+            raw,
+            &HashMap::new(),
+            &profile,
+            &keys,
+            &registry,
+            &[],
+            false,
+        )
+        .expect("passthrough when response crypto disabled");
+        assert_eq!(out, raw);
+    }
+
+    #[test]
+    fn bidirectional_profile_fails_closed_on_forged_plaintext_and_verifies_header_sig() {
+        let registry = AlgorithmRegistry::default_registry();
+        let profile = UpstreamCryptoProfile {
+            version: 1,
+            order: CryptoOrder::SignOnly,
+            scope: CipherScope::WholeBody,
+            crypt: None,
+            response_crypt: None,
+            verify_response: true,
+            decrypt_response: false,
+            sign: Some(SignSpec {
+                alg: AlgorithmId::HmacSha256,
+                encoding: None,
+            }),
+            wrap: None,
+            canon: CanonStyle::Raw,
+            canon_key_affix: CanonKeyAffix::None,
+            iv: IvSource::Random,
+            encodings: WireEncodings::base64_all(),
+            slots: vec![SlotSpec {
+                role: crate::slots::role::SIGN.into(),
+                location: SlotLocation::Header,
+                name: "X-Sign".into(),
+            }],
+            allow_insecure: false,
+        };
+        let keys = PipelineKeys {
+            mac: Some(KeyRef::raw(KeyPurpose::Mac, b"shared-secret".to_vec())),
+            ..PipelineKeys::empty()
+        };
+        let body = br#"{"status":"ok"}"#;
+        // Forged plaintext response without X-Sign header must fail closed.
+        assert!(
+            open_response_body_strict(
+                body,
+                &HashMap::new(),
+                &profile,
+                &keys,
+                &registry,
+                &[],
+                false,
+            )
+            .is_err()
+        );
+
+        let sealed = seal_body(body, &profile, &keys, &registry, &[], false).expect("seal");
+        let mut resp_headers = HashMap::new();
+        resp_headers.insert(
+            "x-sign".to_owned(),
+            sealed.slots.headers["X-Sign"].clone(),
+        );
+        let verified = open_response_body_strict(
+            body,
+            &resp_headers,
+            &profile,
+            &keys,
+            &registry,
+            &[],
+            false,
+        )
+        .expect("valid header signature");
+        assert_eq!(verified, body);
     }
 }

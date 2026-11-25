@@ -2,6 +2,7 @@ use crate::repository::{self, CallbackDeliveryLog, CallbackSubscription};
 use crate::retry::calculate_next_retry;
 use crate::signer::{generate_signature, validate_timestamp};
 use chrono::Utc;
+use mazbri_core::net::ssrf::{SsrfChecker, build_safe_http_client, extract_ssrf_error};
 use mazbri_core::num::SaturatingFrom;
 use reqwest::Client;
 use sqlx::PgPool;
@@ -35,10 +36,14 @@ impl Default for CallbackWorkerConfig {
     }
 }
 
+const CALLBACK_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+const CALLBACK_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+
 #[derive(Clone)]
 pub struct CallbackWorker {
     pool: PgPool,
     client: Client,
+    ssrf: SsrfChecker,
     config: CallbackWorkerConfig,
 }
 
@@ -50,15 +55,20 @@ impl CallbackWorker {
 
     #[must_use]
     pub fn with_config(pool: PgPool, config: &CallbackWorkerConfig) -> Self {
-        let client = Client::builder()
-            .timeout(Duration::from_secs(10))
-            .build()
+        Self::with_ssrf(pool, config, SsrfChecker::new())
+    }
+
+    #[must_use]
+    pub fn with_ssrf(pool: PgPool, config: &CallbackWorkerConfig, ssrf: SsrfChecker) -> Self {
+        let client = build_safe_http_client(&ssrf, CALLBACK_CONNECT_TIMEOUT, CALLBACK_REQUEST_TIMEOUT)
             .unwrap_or_else(|e| {
-                warn!(
+                error!(
                     error = %e,
-                    "Failed to build callback HTTP client with timeout; using default client"
+                    "Failed to build callback safe HTTP client; retrying minimal safe builder"
                 );
-                Client::new()
+                ssrf.configure_http_client(Client::builder())
+                    .build()
+                    .unwrap_or_default()
             });
         let config = CallbackWorkerConfig {
             batch_size: config.batch_size.max(1),
@@ -69,6 +79,7 @@ impl CallbackWorker {
         Self {
             pool,
             client,
+            ssrf,
             config,
         }
     }
@@ -158,34 +169,67 @@ impl CallbackWorker {
         status: &str,
         reason: &str,
     ) -> anyhow::Result<()> {
-        repository::update_delivery_status(
+        let updated = repository::update_delivery_status(
             &self.pool,
-            task.id,
-            status,
-            task.retry_count,
-            None,
-            None,
-            Some(reason),
+            repository::DeliveryStatusUpdate {
+                id: task.id,
+                lease_seq: task.lease_seq,
+                status,
+                retry_count: task.retry_count,
+                next_retry_at: None,
+                response_code: None,
+                error: Some(reason),
+            },
         )
         .await?;
+        if !updated {
+            warn!(
+                callback_id = %task.id,
+                lease_seq = task.lease_seq,
+                "Callback terminal status update fenced out by newer lease"
+            );
+        }
         Ok(())
     }
 
-    async fn process_task(&self, task: CallbackDeliveryLog) -> anyhow::Result<()> {
+    async fn fetch_active_subscription(
+        &self,
+        task: &CallbackDeliveryLog,
+    ) -> anyhow::Result<Option<CallbackSubscription>> {
         let sub_row = sqlx::query_as::<_, CallbackSubscription>(
             "SELECT id, tenant_id, product_id, callback_url, secret_key, retry_policy, is_active FROM mazbri_platform.callback_subscriptions WHERE id = $1",
         )
         .bind(task.subscription_id)
         .fetch_optional(&self.pool)
         .await?;
-        let sub = match sub_row {
-            Some(s) if s.is_active => s,
+        match sub_row {
+            Some(s) if s.is_active => Ok(Some(s)),
             _ => {
                 warn!(
                     "Subscription {} not found or inactive for task {}",
                     task.subscription_id, task.id
                 );
-                self.mark_terminal(&task, "abandoned", "Subscription inactive")
+                self.mark_terminal(task, "abandoned", "Subscription inactive")
+                    .await?;
+                Ok(None)
+            }
+        }
+    }
+
+    async fn process_task(&self, task: CallbackDeliveryLog) -> anyhow::Result<()> {
+        let Some(sub) = self.fetch_active_subscription(&task).await? else {
+            return Ok(());
+        };
+        let req_builder = match self.ssrf.checked_post(&self.client, &sub.callback_url) {
+            Ok(builder) => builder,
+            Err(ssrf_err) => {
+                warn!(
+                    callback_id = %task.id,
+                    subscription_id = %task.subscription_id,
+                    error = %ssrf_err,
+                    "Callback skipped due to SSRF policy rejection"
+                );
+                self.mark_terminal(&task, "failed", &ssrf_err.to_string())
                     .await?;
                 return Ok(());
             }
@@ -213,9 +257,7 @@ impl CallbackWorker {
                 return Ok(());
             }
         };
-        let response = self
-            .client
-            .post(&sub.callback_url)
+        let response = req_builder
             .header("Content-Type", "application/json")
             .header("X-Mazbri-Signature", signature)
             .header("X-Mazbri-Timestamp", timestamp)
@@ -225,16 +267,26 @@ impl CallbackWorker {
         match response {
             Ok(resp) if resp.status().is_success() => {
                 info!("Callback {} delivered successfully", task.id);
-                repository::update_delivery_status(
+                let updated = repository::update_delivery_status(
                     &self.pool,
-                    task.id,
-                    "success",
-                    task.retry_count,
-                    None,
-                    Some(i32::from(resp.status().as_u16())),
-                    None,
+                    repository::DeliveryStatusUpdate {
+                        id: task.id,
+                        lease_seq: task.lease_seq,
+                        status: "success",
+                        retry_count: task.retry_count,
+                        next_retry_at: None,
+                        response_code: Some(i32::from(resp.status().as_u16())),
+                        error: None,
+                    },
                 )
                 .await?;
+                if !updated {
+                    warn!(
+                        callback_id = %task.id,
+                        lease_seq = task.lease_seq,
+                        "Callback success update fenced out by newer lease"
+                    );
+                }
             }
             Ok(resp) => {
                 let status_code = resp.status().as_u16();
@@ -243,9 +295,19 @@ impl CallbackWorker {
                     .await?;
             }
             Err(e) => {
-                error!("Callback {} request error: {}", task.id, e);
-                self.handle_failure(task, sub, None, Some(&e.to_string()))
-                    .await?;
+                if let Some(ssrf_msg) = extract_ssrf_error(&e) {
+                    warn!(
+                        callback_id = %task.id,
+                        subscription_id = %task.subscription_id,
+                        error = %ssrf_msg,
+                        "Callback blocked at connect-time DNS by SSRF policy"
+                    );
+                    self.mark_terminal(&task, "failed", &ssrf_msg).await?;
+                } else {
+                    error!("Callback {} request error: {}", task.id, e);
+                    self.handle_failure(task, sub, None, Some(&e.to_string()))
+                        .await?;
+                }
             }
         }
         Ok(())
@@ -273,16 +335,26 @@ impl CallbackWorker {
                 "Scheduling retry for callback {} at {}",
                 task.id, next_retry
             );
-            repository::update_delivery_status(
+            let updated = repository::update_delivery_status(
                 &self.pool,
-                task.id,
-                "retrying",
-                task.retry_count + 1,
-                Some(next_retry),
-                status_code,
-                error_msg,
+                repository::DeliveryStatusUpdate {
+                    id: task.id,
+                    lease_seq: task.lease_seq,
+                    status: "retrying",
+                    retry_count: task.retry_count + 1,
+                    next_retry_at: Some(next_retry),
+                    response_code: status_code,
+                    error: error_msg,
+                },
             )
             .await?;
+            if !updated {
+                warn!(
+                    callback_id = %task.id,
+                    lease_seq = task.lease_seq,
+                    "Callback retry update fenced out by newer lease"
+                );
+            }
         } else {
             // Terminal failure: delivery log status=failed is the operator signal (H-25).
             // Poll delivery_logs WHERE status='failed' or subscribe ops webhook separately.
@@ -294,17 +366,92 @@ impl CallbackWorker {
                 error = ?error_msg,
                 "Callback delivery permanently failed after max retries (ops: check delivery_logs)"
             );
-            repository::update_delivery_status(
+            let updated = repository::update_delivery_status(
                 &self.pool,
-                task.id,
-                "failed",
-                task.retry_count,
-                None,
-                status_code,
-                error_msg,
+                repository::DeliveryStatusUpdate {
+                    id: task.id,
+                    lease_seq: task.lease_seq,
+                    status: "failed",
+                    retry_count: task.retry_count,
+                    next_retry_at: None,
+                    response_code: status_code,
+                    error: error_msg,
+                },
             )
             .await?;
+            if !updated {
+                warn!(
+                    callback_id = %task.id,
+                    lease_seq = task.lease_seq,
+                    "Callback failure update fenced out by newer lease"
+                );
+            }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn callback_safe_client_blocks_loopback_and_disables_redirects() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        tokio::spawn(async move {
+            if let Ok((mut sock, _)) = listener.accept().await {
+                let mut buf = [0u8; 1024];
+                let _ = sock.read(&mut buf).await;
+                let _ = sock
+                    .write_all(
+                        b"HTTP/1.1 302 Found\r\nLocation: http://169.254.169.254/\r\nContent-Length: 0\r\n\r\n",
+                    )
+                    .await;
+            }
+        });
+
+        let strict_ssrf = SsrfChecker::new();
+        let strict_client = build_safe_http_client(
+            &strict_ssrf,
+            CALLBACK_CONNECT_TIMEOUT,
+            CALLBACK_REQUEST_TIMEOUT,
+        )
+        .expect("strict client");
+        assert!(
+            strict_ssrf
+                .checked_post(&strict_client, &format!("http://{addr}/cb"))
+                .is_err()
+        );
+        let err = strict_ssrf
+            .checked_post(
+                &strict_client,
+                &format!("http://metadata.google.internal:{}/cb", addr.port()),
+            )
+            .expect_err("metadata host blocked synchronously");
+        assert!(err.to_string().contains("SSRF Violation:"));
+        let dns_err = strict_client
+            .post(format!("http://localhost:{}/cb", addr.port()))
+            .send()
+            .await
+            .expect_err("domain loopback callback must be blocked by SsrfSafeResolver");
+        assert!(extract_ssrf_error(&dns_err).is_some());
+
+        let allow_local = build_safe_http_client(
+            &SsrfChecker::with_allow_private(true),
+            CALLBACK_CONNECT_TIMEOUT,
+            CALLBACK_REQUEST_TIMEOUT,
+        )
+        .expect("allow_local client");
+        let resp = allow_local
+            .post(format!("http://{addr}/cb"))
+            .send()
+            .await
+            .expect("302 returned without following redirect");
+        assert_eq!(resp.status().as_u16(), 302);
     }
 }

@@ -12,7 +12,7 @@ pub(super) async fn try_cbpro_fallback(
     failure_kind: &str,
 ) -> Option<UpstreamResponse> {
     let cbpro_client = state.cbpro_client.as_ref()?;
-    let cache_key = build_fallback_cache_key(req);
+    let cache_key = build_fallback_cache_key(&claims.tenant_id, req);
     let lookup_started_at = Instant::now();
     let fallback = cbpro_client
         .get_fallback(FallbackRequest {
@@ -233,18 +233,52 @@ pub(super) fn enqueue_cbpro_observation(state: &ProxyState, observation: Observa
         debug!(error = % error, "CBPro observation queue full, dropping event");
     }
 }
-pub(super) fn build_fallback_cache_key(req: &GatewayRequest) -> String {
-    let query = req.query.as_ref().map_or_default(|query| {
-        query
+pub(super) fn build_fallback_cache_key(tenant_id: &str, req: &GatewayRequest) -> String {
+    let mut hasher = sha2::Sha256::new();
+    let push_len = |h: &mut sha2::Sha256, bytes: &[u8]| {
+        h.update((bytes.len() as u64).to_be_bytes());
+        h.update(bytes);
+    };
+    push_len(&mut hasher, tenant_id.as_bytes());
+    push_len(&mut hasher, req.product_id.as_bytes());
+    let upper_method = req.method.trim().to_ascii_uppercase();
+    push_len(&mut hasher, upper_method.as_bytes());
+    push_len(&mut hasher, req.path.as_bytes());
+
+    let mut route_headers: BTreeMap<String, &str> = BTreeMap::new();
+    if let Some(ref headers) = req.headers {
+        for (k, v) in headers {
+            let lower = k.trim().to_ascii_lowercase();
+            if matches!(lower.as_str(), "x-api-version" | "accept" | "content-type") {
+                route_headers.insert(lower, v.trim());
+            }
+        }
+    }
+    hasher.update((route_headers.len() as u64).to_be_bytes());
+    for (k, v) in route_headers {
+        push_len(&mut hasher, k.as_bytes());
+        push_len(&mut hasher, v.as_bytes());
+    }
+
+    if let Some(ref query) = req.query {
+        let sorted: BTreeMap<&str, &str> = query
             .iter()
-            .map(|(key, value)| (key.clone(), value.clone()))
-            .collect::<BTreeMap<_, _>>()
-    });
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+        hasher.update((sorted.len() as u64).to_be_bytes());
+        for (k, v) in sorted {
+            push_len(&mut hasher, k.as_bytes());
+            push_len(&mut hasher, v.as_bytes());
+        }
+    } else {
+        hasher.update(0_u64.to_be_bytes());
+    }
+
     let body = request_body_as_json(req.body.as_ref()).unwrap_or(serde_json::Value::Null);
-    serde_json::json!(
-        { "method" : req.method, "path" : req.path, "query" : query, "body" : body, }
-    )
-    .to_string()
+    let body_bytes = serde_json::to_vec(&body).unwrap_or_default();
+    push_len(&mut hasher, &body_bytes);
+
+    hex::encode(hasher.finalize())
 }
 pub(super) fn request_body_as_json(body: Option<&GatewayRequestBody>) -> Option<serde_json::Value> {
     body.and_then(|b| serde_json::from_str(b.as_raw_json_str()).ok())

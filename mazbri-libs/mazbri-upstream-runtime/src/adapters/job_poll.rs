@@ -143,6 +143,36 @@ async fn invoke_submit(
     })
 }
 
+/// Maximum length of a tenant-supplied `job_id` in `job_poll` query mode.
+const MAX_JOB_ID_LEN: usize = 128;
+
+fn validate_and_encode_job_id(raw: &str) -> Result<String, ExecuteError> {
+    if raw.is_empty() {
+        return Err(ExecuteError::SpecInvalid(format!(
+            "job_poll {MODE_FIELD}=query: {JOB_ID_FIELD} must not be empty"
+        )));
+    }
+    if raw.len() > MAX_JOB_ID_LEN {
+        return Err(ExecuteError::SpecInvalid(format!(
+            "job_poll {MODE_FIELD}=query: {JOB_ID_FIELD} exceeds max length {MAX_JOB_ID_LEN}"
+        )));
+    }
+    if raw == "." || raw == ".." {
+        return Err(ExecuteError::SpecInvalid(format!(
+            "job_poll {MODE_FIELD}=query: {JOB_ID_FIELD} cannot be '.' or '..'"
+        )));
+    }
+    if !raw
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b':' | b'-'))
+    {
+        return Err(ExecuteError::SpecInvalid(format!(
+            "job_poll {MODE_FIELD}=query: {JOB_ID_FIELD} contains invalid characters (allowed: [A-Za-z0-9._:-])"
+        )));
+    }
+    Ok(mazbri_core::net::encode_path_segment(raw))
+}
+
 async fn invoke_query(
     ctx: &AdapterCtx<'_>,
     jp: &JobPollSpec,
@@ -163,15 +193,11 @@ async fn invoke_query(
             "job_poll {MODE_FIELD}=query requires string field {JOB_ID_FIELD}"
         ))
     })?;
-    if job_id.is_empty() {
-        return Err(ExecuteError::SpecInvalid(format!(
-            "job_poll {MODE_FIELD}=query: {JOB_ID_FIELD} must not be empty"
-        )));
-    }
+    let encoded_job_id = validate_and_encode_job_id(job_id)?;
 
     let headers = super::merge_request_headers(ctx.auth, spec);
     let query = super::merge_request_query(ctx.auth, spec);
-    let query_path = jp.query_path.replace("{job_id}", job_id);
+    let query_path = jp.query_path.replace("{job_id}", &encoded_job_id);
     let qurl = append_query(&join_url(ctx.base_url, &query_path), &query);
     let last = super::dispatch_http(
         ctx,
@@ -377,5 +403,35 @@ mod tests {
         assert_eq!(out.payload["job_id"], "j-1");
         tokio::time::sleep(Duration::from_millis(300)).await;
         assert_eq!(hits.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn validate_and_encode_job_id_blocks_traversal_and_url_injection() {
+        assert_eq!(
+            validate_and_encode_job_id("job_01:ns-abc.9").expect("valid job_id"),
+            "job_01%3Ans-abc.9"
+        );
+        let overlong = "a".repeat(129);
+        for bad in [
+            "",
+            ".",
+            "..",
+            "../admin",
+            "a/b",
+            "a\\b",
+            "a?admin=1",
+            "a#frag",
+            "%2e%2e",
+            "http://evil.example/pwn",
+            overlong.as_str(),
+        ] {
+            assert!(
+                matches!(
+                    validate_and_encode_job_id(bad),
+                    Err(ExecuteError::SpecInvalid(_))
+                ),
+                "bad job_id '{bad}' must be rejected"
+            );
+        }
     }
 }

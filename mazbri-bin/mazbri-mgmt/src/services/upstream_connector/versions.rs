@@ -81,15 +81,106 @@ pub async fn version_diff(
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+pub struct RollbackParams<'a> {
+    pub audit: &'a AuditService,
+    pub ssrf: &'a super::SsrfChecker,
+    pub supplier_id: Uuid,
+    pub req: RollbackRequest,
+    pub actor: &'a str,
+    pub user_id: Uuid,
+    pub is_super_admin: bool,
+    pub client_ip: Option<String>,
+}
+
+async fn validate_rolled_back_supplier(
+    ssrf: &super::SsrfChecker,
+    rolled_cfg: &SupplierConfig,
+    raw_snapshot: &serde_json::Value,
+    old_cfg: &serde_json::Value,
+    upstream_url: &str,
+    is_super_admin: bool,
+) -> Result<(), ApiError> {
+    super::guard_supplier_tls_privilege(raw_snapshot, Some(old_cfg), is_super_admin)?;
+    rolled_cfg
+        .validate_upstream_url_for_type(upstream_url)
+        .map_err(|e| ApiError::validation(format!("CONFIG_INVALID: {e}")))?;
+
+    if rolled_cfg.is_transparent() {
+        super::ssrf::validate_public_http_url(ssrf, upstream_url)
+            .await
+            .map_err(|e| ApiError::validation(format!("SSRF_BLOCKED: {e}")))?;
+        if let Some(ref auth) = rolled_cfg.auth_flow
+            && auth.enabled
+            && !auth.token_url.trim().is_empty()
+        {
+            super::ssrf::validate_public_http_url(ssrf, &auth.token_url)
+                .await
+                .map_err(|e| ApiError::validation(format!("SSRF_BLOCKED token_url: {e}")))?;
+        }
+    }
+    Ok(())
+}
+
+async fn insert_rollback_version_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    supplier_id: Uuid,
+    ver: &repo::VersionRow,
+    reason: Option<&str>,
+    actor: &str,
+) -> Result<(i32, Uuid), ApiError> {
+    let version_no: i32 = sqlx::query_scalar(
+        "SELECT COALESCE(MAX(version_no), 0) + 1 FROM upstream_connector_versions WHERE supplier_id = $1",
+    )
+    .bind(supplier_id)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(|e| ApiError::internal(format!("version no: {e}")))?;
+
+    let comment = format!(
+        "rollback to v{}: {}",
+        ver.version_no,
+        reason.unwrap_or_default()
+    );
+    let new_version_id: Uuid = sqlx::query_scalar(
+        r"
+        INSERT INTO upstream_connector_versions
+            (supplier_id, version_no, config_snapshot, channels_snapshot,
+             endpoints_snapshot, comment, published_by)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        RETURNING id
+        ",
+    )
+    .bind(supplier_id)
+    .bind(version_no)
+    .bind(&ver.config_snapshot)
+    .bind(&ver.channels_snapshot)
+    .bind(&ver.endpoints_snapshot)
+    .bind(&comment)
+    .bind(actor)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(|e| ApiError::internal(format!("insert rollback version: {e}")))?;
+    Ok((version_no, new_version_id))
+}
+
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn rollback(
     pool: &PgPool,
-    audit: &AuditService,
-    supplier_id: Uuid,
-    req: RollbackRequest,
-    actor: &str,
-    user_id: Uuid,
-    client_ip: Option<String>,
+    params: RollbackParams<'_>,
 ) -> Result<serde_json::Value, ApiError> {
+    let RollbackParams {
+        audit,
+        ssrf,
+        supplier_id,
+        req,
+        actor,
+        user_id,
+        is_super_admin,
+        client_ip,
+    } = params;
+
     let ver = repo::get_version(pool, req.version_id)
         .await
         .map_err(|e| ApiError::internal(format!("get version: {e}")))?
@@ -101,43 +192,55 @@ pub async fn rollback(
         ));
     }
 
-    let old: Option<serde_json::Value> =
-        sqlx::query_scalar("SELECT config FROM suppliers WHERE id = $1")
-            .bind(supplier_id)
-            .fetch_optional(pool)
-            .await
-            .map_err(|e| ApiError::internal(format!("get supplier: {e}")))?;
+    super::guard_endpoints_tls_privilege(&ver.endpoints_snapshot, is_super_admin)?;
+    let rolled_cfg = SupplierConfig::parse_and_validate(&ver.config_snapshot)
+        .map_err(|e| ApiError::validation(format!("CONFIG_INVALID: {e}")))?
+        .normalize_disabled_sections();
+
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| ApiError::internal(format!("begin rollback tx: {e}")))?;
+
+    let supplier_row: Option<(String, serde_json::Value)> = sqlx::query_as(
+        "SELECT upstream_url, config FROM suppliers WHERE id = $1 FOR UPDATE",
+    )
+    .bind(supplier_id)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|e| ApiError::internal(format!("lock supplier: {e}")))?;
+
+    let Some((upstream_url, old_cfg)) = supplier_row else {
+        return Err(ApiError::not_found(
+            "supplier".into(),
+            supplier_id.to_string(),
+        ));
+    };
+
+    validate_rolled_back_supplier(
+        ssrf,
+        &rolled_cfg,
+        &ver.config_snapshot,
+        &old_cfg,
+        &upstream_url,
+        is_super_admin,
+    )
+    .await?;
 
     sqlx::query("UPDATE suppliers SET config = $2, updated_at = NOW() WHERE id = $1")
         .bind(supplier_id)
         .bind(&ver.config_snapshot)
-        .execute(pool)
+        .execute(&mut *tx)
         .await
         .map_err(|e| ApiError::internal(format!("rollback update: {e}")))?;
 
-    // New version snapshot for rollback action
-    let version_no = repo::next_version_no(pool, supplier_id)
+    let (version_no, new_version_id) =
+        insert_rollback_version_tx(&mut tx, supplier_id, &ver, req.reason.as_deref(), actor)
+            .await?;
+
+    tx.commit()
         .await
-        .map_err(|e| ApiError::internal(format!("version no: {e}")))?;
-    let comment = format!(
-        "rollback to v{}: {}",
-        ver.version_no,
-        req.reason.clone().unwrap_or_default()
-    );
-    let new_ver = repo::insert_version(
-        pool,
-        repo::NewVersion {
-            supplier_id,
-            version_no,
-            config_snapshot: &ver.config_snapshot,
-            channels_snapshot: &ver.channels_snapshot,
-            endpoints_snapshot: &ver.endpoints_snapshot,
-            comment: Some(&comment),
-            published_by: Some(actor),
-        },
-    )
-    .await
-    .map_err(|e| ApiError::internal(format!("insert rollback version: {e}")))?;
+        .map_err(|e| ApiError::internal(format!("commit rollback tx: {e}")))?;
 
     audit.log(AuditLogRequest {
         user_id: Some(user_id),
@@ -146,19 +249,19 @@ pub async fn rollback(
         resource_id: Some(supplier_id.to_string()),
         details: Some(serde_json::json!({
             "from_version_id": req.version_id,
-            "new_version_id": new_ver.id,
+            "new_version_id": new_version_id,
             "reason": req.reason,
         })),
         ip_address: client_ip,
-        old_value: old.map(mask_config_credentials),
+        old_value: Some(mask_config_credentials(old_cfg)),
         new_value: Some(mask_config_credentials(ver.config_snapshot)),
         ..Default::default()
     });
 
     Ok(serde_json::json!({
         "ok": true,
-        "version_id": new_ver.id,
-        "version_no": new_ver.version_no,
+        "version_id": new_version_id,
+        "version_no": version_no,
     }))
 }
 

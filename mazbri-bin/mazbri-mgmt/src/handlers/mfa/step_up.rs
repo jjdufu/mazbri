@@ -269,7 +269,8 @@ pub async fn mfa_step_up(
         Ok(loaded) => loaded,
         Err(response) => return *response,
     };
-    let ttl = step_up::effective_ttl(state.config.mfa.step_up_ttl_secs, sxp, now);
+    let ttl =
+        step_up::effective_category_ttl(category, state.config.mfa.step_up_ttl_secs, sxp, now);
     if verified.auth_epoch != checked.epoch || ttl.is_none() {
         rollback_step_up_grants(
             &state.admin_db,
@@ -289,6 +290,7 @@ pub async fn mfa_step_up(
     let window = StepUpWindow {
         uid: checked.user_id.to_string(),
         epoch: checked.epoch,
+        issued_at: now,
         opened_at: now,
         until: now.saturating_add(i64::try_from(ttl).unwrap_or(i64::MAX)),
         method,

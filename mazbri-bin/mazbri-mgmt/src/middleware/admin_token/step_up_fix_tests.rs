@@ -75,6 +75,7 @@ fn claims_for(user_id: uuid::Uuid, role: &str, sid: &str, sxp: i64) -> AdminClai
         token_type: Some("access".to_string()),
         sid: sid.to_string(),
         sxp: Some(sxp),
+        auth_epoch: 0,
     }
 }
 
@@ -158,6 +159,7 @@ async fn disable_rotates_refresh_and_rejects_the_old_one() {
             username: "fix-user",
             user_id: &user_id.to_string(),
             role: "R_FINANCE",
+            auth_epoch: 0,
             binding: &binding,
         },
         SECRET,
@@ -253,6 +255,7 @@ async fn backup_restore_keeps_the_category_window() {
     let window = StepUpWindow {
         uid: user_id.to_string(),
         epoch: 1,
+        issued_at: now,
         opened_at: now,
         until: now + 60,
         method: StepUpMethod::BackupCode,
@@ -295,6 +298,7 @@ async fn close_session_removes_categories_and_legacy_keys_for_that_sid_only() {
     let window = StepUpWindow {
         uid: uid.clone(),
         epoch: 1,
+        issued_at: now,
         opened_at: now,
         until: now + 30,
         method: StepUpMethod::Totp,
@@ -376,6 +380,7 @@ async fn certificate_window_is_reusable_and_does_not_open_admin() {
     let certificate = StepUpWindow {
         uid: uid.clone(),
         epoch: 2,
+        issued_at: now,
         opened_at: now,
         until: now + 60,
         method: StepUpMethod::Totp,
@@ -383,6 +388,7 @@ async fn certificate_window_is_reusable_and_does_not_open_admin() {
     let admin = StepUpWindow {
         uid: uid.clone(),
         epoch: 4,
+        issued_at: now,
         opened_at: now,
         until: now + 60,
         method: StepUpMethod::Totp,
@@ -431,6 +437,7 @@ async fn window_ttl_is_not_extended_by_a_later_write_of_the_same_key_without_a_n
     let window = StepUpWindow {
         uid: "user".to_string(),
         epoch: 1,
+        issued_at: now,
         opened_at: now,
         until: now + 20,
         method: StepUpMethod::Totp,

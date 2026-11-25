@@ -585,6 +585,7 @@ mod tests {
             token_type: None,
             sid: uuid::Uuid::nil().to_string(),
             sxp: None,
+            auth_epoch: 0,
         }
     }
 

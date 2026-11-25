@@ -438,6 +438,7 @@ import OpsPage from "@/components/ops/OpsPage.vue";
 import OpsCard from "@/components/ops/OpsCard.vue";
 import { fetchTrace, fetchTraceBilling } from "@/api/traces";
 import { fetchCallStages } from "@/api/call-monitor";
+import { useLatestRequest } from "@/composables/useLatestRequest";
 import type {
   LinkedSpan,
   TraceBillingRow,
@@ -503,7 +504,6 @@ const PALETTE = [
 const traceId = computed(() =>
   String(route.params.traceId ?? "").toLowerCase(),
 );
-const loading = ref(false);
 const missing = ref(false);
 const detail = ref<TraceDetail | null>(null);
 const selectedId = ref("");
@@ -512,9 +512,7 @@ const panelTab = ref("attributes");
 const bottomTab = ref("logs");
 
 const calls = ref<CallStageAccessRow[]>([]);
-const callsLoading = ref(false);
 const billing = ref<TraceBillingRow[]>([]);
-const billingLoading = ref(false);
 const billingError = ref("");
 
 const serviceIndex = computed(() => {
@@ -714,73 +712,83 @@ function defaultSelection(d: TraceDetail): string {
   );
 }
 
+const billingRunner = useLatestRequest(async (ctx, requestIds: string[]) => {
+  const rows = await fetchTraceBilling(requestIds.slice(0, 50), ctx.signal);
+  if (!ctx.isLatest()) return;
+  billing.value = rows;
+});
+const { loading: billingLoading } = billingRunner;
+
 async function loadBilling(requestIds: string[]) {
   billingError.value = "";
   billing.value = [];
-  if (!requestIds.length) return;
-  billingLoading.value = true;
+  if (!requestIds.length) {
+    billingRunner.cancel();
+    return;
+  }
   try {
-    billing.value = await fetchTraceBilling(requestIds.slice(0, 50));
+    await billingRunner.run(requestIds);
   } catch (error) {
     billingError.value =
       error instanceof HttpError && error.code === 403
         ? t("ops.traces.billing.forbidden")
         : t("ops.traces.billing.loadFailed");
-  } finally {
-    billingLoading.value = false;
   }
 }
 
+const callsRunner = useLatestRequest(async (ctx, id: string) => {
+  const fallbackRequest =
+    typeof route.query.request_id === "string" ? route.query.request_id : "";
+  let res = await fetchCallStages({ trace_id: id }, ctx.signal);
+  if (!res.calls.length && fallbackRequest) {
+    res = await fetchCallStages({ request_id: fallbackRequest }, ctx.signal);
+  }
+  if (!ctx.isLatest()) return;
+  calls.value = res.calls;
+  const ids = [...new Set(res.calls.map((c) => c.request_id).filter(Boolean))];
+  void loadBilling(ids);
+});
+const { loading: callsLoading } = callsRunner;
+
 async function loadCalls(id: string) {
-  callsLoading.value = true;
   try {
-    const fallbackRequest =
-      typeof route.query.request_id === "string" ? route.query.request_id : "";
-    let res = await fetchCallStages({ trace_id: id });
-    if (!res.calls.length && fallbackRequest) {
-      res = await fetchCallStages({ request_id: fallbackRequest });
-    }
-    calls.value = res.calls;
-    const ids = [
-      ...new Set(res.calls.map((c) => c.request_id).filter(Boolean)),
-    ];
-    void loadBilling(ids);
+    await callsRunner.run(id);
   } catch (error) {
     logger.error("Failed to load trace calls:", error);
     calls.value = [];
-  } finally {
-    callsLoading.value = false;
   }
 }
 
-let seq = 0;
+const traceRunner = useLatestRequest(async (ctx, id: string) => {
+  const res = await fetchTrace(id, startHint(), ctx.signal);
+  if (!ctx.isLatest()) return;
+  detail.value = res;
+  selectedId.value = defaultSelection(res);
+});
+const { loading } = traceRunner;
+
 async function load() {
   const id = traceId.value;
-  const mine = ++seq;
   if (!/^[0-9a-f]{32}$/.test(id)) {
+    traceRunner.cancel();
+    callsRunner.cancel();
+    billingRunner.cancel();
     ElMessage.error(t("ops.traces.invalidId"));
     return;
   }
-  loading.value = true;
   missing.value = false;
   detail.value = null;
   collapsed.value = new Set();
   void loadCalls(id);
   try {
-    const res = await fetchTrace(id, startHint());
-    if (mine !== seq) return;
-    detail.value = res;
-    selectedId.value = defaultSelection(res);
+    await traceRunner.run(id);
   } catch (error) {
-    if (mine !== seq) return;
     if (error instanceof HttpError && error.code === 404) {
       missing.value = true;
     } else {
       logger.error("Failed to load trace:", error);
       ElMessage.error(t("ops.traces.loadFailed"));
     }
-  } finally {
-    if (mine === seq) loading.value = false;
   }
 }
 

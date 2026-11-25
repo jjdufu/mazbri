@@ -3,6 +3,7 @@ import { ElMessage } from "element-plus";
 import { fetchMetricTimeseries } from "@/api/monitoring";
 import type { MetricSeries } from "@/types/api/monitoring";
 import { resolveStep } from "@/composables/ops/useStep";
+import { useLatestRequest } from "@/composables/useLatestRequest";
 import { withContainerDisplayName } from "@/utils/ops/container-name";
 import type { TimeRangeValue } from "@/utils/ops/time-range";
 
@@ -19,42 +20,46 @@ export function useMetricTimeseriesPanel(options: {
   timeRange: Ref<TimeRangeValue>;
   reloadTick?: Ref<number>;
 }) {
-  const loading = ref(false);
   const series = ref<Record<string, MetricSeries>>({});
 
   function chartList(): readonly MetricChartSpec[] {
     return unref(options.charts);
   }
 
-  async function reload() {
-    loading.value = true;
-    try {
-      const { start, end } = options.timeRange.value;
-      const step = resolveStep(end - start);
-      const next: Record<string, MetricSeries> = {};
-      await Promise.all(
-        chartList().map(async (chart) => {
-          const res = await fetchMetricTimeseries({
+  const { loading, run } = useLatestRequest(async (ctx) => {
+    const { start, end } = options.timeRange.value;
+    const step = resolveStep(end - start);
+    const next: Record<string, MetricSeries> = {};
+    await Promise.all(
+      chartList().map(async (chart) => {
+        const res = await fetchMetricTimeseries(
+          {
             metric: chart.metric,
             start,
             end,
             step,
-          });
-          if (chart.remapContainers) {
-            next[chart.metric] = {
-              ...res,
-              series: withContainerDisplayName(res.series || []),
-            };
-          } else {
-            next[chart.metric] = res;
-          }
-        }),
-      );
-      series.value = next;
+          },
+          ctx.signal,
+        );
+        if (chart.remapContainers) {
+          next[chart.metric] = {
+            ...res,
+            series: withContainerDisplayName(res.series || []),
+          };
+        } else {
+          next[chart.metric] = res;
+        }
+      }),
+    );
+    if (!ctx.isLatest()) return;
+    series.value = next;
+  });
+
+  async function reload() {
+    try {
+      await run();
     } catch (e) {
       ElMessage.error((e as Error).message || String(e));
-    } finally {
-      loading.value = false;
     }
   }
 
@@ -70,7 +75,9 @@ export function useMetricTimeseriesPanel(options: {
         range.end,
         range.preset,
         options.reloadTick?.value ?? 0,
-        isRef(options.charts) ? options.charts.value.length : options.charts.length,
+        isRef(options.charts)
+          ? options.charts.value.length
+          : options.charts.length,
       ] as const;
     },
     () => {

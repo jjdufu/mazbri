@@ -203,7 +203,7 @@
                 class="wb-env-peek__row"
               >
                 <code>{{ k }}</code>
-                <span>{{ v || "∅" }}</span>
+                <span>{{ !canWrite ? (v ? "••••••••" : "∅") : v || "∅" }}</span>
               </div>
             </div>
           </div>
@@ -230,7 +230,7 @@
         <ArtSvgIcon :icon="isDark ? 'ri:sun-fill' : 'ri:moon-line'" />
       </button>
 
-      <HoppMenu placement="bottom-end" :append-to="appendTo">
+      <HoppMenu v-if="canWrite" placement="bottom-end" :append-to="appendTo">
         <template #trigger>
           <button type="button" class="wb-topbar__btn">
             <span>{{ $t("upstreamConnector.importExport") }}</span>
@@ -238,7 +238,6 @@
           </button>
         </template>
         <button
-          v-if="canWrite"
           type="button"
           class="hopp-menu-item"
           @click="emit('open-import')"
@@ -246,16 +245,14 @@
           {{ $t("upstreamConnector.import") }}
         </button>
         <button
-          v-if="canWrite"
           type="button"
           class="hopp-menu-item"
           @click="emit('export-postman')"
         >
           {{ $t("upstreamConnector.exportPostman") }}
         </button>
-        <div v-if="canWrite" class="hopp-menu-divider" />
+        <div class="hopp-menu-divider" />
         <button
-          v-if="canWrite"
           type="button"
           class="hopp-menu-item"
           @click="envFileInput?.click()"
@@ -270,7 +267,7 @@
           {{ $t("upstreamConnector.exportEnvJson") }}
         </button>
         <button
-          v-if="canWrite && draft.linked_supplier_id"
+          v-if="draft.linked_supplier_id"
           type="button"
           class="hopp-menu-item is-divided"
           @click="emit('resync')"
@@ -280,6 +277,7 @@
       </HoppMenu>
 
       <input
+        v-if="canWrite"
         ref="envFileInput"
         type="file"
         accept=".json,application/json"

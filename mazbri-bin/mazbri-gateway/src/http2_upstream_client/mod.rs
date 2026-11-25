@@ -19,6 +19,22 @@ use mazbri_upstream_contracts::shared::{
 };
 
 const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+const MAX_GRPC_MESSAGE_BYTES: usize = 16 * 1024 * 1024;
+
+struct StreamInUseGuard(prometheus::IntGauge);
+
+impl StreamInUseGuard {
+    fn acquire(gauge: prometheus::IntGauge) -> Self {
+        gauge.inc();
+        Self(gauge)
+    }
+}
+
+impl Drop for StreamInUseGuard {
+    fn drop(&mut self) {
+        self.0.dec();
+    }
+}
 
 /// Default HTTP/2 connections per upstream endpoint; requests are spread round-robin so one
 /// connection's head-of-line / single-task scheduling no longer bounds the hop tail.
@@ -96,9 +112,11 @@ fn needs_refresh(age_secs: u64, ttl_secs: u64) -> bool {
 #[derive(Clone)]
 pub struct UpstreamHttp2ClientPool {
     clients: Arc<DashMap<String, Arc<ChannelSet>>>,
+    connect_locks: Arc<DashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     client_ttl_secs: u64,
     channels_per_endpoint: usize,
     client_cert: ManagedCertificate,
+    cert_handle: Option<mazbri_tls::ManagedCertHandle>,
 }
 
 impl UpstreamHttp2ClientPool {
@@ -106,10 +124,18 @@ impl UpstreamHttp2ClientPool {
     pub fn new(client_cert: &ManagedCertificate, client_ttl_secs: u64) -> Self {
         Self {
             clients: Arc::new(DashMap::new()),
-            client_ttl_secs,
+            connect_locks: Arc::new(DashMap::new()),
+            client_ttl_secs: client_ttl_secs.max(1),
             channels_per_endpoint: CHANNELS_PER_ENDPOINT,
             client_cert: client_cert.clone(),
+            cert_handle: None,
         }
+    }
+
+    #[must_use]
+    pub fn with_cert_handle(mut self, handle: mazbri_tls::ManagedCertHandle) -> Self {
+        self.cert_handle = Some(handle);
+        self
     }
 
     #[must_use]
@@ -151,14 +177,26 @@ impl UpstreamHttp2ClientPool {
             }
             return Ok(set.pick());
         }
-        let new_set = Arc::new(self.connect_set(contract_id, endpoint, "initial").await?);
-        let set = Arc::clone(
-            self.clients
+        let connect_gate = Arc::clone(
+            self.connect_locks
                 .entry(endpoint.to_string())
-                .or_insert(new_set)
+                .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
                 .value(),
         );
-        Ok(set.pick())
+        let result = {
+            let _guard = connect_gate.lock().await;
+            if let Some(existing) = self.clients.get(endpoint).map(|e| Arc::clone(e.value())) {
+                Ok(existing.pick())
+            } else {
+                let new_set = Arc::new(self.connect_set(contract_id, endpoint, "initial").await?);
+                self.clients
+                    .insert(endpoint.to_string(), Arc::clone(&new_set));
+                Ok(new_set.pick())
+            }
+        };
+        self.connect_locks
+            .remove_if(endpoint, |_, gate| Arc::strong_count(gate) <= 2);
+        result
     }
 
     async fn connect_set(
@@ -168,8 +206,7 @@ impl UpstreamHttp2ClientPool {
         reason: &str,
     ) -> Result<ChannelSet, CoreError> {
         let count = self.channels_per_endpoint.max(1);
-        let mut channels = Vec::with_capacity(count);
-        for _ in 0..count {
+        let futs = (0..count).map(|_| async move {
             let started = Instant::now();
             let result = self.connect_one(contract_id, endpoint).await;
             let label = if result.is_ok() { "ok" } else { "error" };
@@ -179,8 +216,9 @@ impl UpstreamHttp2ClientPool {
             GATEWAY_UPSTREAM_H2_CONNECTS_TOTAL
                 .with_label_values(&[endpoint, reason, label])
                 .inc();
-            channels.push(Arc::new(PooledChannel::new(result?)));
-        }
+            result.map(|ch| Arc::new(PooledChannel::new(ch)))
+        });
+        let channels = futures::future::try_join_all(futs).await?;
         Ok(ChannelSet::new(channels))
     }
 
@@ -195,11 +233,18 @@ impl UpstreamHttp2ClientPool {
             ))
         })?;
 
+        let live_cert = match self.cert_handle.as_ref() {
+            Some(handle) => handle
+                .current_certificate()
+                .await
+                .unwrap_or_else(|| self.client_cert.clone()),
+            None => self.client_cert.clone(),
+        };
         let identity = Identity::from_pem(
-            self.client_cert.cert_pem.as_bytes(),
-            self.client_cert.key_pem.as_bytes(),
+            live_cert.cert_pem.as_bytes(),
+            live_cert.key_pem.as_bytes(),
         );
-        let ca_certificate = Certificate::from_pem(self.client_cert.ca_cert_pem.as_bytes());
+        let ca_certificate = Certificate::from_pem(live_cert.ca_cert_pem.as_bytes());
         let tls_config = ClientTlsConfig::new()
             .identity(identity)
             .ca_certificate(ca_certificate)
@@ -303,7 +348,9 @@ impl UpstreamHttp2ClientPool {
         let grpc_path = grpc_path_for_contract(contract_id)?;
         let path = http::uri::PathAndQuery::from_static(grpc_path);
 
-        let mut client = tonic::client::Grpc::new(slot.channel.clone());
+        let mut client = tonic::client::Grpc::new(slot.channel.clone())
+            .max_decoding_message_size(MAX_GRPC_MESSAGE_BYTES)
+            .max_encoding_message_size(MAX_GRPC_MESSAGE_BYTES);
         let ready_started = Instant::now();
         let ready = client.ready().await;
         GATEWAY_UPSTREAM_H2_READY_WAIT_SECONDS
@@ -318,10 +365,10 @@ impl UpstreamHttp2ClientPool {
             CoreError::Network(error.to_string())
         })?;
         let codec = ProstCodec::<Req, Resp>::default();
-        let in_use = GATEWAY_UPSTREAM_H2_STREAMS_IN_USE.with_label_values(&[endpoint]);
-        in_use.inc();
+        let _in_use_guard = StreamInUseGuard::acquire(
+            GATEWAY_UPSTREAM_H2_STREAMS_IN_USE.with_label_values(&[endpoint]),
+        );
         let response = client.unary(Request::new(request), path, codec).await;
-        in_use.dec();
         let response = response.map_err(|status| {
             slot.clear_synced();
             let msg = format!("{} {:?}", status.message(), status);
@@ -368,13 +415,24 @@ impl UpstreamHttp2ClientPool {
 
 #[cfg(test)]
 mod tests {
-    use super::{PooledChannel, needs_refresh};
+    use super::{GATEWAY_UPSTREAM_H2_STREAMS_IN_USE, PooledChannel, StreamInUseGuard, needs_refresh};
     use std::sync::Arc;
     use tonic::transport::Endpoint;
 
     fn dummy_slot() -> PooledChannel {
         let ch = Endpoint::from_static("http://127.0.0.1:9").connect_lazy();
         PooledChannel::new(ch)
+    }
+
+    #[test]
+    fn stream_in_use_guard_decrements_on_drop() {
+        let gauge = GATEWAY_UPSTREAM_H2_STREAMS_IN_USE.with_label_values(&["https://unit-test:9"]);
+        let baseline = gauge.get();
+        {
+            let _guard = StreamInUseGuard::acquire(gauge.clone());
+            assert_eq!(gauge.get(), baseline + 1);
+        }
+        assert_eq!(gauge.get(), baseline);
     }
 
     #[test]

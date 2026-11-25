@@ -32,6 +32,8 @@ interface HttpErrorOptions {
   handledBySessionBoundary?: boolean;
   /** 无响应（断网、超时、连接失败） */
   networkError?: boolean;
+  /** 由 AbortController 主动取消 */
+  cancelled?: boolean;
 }
 
 interface BackendHttpErrorOptions extends HttpErrorOptions {
@@ -48,6 +50,7 @@ export class HttpError extends Error {
   public readonly rawMessage?: string;
   public readonly handledBySessionBoundary: boolean;
   public readonly networkError: boolean;
+  public readonly cancelled: boolean;
 
   constructor(message: string, code: number, options?: HttpErrorOptions) {
     super(message);
@@ -60,6 +63,7 @@ export class HttpError extends Error {
     this.rawMessage = options?.rawMessage;
     this.handledBySessionBoundary = options?.handledBySessionBoundary ?? false;
     this.networkError = options?.networkError ?? false;
+    this.cancelled = options?.cancelled ?? false;
   }
 
   public toLogData(): ErrorLogData {
@@ -127,7 +131,9 @@ export function createBackendHttpError(
 export function handleError(error: AxiosError<ErrorResponse>): never {
   if (error.code === "ERR_CANCELED") {
     logger.warn("Request cancelled:", error.message);
-    throw createSafeHttpError($t("httpMsg.requestCancelled"), ApiStatus.error);
+    throw createSafeHttpError($t("httpMsg.requestCancelled"), ApiStatus.error, {
+      cancelled: true,
+    });
   }
 
   const statusCode = error.response?.status;

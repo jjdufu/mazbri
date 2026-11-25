@@ -33,6 +33,12 @@ pub enum ConfigError {
     TomlValidation { details: TomlValidationError },
     #[error("配置已存在: {service_name}")]
     AlreadyExists { service_name: String },
+    #[error("配置并发修改冲突: {service_name}")]
+    Conflict {
+        service_name: String,
+        expected_hash: String,
+        current_hash: Option<String>,
+    },
     #[error("验证错误: {0}")]
     Validation(String),
     #[error("加密错误: {0}")]
@@ -44,6 +50,7 @@ impl ErrorResponse for ConfigError {
         match self {
             Self::Core(e) => e.status_code(),
             Self::NotFound { .. } => StatusCode::NOT_FOUND,
+            Self::Conflict { .. } => StatusCode::CONFLICT,
             Self::TomlValidation { .. } | Self::AlreadyExists { .. } | Self::Validation(_) => {
                 StatusCode::BAD_REQUEST
             }
@@ -54,6 +61,7 @@ impl ErrorResponse for ConfigError {
         match self {
             Self::Core(e) => e.error_code(),
             Self::NotFound { .. } => "CONFIG_NOT_FOUND",
+            Self::Conflict { .. } => "CONFIG_CONFLICT",
             Self::TomlValidation { .. } => "TOML_VALIDATION_ERROR",
             Self::AlreadyExists { .. } => "CONFIG_ALREADY_EXISTS",
             Self::Validation(_) => "VALIDATION_ERROR",
@@ -66,6 +74,15 @@ impl ErrorResponse for ConfigError {
             Self::NotFound { service_name } | Self::AlreadyExists { service_name } => {
                 Some(serde_json::json!({ "service_name" : service_name }))
             }
+            Self::Conflict {
+                service_name,
+                expected_hash,
+                current_hash,
+            } => Some(serde_json::json!({
+                "service_name": service_name,
+                "expected_content_hash": expected_hash,
+                "current_content_hash": current_hash,
+            })),
             Self::TomlValidation { details } => Some(serde_json::json!(
                 { "message" : details.message, "line" : details.line, "column" :
                 details.column }

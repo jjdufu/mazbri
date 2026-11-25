@@ -228,7 +228,7 @@ impl Evaluator {
             let Some(rule) = rules_by_id.get(&fire.rule_id) else {
                 continue;
             };
-            if is_inhibited(inhibit_rules, &sources, &fire.labels) {
+            if is_inhibited(inhibit_rules, &sources, fire.event_id, &fire.labels) {
                 if let Err(error) = session.set_inhibited(fire.event_id).await {
                     tracing::warn!(target: "alerting", event_id = %fire.event_id, %error, "标记抑制失败");
                 }
@@ -367,6 +367,9 @@ impl Evaluator {
     }
 
     fn notify_resolved(&self, rule: &AlertRule, resolved: &rule::ResolvedEvent) {
+        if !should_notify_resolved(resolved) {
+            return;
+        }
         self.notifier.dispatch(
             &rule.notify,
             &AlertNotification {
@@ -384,6 +387,10 @@ impl Evaluator {
             },
         );
     }
+}
+
+const fn should_notify_resolved(resolved: &rule::ResolvedEvent) -> bool {
+    !resolved.silenced && !resolved.inhibited
 }
 
 /// 样例 trace 窗口半宽（秒）。
@@ -479,5 +486,28 @@ mod tests {
             panic!("expected exemplar query");
         };
         assert_eq!(p.metric, ExemplarMetric::DurationMs);
+    }
+
+    #[test]
+    fn resolved_event_skips_notification_when_silenced_or_inhibited() {
+        let base = rule::ResolvedEvent {
+            id: Uuid::from_u128(1),
+            rule_id: Uuid::from_u128(2),
+            labels: BTreeMap::new(),
+            value: 0.0,
+            started_at: Utc::now(),
+            resolved_at: Utc::now(),
+            silenced: false,
+            inhibited: false,
+        };
+        assert!(should_notify_resolved(&base));
+        assert!(!should_notify_resolved(&rule::ResolvedEvent {
+            silenced: true,
+            ..base.clone()
+        }));
+        assert!(!should_notify_resolved(&rule::ResolvedEvent {
+            inhibited: true,
+            ..base
+        }));
     }
 }

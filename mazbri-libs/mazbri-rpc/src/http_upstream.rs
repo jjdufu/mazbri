@@ -51,7 +51,7 @@ impl HttpUpstreamResponse {
             408 => BillingCode::UPSTREAM_TIMEOUT,
             429 => BillingCode::RATE_LIMIT_EXCEEDED,
             500..=599 => BillingCode::UPSTREAM_ERROR,
-            _ => BillingCode::SUCCESS_WITH_DATA,
+            _ => BillingCode::BAD_REQUEST,
         };
         Self::success(data, BillingInfo::new(code).with_units(1))
     }
@@ -122,4 +122,75 @@ impl HttpUpstreamRequest {
 pub trait HttpUpstreamService {
     async fn execute(request: HttpUpstreamRequest) -> HttpUpstreamResponse;
     async fn health() -> HealthResponse;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{HttpUpstreamData, HttpUpstreamResponse};
+    use crate::code::BillingCode;
+
+    #[test]
+    fn http_upstream_status_billing_code_only_charges_2xx() {
+        for status in [200_u16, 201, 204, 299] {
+            let resp = HttpUpstreamResponse::ok(HttpUpstreamData {
+                status,
+                ..HttpUpstreamData::default()
+            });
+            assert_eq!(resp.billing.code, BillingCode::SUCCESS);
+            assert!(resp.billing.billable, "status {status} must be billable");
+        }
+
+        for status in [400_u16, 401, 403, 405, 409, 413, 415, 422, 451, 302, 100] {
+            let resp = HttpUpstreamResponse::ok(HttpUpstreamData {
+                status,
+                ..HttpUpstreamData::default()
+            });
+            assert_eq!(
+                resp.billing.code,
+                BillingCode::BAD_REQUEST,
+                "unrefined status {status} must map to BAD_REQUEST (1000)"
+            );
+            assert!(
+                !resp.billing.billable,
+                "status {status} must default to non-billable"
+            );
+        }
+
+        assert_eq!(
+            HttpUpstreamResponse::ok(HttpUpstreamData {
+                status: 404,
+                ..HttpUpstreamData::default()
+            })
+            .billing
+            .code,
+            BillingCode::NOT_FOUND
+        );
+        assert_eq!(
+            HttpUpstreamResponse::ok(HttpUpstreamData {
+                status: 408,
+                ..HttpUpstreamData::default()
+            })
+            .billing
+            .code,
+            BillingCode::UPSTREAM_TIMEOUT
+        );
+        assert_eq!(
+            HttpUpstreamResponse::ok(HttpUpstreamData {
+                status: 429,
+                ..HttpUpstreamData::default()
+            })
+            .billing
+            .code,
+            BillingCode::RATE_LIMIT_EXCEEDED
+        );
+        assert_eq!(
+            HttpUpstreamResponse::ok(HttpUpstreamData {
+                status: 502,
+                ..HttpUpstreamData::default()
+            })
+            .billing
+            .code,
+            BillingCode::UPSTREAM_ERROR
+        );
+    }
 }

@@ -18,10 +18,14 @@ export interface MoneyWindow {
   label: string;
 }
 
-export async function fetchBillingFunnel(range: OpsRange) {
+export async function fetchBillingFunnel(
+  range: OpsRange,
+  signal?: AbortSignal,
+) {
   return request.get<BillingFunnelPg>({
     url: `${BASE_PATH}/funnel`,
     params: { range },
+    signal,
     showErrorMessage: false,
   });
 }
@@ -30,6 +34,7 @@ export async function fetchBillingFailures(
   paramsOrRange: BillingFailuresQuery | OpsRange,
   limit = 50,
   offset = 0,
+  signal?: AbortSignal,
 ) {
   const params: BillingFailuresQuery =
     typeof paramsOrRange === "string"
@@ -38,6 +43,7 @@ export async function fetchBillingFailures(
   return request.get<BillingFailures>({
     url: `${BASE_PATH}/failures`,
     params,
+    signal,
     showErrorMessage: false,
   });
 }
@@ -98,26 +104,33 @@ export interface ReconcileCalendarDay {
   status: string;
 }
 
-export async function fetchFinanceOverview(days = 30) {
+export async function fetchFinanceOverview(days = 30, signal?: AbortSignal) {
   return request.get<FinanceOverview>({
     url: `${BASE_PATH}/finance/overview`,
     params: { days },
+    signal,
     showErrorMessage: false,
   });
 }
 
-export async function fetchFinanceRanks(days = 30, limit = 10) {
+export async function fetchFinanceRanks(
+  days = 30,
+  limit = 10,
+  signal?: AbortSignal,
+) {
   return request.get<FinanceRanks>({
     url: `${BASE_PATH}/finance/ranks`,
     params: { days, limit },
+    signal,
     showErrorMessage: false,
   });
 }
 
-export async function fetchFinanceBalances(limit = 50) {
+export async function fetchFinanceBalances(limit = 50, signal?: AbortSignal) {
   return request.get<BalanceRow[]>({
     url: `${BASE_PATH}/finance/balances`,
     params: { limit },
+    signal,
     showErrorMessage: false,
   });
 }

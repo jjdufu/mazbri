@@ -48,14 +48,32 @@ pub enum OlapQuery {
 }
 
 impl OlapQuery {
-    /// 模板是否返回金额（成本）数据。
+    /// 模板是否返回金额（成本/计费）数据（编译期穷举全部 24 个模板，禁止 `_` 通配符）。
     #[must_use]
     pub fn is_money(&self) -> bool {
         match self {
             Self::TopByDim(p) => p.metric == Metric::Cost,
-            Self::CostTrend(_) | Self::TenantOverview(_) => true,
+            Self::CostTrend(_) | Self::BillingFunnelCh(_) | Self::TenantOverview(_) => true,
             Self::ProductRank(p) => matches!(p.metric, ProductRankMetric::Cost),
-            _ => false,
+            Self::LatencyQuantiles(_)
+            | Self::LatencyBreakdown(_)
+            | Self::LatencyHeatmap(_)
+            | Self::StageQuantiles(_)
+            | Self::StatusHeatmap(_)
+            | Self::BytesTrend(_)
+            | Self::SlowRequests(_)
+            | Self::ErrorMatrix(_)
+            | Self::ErrorAttribution(_)
+            | Self::ResponseFlags(_)
+            | Self::NewErrorCodes(_)
+            | Self::CallHistogram(_)
+            | Self::SupplierSla(_)
+            | Self::ExemplarTraces(_)
+            | Self::QuotaTop(_)
+            | Self::TenantErrors(_)
+            | Self::ResponseCacheHit(_)
+            | Self::SecurityTop(_)
+            | Self::SecurityEvents(_) => false,
         }
     }
 
@@ -1034,7 +1052,7 @@ fn latency_breakdown_sql(p: &BreakdownParams, binds: &mut Vec<String>) -> String
          toFloat64(quantileTDigest(0.99)(dependency_wait_ms)) AS dependency_wait_p99, \
          toFloat64(quantileTDigest(0.99)(upstream_service_time_ms)) AS upstream_p99, \
          toFloat64(quantileTDigest(0.99)(post_response_ms)) AS post_response_p99 \
-         FROM request_logs WHERE event_target = 'gateway' AND {win}{filters} \
+         FROM request_logs FINAL WHERE event_target = 'gateway' AND {win}{filters} \
          GROUP BY product_id ORDER BY count DESC LIMIT {limit}",
         limit = clamp_limit(p.limit, 20),
     )
@@ -1058,7 +1076,7 @@ fn latency_heatmap_sql(p: &TrendParams, binds: &mut Vec<String>) -> String {
            SELECT {bucket} AS ts, \
            arrayElement([{edges}, 18446744073709551615], \
              arrayFirstIndex(e -> duration_ms <= e, [{edges}, 18446744073709551615])) AS le_ms \
-           FROM request_logs \
+           FROM request_logs FINAL \
            WHERE event_target = 'gateway' AND {win}{filters} \
          ) GROUP BY ts, le_ms ORDER BY ts, le_ms",
         bucket = bucket_expr("timestamp", bucket),
@@ -1078,10 +1096,10 @@ fn exemplar_traces_sql(p: &ExemplarParams, binds: &mut Vec<String>) -> String {
     let filters_inner = filter_clause(&p.filters, binds);
     let filters_outer = filter_clause(&p.filters, binds);
     format!(
-        "WITH (SELECT quantileTDigest(0.99)({column}) FROM request_logs \
+        "WITH (SELECT quantileTDigest(0.99)({column}) FROM request_logs FINAL \
            WHERE event_target = 'gateway' AND {win}{filters_inner}) AS p99 \
          SELECT toUInt32(toUnixTimestamp(timestamp)) AS ts, trace_id, request_id, \
-         toUInt64({column}) AS value_ms, toFloat64(ifNull(p99, 0)) AS p99_ms FROM request_logs \
+         toUInt64({column}) AS value_ms, toFloat64(ifNull(p99, 0)) AS p99_ms FROM request_logs FINAL \
          WHERE event_target = 'gateway' AND {win}{filters_outer} \
            AND trace_id != '' AND {column} >= p99 \
          ORDER BY {column} DESC LIMIT {limit}"
@@ -1100,17 +1118,17 @@ fn slow_requests_sql(p: &SlowRequestsParams, binds: &mut Vec<String>) -> String 
         return format!(
             "SELECT toUInt32(toUnixTimestamp(timestamp)) AS ts, request_id, trace_id, \
              tenant_code, product_id, channel_code, status_code, duration_ms, \
-             upstream_service_time_ms, error_code FROM request_logs \
+             upstream_service_time_ms, error_code FROM request_logs FINAL \
              WHERE event_target = 'gateway' AND {win} AND duration_ms >= {min}{filters} \
              ORDER BY duration_ms DESC LIMIT {limit}"
         );
     }
-    let win_r = window_clause(w, "r.timestamp", binds);
+    let win_r = window_clause(w, "timestamp", binds);
     let filters_outer = filter_clause(&p.filters, binds);
     format!(
         "WITH thr AS ( \
            SELECT product_id, quantileTDigest(0.99)(duration_ms) * 2 AS min_ms \
-           FROM request_logs \
+           FROM request_logs FINAL \
            WHERE event_target = 'gateway' AND {win}{filters} \
            GROUP BY product_id \
          ) \
@@ -1118,14 +1136,14 @@ fn slow_requests_sql(p: &SlowRequestsParams, binds: &mut Vec<String>) -> String 
          r.trace_id AS trace_id, r.tenant_code AS tenant_code, r.product_id AS product_id, \
          r.channel_code AS channel_code, r.status_code AS status_code, r.duration_ms AS duration_ms, \
          r.upstream_service_time_ms AS upstream_service_time_ms, r.error_code AS error_code \
-         FROM request_logs AS r INNER JOIN thr ON r.product_id = thr.product_id \
-         WHERE r.event_target = 'gateway' AND {win_r} AND r.duration_ms >= thr.min_ms{filters_r} \
-         ORDER BY r.duration_ms DESC LIMIT {limit}",
-        filters_r = filters_outer
-            .replace(" AND tenant_code = ?", " AND r.tenant_code = ?")
-            .replace(" AND product_id = ?", " AND r.product_id = ?")
-            .replace(" AND supplier_code = ?", " AND r.supplier_code = ?")
-            .replace(" AND channel_code = ?", " AND r.channel_code = ?"),
+         FROM ( \
+           SELECT timestamp, request_id, trace_id, tenant_code, product_id, channel_code, \
+                  status_code, duration_ms, upstream_service_time_ms, error_code \
+           FROM request_logs FINAL \
+           WHERE event_target = 'gateway' AND {win_r}{filters_outer} \
+         ) AS r INNER JOIN thr ON r.product_id = thr.product_id \
+         WHERE r.duration_ms >= thr.min_ms \
+         ORDER BY r.duration_ms DESC LIMIT {limit}"
     )
 }
 
@@ -1137,7 +1155,7 @@ fn error_matrix_sql(p: &WindowParams, binds: &mut Vec<String>) -> String {
     let win = window_clause(w, "timestamp", binds);
     let filters = filter_clause(&p.filters, binds);
     format!(
-        "SELECT {SQL_NORM_ERROR_CODE} AS error_code, error_stage, count() AS count FROM request_logs \
+        "SELECT {SQL_NORM_ERROR_CODE} AS error_code, error_stage, count() AS count FROM request_logs FINAL \
          WHERE event_target = 'gateway' AND {win} \
          AND {SQL_IS_FAILURE}{filters} \
          GROUP BY error_code, error_stage ORDER BY count DESC LIMIT 500"
@@ -1153,7 +1171,7 @@ fn error_attribution_sql(p: &WindowParams, binds: &mut Vec<String>) -> String {
     let filters = filter_clause(&p.filters, binds);
     format!(
         "SELECT if(error_class = '', 'unknown', error_class) AS error_class, count() AS count \
-         FROM request_logs WHERE event_target = 'gateway' AND {win} \
+         FROM request_logs FINAL WHERE event_target = 'gateway' AND {win} \
          AND error_class NOT IN ('', 'ok'){filters} \
          GROUP BY error_class ORDER BY count DESC LIMIT 50"
     )
@@ -1168,7 +1186,7 @@ fn response_flags_sql(p: &WindowParams, binds: &mut Vec<String>) -> String {
     let filters = filter_clause(&p.filters, binds);
     format!(
         "SELECT if(response_flags = '', '-', response_flags) AS response_flags, count() AS count \
-         FROM request_logs WHERE event_target = 'gateway' AND {win}{filters} \
+         FROM request_logs FINAL WHERE event_target = 'gateway' AND {win}{filters} \
          GROUP BY response_flags ORDER BY count DESC LIMIT 100"
     )
 }
@@ -1186,10 +1204,10 @@ fn new_error_codes_sql(p: &WindowParams, binds: &mut Vec<String>) -> String {
     };
     let prior_win = window_clause(prior, "timestamp", binds);
     format!(
-        "SELECT error_code, count() AS count FROM request_logs \
+        "SELECT error_code, count() AS count FROM request_logs FINAL \
          WHERE event_target = 'gateway' AND {win} AND error_code != ''{filters} \
          AND error_code NOT IN ( \
-           SELECT DISTINCT error_code FROM request_logs \
+           SELECT DISTINCT error_code FROM request_logs FINAL \
            WHERE event_target = 'gateway' AND error_code != '' \
            AND {prior_win} \
          ) GROUP BY error_code ORDER BY count DESC LIMIT 100"
@@ -1211,7 +1229,7 @@ fn call_histogram_sql(p: &WindowParams, binds: &mut Vec<String>) -> String {
     format!(
         "SELECT arrayElement([{edges}, 18446744073709551615], \
          arrayFirstIndex(e -> duration_ms <= e, [{edges}, 18446744073709551615])) AS le_ms, \
-         count() AS count FROM request_logs \
+         count() AS count FROM request_logs FINAL \
          WHERE event_target = 'gateway' AND {win}{filters} \
          GROUP BY le_ms ORDER BY le_ms"
     )
@@ -1236,7 +1254,7 @@ fn supplier_sla_sql(p: &WindowParams, binds: &mut Vec<String>) -> String {
          countIf(error_class = 'timeout') AS timeouts, \
          countIf(retry_count > 0) AS retried, countIf(fallback_used = 1) AS fallbacks, \
          toFloat64(quantileTDigest(0.95)(upstream_service_time_ms)) AS upstream_p95_ms \
-         FROM request_logs WHERE event_target = 'gateway' AND {win} \
+         FROM request_logs FINAL WHERE event_target = 'gateway' AND {win} \
          AND supplier_code != ''{filters} \
          GROUP BY supplier_code, channel_code ORDER BY supplier_code, channel_code LIMIT 1000"
     )
@@ -1281,7 +1299,10 @@ fn product_rank_sql(p: &ProductRankParams, binds: &mut Vec<String>) -> String {
         end: p.end,
     };
     let duration = w.duration_secs();
-    let prev_start = w.start - duration;
+    let prev = QueryWindow {
+        start: w.start - duration,
+        end: w.start,
+    };
     let order = match p.metric {
         ProductRankMetric::ReqCount => "req_count DESC",
         ProductRankMetric::ErrorRate => "error_rate DESC",
@@ -1289,33 +1310,40 @@ fn product_rank_sql(p: &ProductRankParams, binds: &mut Vec<String>) -> String {
         ProductRankMetric::Cost => "cost DESC",
     };
     let limit = clamp_limit(p.limit, 20);
-    // ≤24h 用分钟聚合，避免小时桶把 15m/1h 窗口截成整点（与其它 OLAP 模板一致）。
+    // 当前窗读去重明细表（`request_logs FINAL`）以复用 `call_semantics::SQL_IS_FAILURE` SSOT；
+    // 环比前窗读 `req_agg_1m`（≤24h）或 `req_agg_1h`（>24h，保留 2 年以覆盖 30d 环比）。
     let src = w.agg_source();
-    let ts = src.ts();
-    // 当前窗 [start,end) 重复 4 次；前窗 [prev_start,start) 1 次；外层 WHERE prev_start。
-    // 只返回当前窗有调用的产品：仅前窗有量的产品属于“零调用”，由前端按产品名录差集展示。
-    for _ in 0..4 {
-        binds.push(w.start.to_string());
-        binds.push(w.end.to_string());
-    }
-    binds.push(prev_start.to_string());
-    binds.push(w.start.to_string());
-    binds.push(prev_start.to_string());
+    let cur_win = window_clause(w, "timestamp", binds);
+    let prev_win = window_clause(prev, src.ts(), binds);
     format!(
-        "SELECT product_id, req_count, \
-         if(req_count = 0, 0., err_count / toFloat64(req_count)) AS error_rate, \
-         p95, cost, prev_req_count \
-         FROM ( \
+        "WITH cur AS ( \
            SELECT product_id, \
-             countMergeIf(c, {ts} >= toDateTime(toInt64(?), 'UTC') AND {ts} < toDateTime(toInt64(?), 'UTC')) AS req_count, \
-             toFloat64(countMergeIf(c, {ts} >= toDateTime(toInt64(?), 'UTC') AND {ts} < toDateTime(toInt64(?), 'UTC') AND status_class = '5xx')) AS err_count, \
-             toFloat64(quantilesTDigestMergeIf(0.5, 0.95, 0.99)(duration_q, {ts} >= toDateTime(toInt64(?), 'UTC') AND {ts} < toDateTime(toInt64(?), 'UTC'))[2]) AS p95, \
-             toFloat64(sumMergeIf(cost, {ts} >= toDateTime(toInt64(?), 'UTC') AND {ts} < toDateTime(toInt64(?), 'UTC'))) AS cost, \
-             countMergeIf(c, {ts} >= toDateTime(toInt64(?), 'UTC') AND {ts} < toDateTime(toInt64(?), 'UTC')) AS prev_req_count \
-           FROM {table} \
-           WHERE {ts} >= toDateTime(toInt64(?), 'UTC') AND product_id != '' \
+             toUInt64(count()) AS req_count, \
+             toFloat64(countIf({SQL_IS_FAILURE})) AS err_count, \
+             toFloat64(quantileTDigest(0.95)(duration_ms)) AS p95, \
+             toFloat64(sum(cost)) AS cost \
+           FROM request_logs FINAL \
+           WHERE event_target = 'gateway' AND product_id != '' AND {cur_win} \
            GROUP BY product_id \
-         ) WHERE req_count > 0 ORDER BY {order} LIMIT {limit}",
+         ), \
+         prev AS ( \
+           SELECT product_id, \
+             toUInt64(countMerge(c)) AS prev_req_count \
+           FROM {table} \
+           WHERE product_id != '' AND {prev_win} \
+           GROUP BY product_id \
+         ) \
+         SELECT \
+           cur.product_id AS product_id, \
+           cur.req_count AS req_count, \
+           if(cur.req_count = 0, 0., cur.err_count / toFloat64(cur.req_count)) AS error_rate, \
+           cur.p95 AS p95, \
+           cur.cost AS cost, \
+           prev.prev_req_count AS prev_req_count \
+         FROM cur \
+         LEFT JOIN prev ON cur.product_id = prev.product_id \
+         WHERE cur.req_count > 0 \
+         ORDER BY {order} LIMIT {limit}",
         table = src.table(),
     )
 }
@@ -1354,7 +1382,7 @@ fn quota_top_sql(p: &QuotaTopParams, binds: &mut Vec<String>) -> String {
     let win = window_clause(w, "timestamp", binds);
     let limit = clamp_limit(p.limit, 20);
     format!(
-        "SELECT tenant_code, count() AS rejects FROM request_logs \
+        "SELECT tenant_code, count() AS rejects FROM request_logs FINAL \
          WHERE event_target = 'gateway' AND status_code = 429 AND {win} \
          AND tenant_code != '' GROUP BY tenant_code ORDER BY rejects DESC LIMIT {limit}"
     )
@@ -1372,7 +1400,7 @@ fn tenant_overview_sql(p: &TenantScopedParams, binds: &mut Vec<String>) -> Strin
          100 * toFloat64({SQL_COUNT_SUCCESSES}) / greatest(toFloat64(count()), 1) AS success_rate, \
          toFloat64(quantileTDigest(0.95)(duration_ms)) AS p95_ms, \
          toString(sum(cost)) AS cost \
-         FROM request_logs WHERE event_target = 'gateway' AND {win} AND tenant_code = ? \
+         FROM request_logs FINAL WHERE event_target = 'gateway' AND {win} AND tenant_code = ? \
          GROUP BY tenant_code"
     )
 }
@@ -1387,7 +1415,7 @@ fn tenant_errors_sql(p: &TenantScopedParams, binds: &mut Vec<String>) -> String 
     let limit = clamp_limit(p.limit, 50);
     format!(
         "SELECT {SQL_NORM_ERROR_CODE} AS error_code, count() AS count \
-         FROM request_logs WHERE event_target = 'gateway' AND {win} AND tenant_code = ? \
+         FROM request_logs FINAL WHERE event_target = 'gateway' AND {win} AND tenant_code = ? \
          AND {SQL_IS_FAILURE} \
          GROUP BY error_code ORDER BY count DESC LIMIT {limit}"
     )
@@ -1403,7 +1431,7 @@ fn response_cache_hit_sql(p: &WindowParams, binds: &mut Vec<String>) -> String {
     format!(
         "SELECT countIf(cache_hit = 1) AS hits, count() AS total, \
          100 * toFloat64(countIf(cache_hit = 1)) / greatest(toFloat64(count()), 1) AS hit_ratio \
-         FROM request_logs WHERE event_target = 'gateway' AND {win}{filters}"
+         FROM request_logs FINAL WHERE event_target = 'gateway' AND {win}{filters}"
     )
 }
 
@@ -1435,14 +1463,28 @@ impl ClickHouseClient {
     where
         T: clickhouse::Row + for<'de> Deserialize<'de>,
     {
+        let started = std::time::Instant::now();
         let mut query = self.inner.query(&sql.text);
         for value in &sql.binds {
             query = query.bind(value.as_str());
         }
-        query
-            .fetch_all::<T>()
-            .await
-            .map_err(|e| AnalyticsError::ClickHouse(format!("ClickHouse error: {e}")))
+        let result = self
+            .with_query_timeout("olap_query", async {
+                query
+                    .fetch_all::<T>()
+                    .await
+                    .map_err(|e| AnalyticsError::ClickHouse(format!("ClickHouse error: {e}")))
+            })
+            .await;
+        mazbri_core::metrics::observe_dep("ch", "query", started, result.is_ok());
+        super::client::record_query_span(
+            "clickhouse.olap",
+            "clickhouse",
+            &sql.text,
+            started,
+            result.as_ref().err(),
+        );
+        result
     }
 
     /// 执行 OLAP 模板查询。
@@ -1759,9 +1801,11 @@ mod tests {
         let sql = q.sql();
         assert!(sql.text.contains("error_rate"));
         assert!(sql.text.contains("prev_req_count"));
-        assert!(sql.text.contains("FROM req_agg_1m"), "≤24h 窗口用分钟聚合");
-        assert!(sql.text.contains("WHERE req_count > 0"));
-        assert_eq!(sql.binds.len(), 11);
+        assert!(sql.text.contains("FROM request_logs FINAL"));
+        assert!(sql.text.contains(SQL_IS_FAILURE));
+        assert!(sql.text.contains("FROM req_agg_1m"), "≤24h 前窗用分钟聚合");
+        assert!(sql.text.contains("WHERE cur.req_count > 0"));
+        assert_eq!(sql.binds.len(), 4);
     }
 
     #[test]
@@ -1773,8 +1817,43 @@ mod tests {
         .expect("ok");
         assert!(q.validate().is_ok());
         let sql = q.sql().text;
+        assert!(sql.contains("FROM request_logs FINAL"));
         assert!(sql.contains("FROM req_agg_1h"));
         assert!(!sql.contains("ts_1m"));
+    }
+
+    #[test]
+    fn all_raw_request_logs_olap_templates_enforce_final() {
+        let raw_templates = [
+            format!(r#"{{"template":"latency_breakdown","params":{{{}}}}}"#, win(H1)),
+            format!(r#"{{"template":"latency_heatmap","params":{{{}}}}}"#, win(H1)),
+            r#"{"template":"exemplar_traces","params":{"ts":1700000000}}"#.to_string(),
+            format!(r#"{{"template":"slow_requests","params":{{{}}}}}"#, win(H1)),
+            format!(r#"{{"template":"slow_requests","params":{{{},"min_duration_ms":200}}}}"#, win(H1)),
+            format!(r#"{{"template":"error_matrix","params":{{{}}}}}"#, win(H1)),
+            format!(r#"{{"template":"error_attribution","params":{{{}}}}}"#, win(H1)),
+            format!(r#"{{"template":"response_flags","params":{{{}}}}}"#, win(H1)),
+            format!(r#"{{"template":"new_error_codes","params":{{{}}}}}"#, win(H1)),
+            format!(r#"{{"template":"call_histogram","params":{{{}}}}}"#, win(H1)),
+            format!(r#"{{"template":"supplier_sla","params":{{{}}}}}"#, win(H1)),
+            format!(r#"{{"template":"billing_funnel_ch","params":{{{}}}}}"#, win(H1)),
+            format!(r#"{{"template":"quota_top","params":{{{}}}}}"#, win(H1)),
+            format!(r#"{{"template":"product_rank","params":{{{}}}}}"#, win(H1)),
+            format!(r#"{{"template":"tenant_overview","params":{{"tenant_code":"acme",{}}}}}"#, win(H1)),
+            format!(r#"{{"template":"tenant_errors","params":{{"tenant_code":"acme",{}}}}}"#, win(H1)),
+            format!(r#"{{"template":"response_cache_hit","params":{{{}}}}}"#, win(H1)),
+        ];
+        for raw in raw_templates {
+            let q = parse(&raw).expect(&raw);
+            let text = q.sql().text;
+            let total_refs = text.matches("FROM request_logs").count();
+            let final_refs = text.matches("FROM request_logs FINAL").count();
+            assert!(total_refs >= 1, "expected request_logs ref in {raw}: {text}");
+            assert_eq!(
+                total_refs, final_refs,
+                "every FROM request_logs must carry FINAL in {raw}: {text}"
+            );
+        }
     }
 
     #[test]

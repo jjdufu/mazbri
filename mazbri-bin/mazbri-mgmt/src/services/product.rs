@@ -202,21 +202,47 @@ pub async fn get_product(
         ),
     }
 }
-pub async fn update_product(
-    product_service: &mazbri_product::ProductService,
-    product_id: &str,
-    req: UpdateProductRequest,
-    operator: &str,
-    audit: &AuditService,
-    operator_id: uuid::Uuid,
-    client_ip: Option<String>,
-) -> axum::response::Response {
+async fn notify_product_detail_invalidation(db: &PgPool) {
+    if let Err(error) = mazbri_core::config_watch::bump_config_version_and_notify(
+        db,
+        mazbri_core::config_watch::PRODUCT_DETAIL_VERSION_KEY,
+    )
+    .await
+    {
+        tracing::warn!(
+            error = %error,
+            "Failed to bump product_detail_version after product mutation"
+        );
+    }
+}
+
+pub struct UpdateProductArgs<'a> {
+    pub db: &'a PgPool,
+    pub product_service: &'a mazbri_product::ProductService,
+    pub product_id: &'a str,
+    pub req: UpdateProductRequest,
+    pub operator: &'a str,
+    pub audit: &'a AuditService,
+    pub operator_id: uuid::Uuid,
+    pub client_ip: Option<String>,
+}
+
+pub async fn update_product(args: UpdateProductArgs<'_>) -> axum::response::Response {
+    let db = args.db;
+    let product_service = args.product_service;
+    let product_id = args.product_id;
+    let req = args.req;
+    let operator = args.operator;
+    let audit = args.audit;
+    let operator_id = args.operator_id;
+    let client_ip = args.client_ip;
     info!("Updating product: {} (by {})", product_id, operator);
     let request_details = serde_json::json!(
         { "name" : &req.name, "description" : &req.description, "enabled" : &req.enabled }
     );
     match product_service.update_product(product_id, req).await {
         Ok(Some(product)) => {
+            notify_product_detail_invalidation(db).await;
             let product_value = serde_json::json!(&product);
             let audit_product_value = product_value.clone();
             audit.log(create_audit_log(
@@ -239,6 +265,7 @@ pub async fn update_product(
     }
 }
 pub async fn delete_product(
+    db: &PgPool,
     product_service: &mazbri_product::ProductService,
     product_id: &str,
     operator: &str,
@@ -249,6 +276,7 @@ pub async fn delete_product(
     info!("Deleting product: {} (by {})", product_id, operator);
     match product_service.delete_product(product_id).await {
         Ok(true) => {
+            notify_product_detail_invalidation(db).await;
             audit.log(create_audit_log(
                 operator_id,
                 AuditAction::ProductDelete,
@@ -268,6 +296,7 @@ pub async fn delete_product(
     }
 }
 pub struct GrantTenantAccessArgs<'a> {
+    pub db: &'a PgPool,
     pub product_service: &'a mazbri_product::ProductService,
     pub product_id: &'a str,
     pub req: GrantAccessRequest,
@@ -279,6 +308,7 @@ pub struct GrantTenantAccessArgs<'a> {
 }
 
 pub async fn grant_tenant_access(args: GrantTenantAccessArgs<'_>) -> axum::response::Response {
+    let db = args.db;
     let product_service = args.product_service;
     let product_id = args.product_id;
     let req = args.req;
@@ -297,6 +327,7 @@ pub async fn grant_tenant_access(args: GrantTenantAccessArgs<'_>) -> axum::respo
         .await
     {
         Ok(tenant_product) => {
+            notify_product_detail_invalidation(db).await;
             audit.log(create_audit_log(
                 operator_id,
                 AuditAction::ProductGrant,
@@ -327,6 +358,7 @@ pub async fn grant_tenant_access(args: GrantTenantAccessArgs<'_>) -> axum::respo
 }
 
 pub struct RevokeTenantAccessArgs<'a> {
+    pub db: &'a PgPool,
     pub product_service: &'a mazbri_product::ProductService,
     pub product_id: &'a str,
     pub tenant_id: uuid::Uuid,
@@ -338,6 +370,7 @@ pub struct RevokeTenantAccessArgs<'a> {
 }
 
 pub async fn revoke_tenant_access(args: RevokeTenantAccessArgs<'_>) -> axum::response::Response {
+    let db = args.db;
     let product_service = args.product_service;
     let product_id = args.product_id;
     let tenant_id = args.tenant_id;
@@ -356,6 +389,7 @@ pub async fn revoke_tenant_access(args: RevokeTenantAccessArgs<'_>) -> axum::res
         .await
     {
         Ok(true) => {
+            notify_product_detail_invalidation(db).await;
             audit.log(create_audit_log(
                 operator_id,
                 AuditAction::ProductRevoke,
@@ -381,6 +415,7 @@ pub async fn revoke_tenant_access(args: RevokeTenantAccessArgs<'_>) -> axum::res
 }
 
 pub struct UpdateTenantProductConfigArgs<'a> {
+    pub db: &'a PgPool,
     pub product_service: &'a mazbri_product::ProductService,
     pub audit: &'a AuditService,
     pub tenant_id: uuid::Uuid,
@@ -395,6 +430,7 @@ pub struct UpdateTenantProductConfigArgs<'a> {
 pub async fn update_tenant_product_config(
     args: UpdateTenantProductConfigArgs<'_>,
 ) -> axum::response::Response {
+    let db = args.db;
     let product_service = args.product_service;
     let audit = args.audit;
     let tenant_id = args.tenant_id;
@@ -415,6 +451,7 @@ pub async fn update_tenant_product_config(
         .await
     {
         Ok(UpdateTenantProductConfigResult::Updated(tenant_product)) => {
+            notify_product_detail_invalidation(db).await;
             audit.log(tenant_audit(
                 operator_id,
                 AuditAction::QuotaUpdate,
@@ -610,9 +647,17 @@ pub async fn get_tenant_account(
         ),
     }
 }
+fn cents_to_yuan_amount(cents: i64) -> Option<Decimal> {
+    if cents <= 0 {
+        return None;
+    }
+    Some(Decimal::new(cents, 2))
+}
+
 pub struct RechargeTenantAccountArgs<'a> {
     pub db: &'a PgPool,
     pub billing_db: &'a PgPool,
+    pub redis: &'a mazbri_core::redis::RedisClient,
     pub audit: &'a AuditService,
     pub tenant_id: uuid::Uuid,
     pub tenant_id_str: &'a str,
@@ -627,6 +672,7 @@ pub async fn recharge_tenant_account(
 ) -> axum::response::Response {
     let db = args.db;
     let billing_db = args.billing_db;
+    let redis = args.redis;
     let audit = args.audit;
     let tenant_id = args.tenant_id;
     let tenant_id_str = args.tenant_id_str;
@@ -635,13 +681,12 @@ pub async fn recharge_tenant_account(
     let operator_name = args.operator_name;
     let client_ip = args.client_ip;
 
-    let amount = Decimal::from(req.amount);
-    if amount <= Decimal::ZERO {
+    let Some(amount) = cents_to_yuan_amount(req.amount) else {
         return crate::response::ApiResponse::err(
             StatusCode::BAD_REQUEST,
             "Amount must be a positive number",
         );
-    }
+    };
     if !repo::tenant_exists(db, tenant_id).await {
         return crate::response::ApiResponse::err(
             StatusCode::NOT_FOUND,
@@ -671,6 +716,7 @@ pub async fn recharge_tenant_account(
     .await
     {
         Ok(result) => {
+            crate::services::billing::invalidate_tenant_balance_cache(redis, tenant_id).await;
             info!(
                 "Recharged tenant {} with amount {} by {}",
                 tenant_id, amount, operator_name
@@ -680,7 +726,8 @@ pub async fn recharge_tenant_account(
                 AuditAction::AccountRecharge,
                 tenant_id,
                 serde_json::json!(
-                    { "amount" : amount.to_string(), "description" : description,
+                    { "amount" : amount.to_string(), "amount_cents" : req.amount,
+                    "description" : description,
                     "balance_before" : result.balance_before.to_string(),
                     "balance_after" : result.balance_after.to_string(),
                     "transaction_id" : result.transaction_id.to_string(),
@@ -706,6 +753,7 @@ pub async fn recharge_tenant_account(
 pub struct RefundTenantAccountArgs<'a> {
     pub db: &'a PgPool,
     pub billing_db: &'a PgPool,
+    pub redis: &'a mazbri_core::redis::RedisClient,
     pub audit: &'a AuditService,
     pub tenant_id: uuid::Uuid,
     pub tenant_id_str: &'a str,
@@ -718,6 +766,7 @@ pub struct RefundTenantAccountArgs<'a> {
 pub async fn refund_tenant_account(args: RefundTenantAccountArgs<'_>) -> axum::response::Response {
     let db = args.db;
     let billing_db = args.billing_db;
+    let redis = args.redis;
     let audit = args.audit;
     let tenant_id = args.tenant_id;
     let tenant_id_str = args.tenant_id_str;
@@ -726,13 +775,12 @@ pub async fn refund_tenant_account(args: RefundTenantAccountArgs<'_>) -> axum::r
     let operator_name = args.operator_name;
     let client_ip = args.client_ip;
 
-    let amount = Decimal::from(req.amount);
-    if amount <= Decimal::ZERO {
+    let Some(amount) = cents_to_yuan_amount(req.amount) else {
         return crate::response::ApiResponse::err(
             StatusCode::BAD_REQUEST,
             "Amount must be a positive number",
         );
-    }
+    };
     if let Some(ref reason) = req.reason
         && reason.len() > 500
     {
@@ -759,6 +807,7 @@ pub async fn refund_tenant_account(args: RefundTenantAccountArgs<'_>) -> axum::r
     .await
     {
         Ok(result) => {
+            crate::services::billing::invalidate_tenant_balance_cache(redis, tenant_id).await;
             info!(
                 "Refunded tenant {} with amount {} by {} (transaction: {})",
                 tenant_id, amount, operator_name, result.transaction_id
@@ -768,7 +817,8 @@ pub async fn refund_tenant_account(args: RefundTenantAccountArgs<'_>) -> axum::r
                 AuditAction::AccountRefund,
                 tenant_id,
                 serde_json::json!(
-                    { "amount" : amount.to_string(), "reason" : req.reason,
+                    { "amount" : amount.to_string(), "amount_cents" : req.amount,
+                    "reason" : req.reason,
                     "bill_id" : req.bill_id, "balance_before" : result
                     .balance_before.to_string(), "balance_after" : result
                     .balance_after.to_string(), "transaction_id" : result
@@ -963,5 +1013,19 @@ fn product_delete_error_details(action: &str, error: &ProductDeleteError) -> (St
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to {action}: {database_error}"),
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cents_to_yuan_amount_converts_integer_cents_precisely() {
+        assert_eq!(cents_to_yuan_amount(0), None);
+        assert_eq!(cents_to_yuan_amount(-100), None);
+        let yuan = cents_to_yuan_amount(10_050).expect("positive cents");
+        assert_eq!(yuan, Decimal::new(10_050, 2));
+        assert_eq!(yuan.to_string(), "100.50");
     }
 }

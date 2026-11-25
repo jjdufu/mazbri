@@ -5,6 +5,7 @@
       compact
       :model-value="modelValue"
       :env="env"
+      :mask-preview="maskPreview"
       :placeholder="placeholder"
       :aria-label="placeholder || $t('upstreamConnector.fields.upstreamUrl')"
       @update:model-value="emit('update:modelValue', $event)"
@@ -27,8 +28,9 @@ withDefaults(
     modelValue: string;
     env?: Record<string, string>;
     placeholder?: string;
+    maskPreview?: boolean;
   }>(),
-  { env: () => ({}), placeholder: "" },
+  { env: () => ({}), placeholder: "", maskPreview: false },
 );
 
 const emit = defineEmits<{

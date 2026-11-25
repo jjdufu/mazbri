@@ -4,8 +4,9 @@
 //! 需要真实 hook 行为的用例通过重新执行当前测试二进制、在子进程里安装后验证。
 
 use super::{
-    MAX_MESSAGE_BYTES, PanicDisposition, PanicRecord, in_recoverable_scope, payload_message,
-    recoverable, recovered_panic_count, truncate_on_char_boundary,
+    MAX_MESSAGE_BYTES, PanicDisposition, PanicError, PanicRecord, in_recoverable_scope,
+    payload_message, recoverable, recovered_panic_count, spawn_blocking_recoverable,
+    spawn_request_subtask, truncate_on_char_boundary,
 };
 use std::future::Future;
 use std::panic::AssertUnwindSafe;
@@ -82,6 +83,54 @@ async fn tasks_spawned_inside_scope_are_not_recoverable() {
         .await
         .unwrap();
     assert!(!inner);
+}
+
+#[tokio::test]
+async fn spawn_request_subtask_contains_panic_and_preserves_trace() {
+    let trace = crate::TraceContext::current();
+    let expected_req_id = trace.request_id.to_string();
+    let ok_out = spawn_request_subtask("subtask-ok", trace.clone(), async move {
+        let observed = crate::current_request_trace().expect("trace bound");
+        assert_eq!(observed.request_id.as_ref(), expected_req_id);
+        assert_eq!(PanicDisposition::current(), PanicDisposition::Recovered);
+        42_u32
+    })
+    .await
+    .expect("join ok");
+    assert_eq!(ok_out, Some(42));
+
+    let panicked = spawn_request_subtask("subtask-boom", trace, async {
+        assert_eq!(PanicDisposition::current(), PanicDisposition::Recovered);
+        panic!("subtask synthetic boom");
+    })
+    .await
+    .expect("join must succeed with None when subtask panics");
+    assert_eq!(panicked, None);
+    assert!(!in_recoverable_scope());
+}
+
+#[tokio::test]
+async fn spawn_blocking_recoverable_contains_panic_and_returns_err() {
+    let ok_res = spawn_blocking_recoverable(|| {
+        assert_eq!(PanicDisposition::current(), PanicDisposition::Recovered);
+        "computed"
+    })
+    .await
+    .expect("join ok");
+    assert_eq!(ok_res, Ok("computed"));
+
+    let err_res: Result<(), PanicError> = spawn_blocking_recoverable(|| {
+        assert_eq!(PanicDisposition::current(), PanicDisposition::Recovered);
+        panic!("blocking synthetic boom");
+    })
+    .await
+    .expect("join ok");
+    assert_eq!(
+        err_res,
+        Err(PanicError {
+            message: "blocking synthetic boom".to_string()
+        })
+    );
 }
 
 #[test]
@@ -230,6 +279,34 @@ fn child_main(mode: &str) {
                 );
                 return;
             }
+            "recovered-subtask-and-blocking" => {
+                let trace = crate::TraceContext::current();
+                let sub_out: Option<()> =
+                    spawn_request_subtask("post_response", trace, async {
+                        panic!("subtask boom");
+                    })
+                    .await
+                    .unwrap();
+                assert!(sub_out.is_none());
+                // Must be incremented EXACTLY once by panic_hook (not double-counted).
+                assert_eq!(recovered_panic_count(), 1);
+                assert_eq!(super::RECOVERED_PANICS_TOTAL.get(), 1);
+
+                let blk_out: Result<(), PanicError> = spawn_blocking_recoverable(|| {
+                    panic!("blocking boom");
+                })
+                .await
+                .unwrap();
+                assert!(blk_out.is_err());
+                assert_eq!(recovered_panic_count(), 2);
+                assert_eq!(super::RECOVERED_PANICS_TOTAL.get(), 2);
+                println!(
+                    "CHILD_SUBTASK_OK recovered={} metric={}",
+                    recovered_panic_count(),
+                    super::RECOVERED_PANICS_TOTAL.get()
+                );
+                return;
+            }
             other => panic!("unknown child mode {other}"),
         }
         println!("CHILD_SURVIVED");
@@ -352,6 +429,41 @@ fn child_recovered_request_panic() {
     assert_eq!(records.len(), 1);
     assert_eq!(records[0]["disposition"], "recovered");
     assert_eq!(records[0]["message"], "synthetic request panic");
+    assert!(
+        fallback_lines(&dir).is_empty(),
+        "recovered panics are not written to the fatal fallback file"
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn child_recovered_subtask_and_blocking_count_once_each() {
+    if child_dispatch() {
+        return;
+    }
+    let dir = unique_dir("subtask-blocking");
+    let output = run_child(
+        "child_recovered_subtask_and_blocking_count_once_each",
+        "recovered-subtask-and-blocking",
+        &dir,
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "status={:?} stderr={}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        stdout.contains("CHILD_SUBTASK_OK recovered=2 metric=2"),
+        "stdout: {stdout}"
+    );
+    let records = stderr_records(&output);
+    assert_eq!(records.len(), 2);
+    assert_eq!(records[0]["disposition"], "recovered");
+    assert_eq!(records[0]["message"], "subtask boom");
+    assert_eq!(records[1]["disposition"], "recovered");
+    assert_eq!(records[1]["message"], "blocking boom");
     assert!(
         fallback_lines(&dir).is_empty(),
         "recovered panics are not written to the fatal fallback file"

@@ -91,6 +91,18 @@ pub async fn add_entries(
     }
     let total_added = added_entries.len();
     let total_errors = errors.len();
+    if total_added > 0
+        && let Err(error) = mazbri_core::config_watch::bump_config_version_and_notify(
+            pool,
+            mazbri_core::config_watch::AUTH_WHITELIST_VERSION_KEY,
+        )
+        .await
+    {
+        tracing::warn!(
+            error = %error,
+            "Failed to bump auth_whitelist_version after whitelist add"
+        );
+    }
     AddResult {
         added: added_entries,
         errors,
@@ -118,7 +130,20 @@ pub async fn remove_entry(
         (addr, 32)
     };
     match repo::delete_entry(pool, tenant_id, ip_address, cidr).await {
-        Ok(true) => Ok(format!("{ip_address}/{cidr}")),
+        Ok(true) => {
+            if let Err(error) = mazbri_core::config_watch::bump_config_version_and_notify(
+                pool,
+                mazbri_core::config_watch::AUTH_WHITELIST_VERSION_KEY,
+            )
+            .await
+            {
+                tracing::warn!(
+                    error = %error,
+                    "Failed to bump auth_whitelist_version after whitelist remove"
+                );
+            }
+            Ok(format!("{ip_address}/{cidr}"))
+        }
         Ok(false) => Err(RemoveError::NotFound(format!(
             "Whitelist entry not found for IP: {ip_address}/{cidr}"
         ))),

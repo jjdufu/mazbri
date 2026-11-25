@@ -123,6 +123,7 @@ impl TenantPolicySnapshot {
     pub fn api_rule(&self, product_id: Option<&str>, api_endpoint: &str) -> Option<&ApiLimitRule> {
         if let Some(product_id) = product_id {
             let exact_keys = [
+                format!("{product_id}:{api_endpoint}"),
                 format!("product:{product_id}"),
                 product_id.to_string(),
                 format!("api:{api_endpoint}"),

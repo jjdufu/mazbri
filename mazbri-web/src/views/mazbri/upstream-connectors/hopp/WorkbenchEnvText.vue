@@ -24,7 +24,13 @@
                 {{ v.raw }}
               </code>
               <span v-if="v.found" class="wb-env-preview__val">
-                {{ env[v.name] || "∅" }}
+                {{
+                  maskPreview
+                    ? env[v.name]
+                      ? "••••••••"
+                      : "∅"
+                    : env[v.name] || "∅"
+                }}
               </span>
               <span v-else class="wb-env-preview__undef">
                 {{ $t("upstreamConnector.envUndefined") }}
@@ -88,7 +94,9 @@
         @click="pick(k)"
       >
         <span>{{ k }}</span>
-        <span class="wb-env-suggest__val">{{ env[k] }}</span>
+        <span class="wb-env-suggest__val">{{
+          maskPreview ? (env[k] ? "••••••••" : "∅") : env[k]
+        }}</span>
       </button>
     </HoppMenu>
   </div>
@@ -115,6 +123,7 @@ const props = withDefaults(
     list?: string;
     compact?: boolean;
     secret?: boolean;
+    maskPreview?: boolean;
   }>(),
   {
     env: () => ({}),
@@ -124,6 +133,7 @@ const props = withDefaults(
     list: undefined,
     compact: false,
     secret: false,
+    maskPreview: false,
   },
 );
 

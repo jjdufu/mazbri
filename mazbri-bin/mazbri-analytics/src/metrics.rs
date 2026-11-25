@@ -54,6 +54,15 @@ pub static MAZBRI_SLO_BURN_TICKET: LazyLock<GaugeVec> = LazyLock::new(|| {
     .expect("metric")
 });
 
+/// SLO 评估查询失败累计次数，标签 `slo`。
+pub static MAZBRI_SLO_EVAL_ERRORS_TOTAL: LazyLock<CounterVec> = LazyLock::new(|| {
+    MetricsBuilder::new().counter(
+        "mazbri_slo_eval_errors_total",
+        "Total number of SLO evaluation errors by SLO definition",
+        &["slo"],
+    )
+});
+
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
@@ -63,5 +72,6 @@ pub fn register_analytics_metrics() -> Result<(), PrometheusError> {
     register_collector_once(&REGISTRY, Box::new(MAZBRI_SLO_ERROR_BUDGET_REMAINING.clone()))?;
     register_collector_once(&REGISTRY, Box::new(MAZBRI_SLO_BURN_PAGE.clone()))?;
     register_collector_once(&REGISTRY, Box::new(MAZBRI_SLO_BURN_TICKET.clone()))?;
+    register_collector_once(&REGISTRY, Box::new(MAZBRI_SLO_EVAL_ERRORS_TOTAL.clone()))?;
     Ok(())
 }

@@ -1,5 +1,49 @@
 use crate::config::RuntimeConfig;
 use mazbri_rpc::{RuntimeDecision, RuntimeDecisionRequest};
+use sha2::{Digest, Sha256};
+
+const MAX_DB_PATH_CHARS: usize = 512;
+
+fn truncate_chars(s: &str, max_chars: usize) -> String {
+    if s.len() <= max_chars {
+        return s.to_string();
+    }
+    s.chars().take(max_chars).collect()
+}
+
+/// Computes a deterministic fixed 64-character lowercase SHA-256 hex key for `runtime_decisions`
+/// so arbitrary query/body/path lengths never exceed PostgreSQL's `VARCHAR(500)` / B-tree limit
+/// and every read/write path resolves the exact same primary key.
+#[must_use]
+pub fn canonical_runtime_decision_key(
+    tenant_id: &str,
+    product_id: &str,
+    method: &str,
+    path: &str,
+    raw_cache_key: &str,
+) -> String {
+    let method_upper = method.trim().to_ascii_uppercase();
+    let mut hasher = Sha256::new();
+    for segment in [tenant_id, product_id, method_upper.as_str(), path, raw_cache_key] {
+        hasher.update((segment.len() as u64).to_be_bytes());
+        hasher.update(segment.as_bytes());
+    }
+    hex::encode(hasher.finalize())
+}
+
+/// Ensures `validation_jobs.cache_key` is bounded to at most 64 hex chars if a caller sends
+/// a long raw key while preserving 64-char hex SHA-256 fallback keys sent by `mazbri-gateway`.
+#[must_use]
+pub fn bounded_validation_cache_key(raw_cache_key: &str) -> String {
+    let trimmed = raw_cache_key.trim();
+    if trimmed.len() == 64 && trimmed.bytes().all(|b| b.is_ascii_hexdigit()) {
+        trimmed.to_ascii_lowercase()
+    } else if trimmed.len() <= 256 {
+        trimmed.to_string()
+    } else {
+        hex::encode(Sha256::digest(trimmed.as_bytes()))
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct RuntimeDecisionState {
@@ -86,9 +130,12 @@ pub fn now_unix_ms() -> i64 {
 
 #[must_use]
 pub fn build_runtime_decision_cache_key(request: &RuntimeDecisionRequest) -> String {
-    format!(
-        "{}:{}:{}:{}:{}",
-        request.tenant_id, request.product_id, request.method, request.path, request.cache_key
+    canonical_runtime_decision_key(
+        &request.tenant_id,
+        &request.product_id,
+        &request.method,
+        &request.path,
+        &request.cache_key,
     )
 }
 
@@ -107,12 +154,13 @@ pub fn build_default_runtime_decision(
 ) -> RuntimeDecision {
     let baseline = config.default_latency_baseline_ms.max(1);
     let now = now_unix_ms();
+    let canonical_key = build_runtime_decision_cache_key(request);
     RuntimeDecision {
-        cache_key: request.cache_key.clone(),
+        cache_key: canonical_key,
         tenant_id: request.tenant_id.clone(),
         product_id: request.product_id.clone(),
-        method: request.method.clone(),
-        path: request.path.clone(),
+        method: request.method.trim().to_ascii_uppercase(),
+        path: truncate_chars(&request.path, MAX_DB_PATH_CHARS),
         mode: "fallback_only".to_string(),
         policy_version: request.policy_version.unwrap_or(0),
         latency_baseline_ms: baseline,
@@ -128,5 +176,27 @@ pub fn build_default_runtime_decision(
         last_validation_status: None,
         valid_until_unix_ms: now + mazbri_core::num::millis_i64(config.decision_ttl()),
         generated_at_unix_ms: now,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn canonical_decision_key_is_always_64_hex_chars_even_for_huge_inputs() {
+        let huge_path = format!("/v1/{}", "a".repeat(8_192));
+        let huge_raw = "q=".to_string() + &"b".repeat(16_384);
+        let k = canonical_runtime_decision_key("t-1", "8000000001", "post", &huge_path, &huge_raw);
+        assert_eq!(k.len(), 64);
+        assert!(k.bytes().all(|b| b.is_ascii_hexdigit()));
+        assert_eq!(
+            k,
+            canonical_runtime_decision_key("t-1", "8000000001", "POST", &huge_path, &huge_raw)
+        );
+        assert_ne!(
+            k,
+            canonical_runtime_decision_key("t-2", "8000000001", "POST", &huge_path, &huge_raw)
+        );
     }
 }

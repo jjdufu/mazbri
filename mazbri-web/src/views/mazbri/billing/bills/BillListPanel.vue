@@ -531,7 +531,7 @@ import {
   formatBytes,
 } from "@/utils/format";
 import { downloadCsv, serializeRawCsv } from "@/utils/csv";
-import { downloadBinary, createTarArchive, gzipBytes } from "@/utils/archive";
+import { downloadBinary, packageTarArchive } from "@/utils/archive";
 import type { ColumnOption, PaginationConfig } from "@/types/component";
 import { useTableSelection } from "@/composables/useTableSelection";
 import {
@@ -1004,8 +1004,11 @@ const exportBillsArchive = async (rows: Bill[], prefix: string) => {
         `${serializeCsv(buildBillDetailCsvRows(bill, items))}\n`,
       ),
     }));
-    const archive = await gzipBytes(createTarArchive(files));
-    downloadBinary(buildBillArchiveName(prefix), archive, "application/gzip");
+    const packaged = await packageTarArchive(
+      files,
+      buildBillArchiveName(prefix),
+    );
+    downloadBinary(packaged.filename, packaged.data, packaged.mimeType);
   }).catch((error) => {
     logger.error("Failed to export bill archive:", error);
     ElMessage.error($t("billing.messages.exportDetailFailed"));

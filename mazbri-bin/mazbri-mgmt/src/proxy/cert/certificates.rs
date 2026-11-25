@@ -1,9 +1,9 @@
 use super::{
     AdminClaims, ApiError, AppState, AuditAction, AuditResourceType, CertificateLookup,
-    ConnectInfo, FORBIDDEN_CERT, IntoResponse, MAX_PROXY_BODY_BYTES, Method, Path, Request,
-    Response, State, can_manage_certificates, create_audit_log, enrich_audit_details,
-    extract_client_ip, extract_user_id, forbidden, get_cert_proxy_config, info, json,
-    lookup_certificate, parse_json_body, proxy_request, require_license_issuance,
+    ConnectInfo, FORBIDDEN_CERT, IntoResponse, Method, Path, Request, Response, State,
+    can_manage_certificates, create_audit_log, enrich_audit_details, extract_client_ip,
+    extract_user_id, forbidden, get_cert_proxy_config, info, json, lookup_certificate,
+    parse_json_body, proxy_request, read_proxy_body, require_license_issuance,
 };
 
 pub async fn list_certificate_subjects_proxy(
@@ -33,7 +33,7 @@ pub async fn get_certificate_proxy(
     State(state): State<AppState>,
     claims: axum::Extension<AdminClaims>,
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
-    Path(id): Path<String>,
+    Path(id): Path<uuid::Uuid>,
     request: Request,
 ) -> impl IntoResponse {
     if !can_manage_certificates(&claims) {
@@ -57,7 +57,7 @@ pub async fn get_auto_renewal_config_proxy(
     State(state): State<AppState>,
     claims: axum::Extension<AdminClaims>,
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
-    Path(id): Path<String>,
+    Path(id): Path<uuid::Uuid>,
     request: Request,
 ) -> impl IntoResponse {
     if !can_manage_certificates(&claims) {
@@ -81,7 +81,7 @@ pub async fn get_full_certificate_proxy(
     State(state): State<AppState>,
     claims: axum::Extension<AdminClaims>,
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
-    Path(id): Path<String>,
+    Path(id): Path<uuid::Uuid>,
     request: Request,
 ) -> impl IntoResponse {
     if !can_manage_certificates(&claims) {
@@ -91,7 +91,7 @@ pub async fn get_full_certificate_proxy(
         return error.into_response();
     }
     let config = get_cert_proxy_config(&state);
-    match lookup_certificate(&state.cert_http_client, &config, &id).await {
+    match lookup_certificate(&state.cert_http_client, &config, id).await {
         CertificateLookup::Present => {}
         CertificateLookup::Missing => {
             return (
@@ -161,7 +161,7 @@ pub async fn configure_auto_renewal_proxy(
     State(state): State<AppState>,
     claims: axum::Extension<AdminClaims>,
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
-    Path(id): Path<String>,
+    Path(id): Path<uuid::Uuid>,
     request: Request,
 ) -> impl IntoResponse {
     if !can_manage_certificates(&claims) {
@@ -187,14 +187,14 @@ pub async fn configure_auto_renewal_proxy(
 }
 proxy_handler_with_audit! {
     name = renew_certificate_proxy, method = Method::POST, path = "/renew/{}", path_param
-    = id, audit_action = AuditAction::CertificateRenew, resource_id_fn = id.clone(),
+    = id, audit_action = AuditAction::CertificateRenew, resource_id_fn = id.to_string(),
     audit_details = Some(serde_json::json!({ "certificate_id" : id })), log =
     "Admin {} renewing certificate {}", require_mfa = "certificate",
 }
 proxy_handler_with_audit! {
     name = revoke_certificate_proxy, method = Method::POST, path = "/revoke/{}",
     path_param = id, audit_action = AuditAction::CertificateRevoke, resource_id_fn = id
-    .clone(), audit_details = Some(serde_json::json!({ "certificate_id" : id })), log =
+    .to_string(), audit_details = Some(serde_json::json!({ "certificate_id" : id })), log =
     "Admin {} revoking certificate {}", require_mfa = "certificate",
 }
 pub async fn issue_certificate_proxy(
@@ -209,9 +209,10 @@ pub async fn issue_certificate_proxy(
     info!("Admin {} issuing certificate", claims.sub);
     require_license_issuance(&state).await?;
     let (parts, body) = request.into_parts();
-    let body_bytes = axum::body::to_bytes(body, MAX_PROXY_BODY_BYTES)
-        .await
-        .unwrap_or_default();
+    let body_bytes = match read_proxy_body(body).await {
+        Ok(bytes) => bytes,
+        Err(response) => return Ok(*response),
+    };
     if serde_json::from_slice::<serde_json::Value>(&body_bytes).is_err() {
         return Err(ApiError::validation("请求体不是合法 JSON".to_string()));
     }

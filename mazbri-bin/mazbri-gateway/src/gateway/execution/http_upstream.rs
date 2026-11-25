@@ -96,13 +96,28 @@ pub(super) async fn execute_http_upstream_request(
     }
 }
 
-/// 单通道尝试上下文：重试上限 + 指标 `mode` 标签。
+/// 单通道尝试上下文：重试上限 + 指标 `mode` 标签 + 是否允许传输层自动重发。
 #[derive(Debug, Clone, Copy)]
 pub(super) struct AttemptCtx<'a> {
     pub max_retries: u32,
     pub mode: &'a str,
     /// 本请求内第几个候选渠道（从 1 起），透传给 bypass 访问日志。
     pub attempt_order: u32,
+    /// 非幂等且无 `fingerprint` 的写请求在发出后禁止传输层自动重试。
+    pub retry_safe: bool,
+}
+
+#[must_use]
+pub(super) fn is_retry_safe_request(req: &GatewayRequest) -> bool {
+    if matches!(
+        req.method.trim().to_ascii_uppercase().as_str(),
+        "GET" | "HEAD" | "OPTIONS"
+    ) {
+        return true;
+    }
+    req.fingerprint
+        .as_deref()
+        .is_some_and(|fp| !fp.trim().is_empty())
 }
 
 struct TransparentInvokeSpec<'a> {
@@ -285,7 +300,7 @@ async fn invoke_bypass(
             }
             Err(error) => {
                 record_timeout_if_any(ctx.mode, &error.to_string());
-                if backoff_before_retry(&mut attempt, ctx.max_retries).await {
+                if ctx.retry_safe && backoff_before_retry(&mut attempt, ctx.max_retries).await {
                     tracing::info!(
                         target: mazbri_core::trace_spans::SPAN_EVENT_TARGET,
                         retry = attempt,
@@ -419,7 +434,7 @@ async fn execute_plain_request(
             }
             Err(error) => {
                 record_timeout_if_any(ctx.mode, &error.to_string());
-                if backoff_before_retry(&mut attempt, ctx.max_retries).await {
+                if ctx.retry_safe && backoff_before_retry(&mut attempt, ctx.max_retries).await {
                     tracing::info!(
                         target: mazbri_core::trace_spans::SPAN_EVENT_TARGET,
                         retry = attempt,
@@ -543,5 +558,23 @@ mod internal_retries_tests {
             ProxyBody::JsonRawStr(s) => assert_eq!(s.as_ref(), r#"{"hello":"world"}"#),
             other => panic!("expected JsonRawStr, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn non_idempotent_keyless_requests_do_not_auto_retry() {
+        use super::{GatewayRequest, is_retry_safe_request};
+        let get_req: GatewayRequest =
+            serde_json::from_str(r#"{"product_id":"8000000001","path":"/v1","method":"GET"}"#)
+                .unwrap();
+        let post_no_fp: GatewayRequest =
+            serde_json::from_str(r#"{"product_id":"8000000001","path":"/v1","method":"POST"}"#)
+                .unwrap();
+        let post_with_fp: GatewayRequest = serde_json::from_str(
+            r#"{"product_id":"8000000001","path":"/v1","method":"POST","fingerprint":"fp-1"}"#,
+        )
+        .unwrap();
+        assert!(is_retry_safe_request(&get_req));
+        assert!(!is_retry_safe_request(&post_no_fp));
+        assert!(is_retry_safe_request(&post_with_fp));
     }
 }

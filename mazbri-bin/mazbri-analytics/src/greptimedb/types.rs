@@ -91,6 +91,8 @@ pub struct RequestLogQueryParams {
     pub filters: Vec<crate::list_query::ListFilter>,
     /// When set, list/search only inside the latest N rows (event-target scoped), then apply filters.
     pub latest_universe_limit: Option<usize>,
+    /// When true, restrict rows to business failures (`call_semantics::SQL_IS_FAILURE`).
+    pub errors_only: bool,
     pub limit: usize,
     pub offset: usize,
 }

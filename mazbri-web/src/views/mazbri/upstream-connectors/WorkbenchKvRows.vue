@@ -42,6 +42,7 @@
           <ArtSvgIcon icon="ri:delete-bin-line" />
         </button>
         <button
+          v-if="!secretValues"
           type="button"
           class="wb-kv__icon"
           :class="{ 'is-on': bulkOpen }"
@@ -63,7 +64,7 @@
       </div>
     </div>
     <textarea
-      v-if="!folded && bulkOpen"
+      v-if="!secretValues && !folded && bulkOpen"
       v-model="bulkText"
       class="wb-kv__bulk"
       :aria-label="$t('upstreamConnector.kvBulk')"
@@ -93,6 +94,7 @@
         data-draggable="true"
         :class="{
           'is-off': row.enabled === false,
+          'is-invalid': isRowRequiredInvalid(row),
           'wb-kv__row--tail': idx === rows.length - 1,
         }"
       >
@@ -223,6 +225,7 @@ const props = withDefaults(
     env?: Record<string, string>;
     variant?: "default" | "headers" | "keys";
     secretValues?: boolean;
+    requiredKeys?: string[];
     emptyCompact?: boolean;
     foldable?: boolean;
     disabled?: boolean;
@@ -238,6 +241,7 @@ const props = withDefaults(
     env: () => ({}),
     variant: "default",
     secretValues: false,
+    requiredKeys: () => [],
     emptyCompact: false,
     foldable: false,
     disabled: false,
@@ -378,7 +382,25 @@ function onHeadClick() {
   userFolded.value = !folded.value;
 }
 
+function isRowRequiredInvalid(row: KvRow): boolean {
+  const key = row.key.trim();
+  if (!key || !props.requiredKeys.includes(key)) return false;
+  return !row.value.trim();
+}
+
+watch(
+  () => props.secretValues,
+  (isSecret) => {
+    if (isSecret && bulkOpen.value) {
+      bulkOpen.value = false;
+      bulkText.value = "";
+    }
+  },
+  { immediate: true },
+);
+
 function toggleBulk() {
+  if (props.secretValues) return;
   if (props.foldable) userFolded.value = false;
   if (bulkOpen.value) {
     applyBulk();
@@ -537,6 +559,12 @@ function onSortEnd(evt: { oldIndex?: number; newIndex?: number }): void {
   &.is-off :deep(.wb-env),
   &.is-off :deep(.hopp-ac-host) {
     opacity: 0.5;
+  }
+  &.is-invalid {
+    background: color-mix(in srgb, var(--wb-danger, var(--el-color-danger)) 6%, transparent);
+    > * {
+      border-bottom-color: var(--wb-danger, var(--el-color-danger));
+    }
   }
   &:hover .wb-kv__grip {
     opacity: 1;

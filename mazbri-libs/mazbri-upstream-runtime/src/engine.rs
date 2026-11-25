@@ -137,6 +137,47 @@ impl RuntimeOptions {
     }
 }
 
+fn effective_token_cache_key(input: &InvokeInput) -> String {
+    use sha2::{Digest, Sha256};
+
+    let base = input
+        .cache_key
+        .clone()
+        .unwrap_or_else(|| token_cache_key(&input.supplier_id, &input.channel_id, &input.spec));
+    let mut cred_pairs: Vec<(&str, &str)> = input
+        .credentials
+        .iter()
+        .map(|(k, v)| (k.as_str(), v.as_str()))
+        .collect();
+    cred_pairs.sort_unstable_by(|a, b| a.0.cmp(b.0));
+
+    let mut hasher = Sha256::new();
+    for (k, v) in cred_pairs {
+        hasher.update((k.len() as u64).to_be_bytes());
+        hasher.update(k.as_bytes());
+        hasher.update((v.len() as u64).to_be_bytes());
+        hasher.update(v.as_bytes());
+    }
+    if let Some(auth) = input.spec.auth.as_ref() {
+        if let Some(kid) = auth.jwt.as_ref().and_then(|j| j.kid.as_deref()) {
+            hasher.update(b":kid:");
+            hasher.update((kid.len() as u64).to_be_bytes());
+            hasher.update(kid.as_bytes());
+        }
+        if let Some(ck) = auth.credential_keys.as_ref() {
+            let id_alias = ck.id.as_deref().unwrap_or("");
+            let sec_alias = ck.secret.as_deref().unwrap_or("");
+            hasher.update(b":ck:");
+            hasher.update((id_alias.len() as u64).to_be_bytes());
+            hasher.update(id_alias.as_bytes());
+            hasher.update((sec_alias.len() as u64).to_be_bytes());
+            hasher.update(sec_alias.as_bytes());
+        }
+    }
+    let digest = hex::encode(hasher.finalize());
+    format!("{base}:cred:{}", &digest[..32])
+}
+
 const MAX_CACHED_TLS_CLIENTS: usize = 128;
 
 #[derive(Debug, Clone)]
@@ -358,10 +399,7 @@ impl RuntimeEngine {
         if matches!(input.mode, ExecuteMode::TransformPreview) {
             return transform_preview(input, base_url, trace);
         }
-        let cache_key = input
-            .cache_key
-            .clone()
-            .unwrap_or_else(|| token_cache_key(&input.supplier_id, &input.channel_id, &input.spec));
+        let cache_key = effective_token_cache_key(input);
         let budget = self.retry_budgets.for_key(&cache_key);
         budget.record_request();
         let first = self

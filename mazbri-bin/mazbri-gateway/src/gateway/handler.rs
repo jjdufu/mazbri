@@ -1,18 +1,30 @@
+use super::balance::{
+    BalanceReservationGuard, PrecheckedProductGate, enforce_product_and_balance_gate,
+};
 use super::execution::execute_gateway_request_with_event;
 use super::execution::{UpstreamResponse, UpstreamRouteMetadata};
+use super::idempotency::{
+    IdempotencyCheckOutcome, IdempotencyInFlightGuard, ReplayedIdempotencyResponse,
+};
 use super::metrics::{API_PROXY_DURATION_SECONDS, classify_error_class};
 use super::metrics::{
     ConnectionGuard, GATEWAY_PLATFORM_LOCAL_SECONDS, GATEWAY_UPSTREAM_WAIT_SECONDS,
     extract_user_agent,
 };
+use super::post_response::{
+    PostResponseTaskArgs, UsageChargeContext, content_length, spawn_post_response_tasks,
+};
+use super::rejection_log::{AccessLogged, RejectionSlot};
 use super::request_binding::GatewayHttpPath;
 use super::response::ProxyError;
 use super::serializer::{SerializedProxyResponse, serialize_proxy_response};
 use super::stage_log::{StageCtx, stage_log};
+use super::state::GatewayRequestTiming;
 use super::validation::{GatewayRequest, GatewayRequestPayload, sanitize_input};
+use crate::auth::ActualRequestBytes;
 use crate::auth::claims::MazbriClaims;
 use crate::crypto::{EnvelopeNoncePrechecked, TenantCryptoProfile, TenantCryptoTiming};
-use crate::ratelimit::TransferRecord;
+use crate::ratelimit::{LocalRateLimitDecision, LocalRateLimitInput, TransferRecord};
 use crate::router::AppState;
 use axum::{
     Json,
@@ -26,23 +38,18 @@ use mazbri_core::num::SaturatingFrom;
 use mazbri_core::{
     AccessBillingFields, AccessHttpFields, AccessLogEvent, AccessNetworkFields,
     AccessOutcomeFields, AccessRouteFields, AccessTimingFields, AccessUpstreamMetaFields,
-    TraceContext, classify_outcome, emit_access_log, normalize_upstream_host, resolve_client_ip,
-    validate_tenant_id,
+    TraceContext, classify_outcome, emit_access_log, normalize_upstream_host, validate_tenant_id,
 };
 use mazbri_product::service::TenantProductDetail;
+use rust_decimal::Decimal;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tracing::{error, warn};
+use tracing::warn;
 use uuid::Uuid;
-const TENANT_ACCESS_DENIED: &str = "无法访问请求的资源";
-const IDEMPOTENCY_TTL_SECS: u64 = 86_400;
-pub(crate) const PRODUCT_ACCESS_DENIED: &str = "产品访问被拒绝";
 
-use super::post_response::{
-    PostResponseTaskArgs, UsageChargeContext, content_length, spawn_post_response_tasks,
-};
-use super::state::GatewayRequestTiming;
+const TENANT_ACCESS_DENIED: &str = "无法访问请求的资源";
+pub(crate) const PRODUCT_ACCESS_DENIED: &str = "产品访问被拒绝";
 
 /// `unified_gateway_handler` 依次提取的请求扩展。
 type GatewayHandlerExtensions = (
@@ -51,6 +58,9 @@ type GatewayHandlerExtensions = (
     Extension<GatewayRequestTiming>,
     Extension<GatewayRequestPayload>,
     Extension<GatewayHttpPath>,
+    Option<Extension<ActualRequestBytes>>,
+    Option<Extension<RejectionSlot>>,
+    Option<Extension<PrecheckedProductGate>>,
     Option<Extension<TenantProductDetail>>,
     Option<Extension<EnvelopeNoncePrechecked>>,
 );
@@ -63,10 +73,16 @@ struct HandlerCtx<'a> {
     request_id: &'a str,
 }
 
-/// 幂等检查结果：重放已完成响应，或继续处理。
+/// 幂等检查结果：重放已完成明文封装或持有 60s 租约继续处理。
 enum IdempotencyStage {
-    Replay(Response),
-    Proceed { ms: u64, acquired: bool },
+    Replay {
+        ms: u64,
+        replayed: ReplayedIdempotencyResponse,
+    },
+    Proceed {
+        ms: u64,
+        guard: Option<IdempotencyInFlightGuard>,
+    },
 }
 
 /// 缓存命中或上游执行得到的响应。
@@ -96,6 +112,8 @@ struct CompletedRequest<'a> {
     trace_context: &'a TraceContext,
     tenant_uuid: Uuid,
     tenant_product_detail: &'a TenantProductDetail,
+    idempotency_epoch_id: Option<Uuid>,
+    reserved_amount: Decimal,
 }
 
 /// # Errors
@@ -103,121 +121,538 @@ struct CompletedRequest<'a> {
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn unified_gateway_handler(
     State(state): State<AppState>,
-    // 元组提取器按元素顺序逐个提取，失败时返回该元素自己的拒绝响应，
-    // 和拆成多个参数时的提取顺序、拒绝响应完全一致。
     (
         Extension(trace_context),
         Extension(claims),
         Extension(mut timing),
         Extension(body_payload),
         Extension(http_path),
-        tenant_product_detail,
+        actual_request_bytes,
+        rejection_slot,
+        prechecked_gate,
+        tenant_product_detail_ext,
         envelope_nonce_prechecked,
     ): GatewayHandlerExtensions,
     ConnectInfo(peer_addr): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
 ) -> Result<Response, ProxyError> {
-    // Arc<str> clone is a refcount bump — avoid allocating a new String for the hot path.
     let request_id = Arc::clone(&trace_context.request_id);
     let tenant_validation_started_at = Instant::now();
-    let source_ip = resolve_client_ip(&headers, Some(peer_addr));
+    let source_ip = state.ip_extractor.extract_or_unknown(&headers, Some(peer_addr));
     let user_agent = extract_user_agent(&headers);
+    let request_size = actual_request_bytes
+        .map_or_else(|| content_length(&headers) as u64, |Extension(b)| b.0 as u64);
     let _conn_guard = ConnectionGuard::new();
-    let tenant_id_validation_started_at = Instant::now();
+    let tid_started = Instant::now();
     let tenant_uuid = validate_claims_tenant(&claims, &request_id)?;
-    let tenant_id_validation_ms = mazbri_core::num::millis_u64(tenant_id_validation_started_at.elapsed());
+    let tenant_id_validation_ms = mazbri_core::num::millis_u64(tid_started.elapsed());
+
+    let (req, crypto_profile, request_was_encrypted, request_validate_ms) =
+        decrypt_and_validate_payload(DecryptPayloadArgs {
+            state: &state,
+            claims: &claims,
+            request_id: &request_id,
+            tenant_uuid,
+            body_payload,
+            http_path: &http_path.0,
+            envelope_nonce_prechecked: envelope_nonce_prechecked.is_some(),
+            rejection_slot: rejection_slot.as_ref().map(|Extension(slot)| slot),
+        })
+        .await?;
+    let ctx = HandlerCtx { state: &state, claims: &claims, req: &req, request_id: &request_id };
+    if let Some(resp) = check_post_decrypt_api_ratelimit(&ctx, request_was_encrypted, tenant_uuid, &source_ip, request_size) {
+        return Ok(resp);
+    }
+    let (tenant_product_detail, mut balance_guard) = match resolve_product_and_reserve_balance(
+        &ctx, tenant_uuid, prechecked_gate, tenant_product_detail_ext, &mut timing,
+    ).await? {
+        Ok(pair) => pair,
+        Err(resp) => return Ok(resp),
+    };
+    let (idempotency_ms, idem_guard) = match idempotency_stage(&ctx, tenant_uuid).await? {
+        IdempotencyStage::Replay { ms, replayed } => {
+            balance_guard.release_now().await;
+            record_prepare_timing(&ctx, request_was_encrypted, tenant_validation_started_at, [tenant_id_validation_ms, request_validate_ms, ms], &mut timing);
+            return Box::pin(build_idempotency_replay_response(
+                &ctx,
+                ReplayResponseArgs {
+                    tenant_uuid, crypto_profile: &crypto_profile, replayed: &replayed,
+                    http_path: &http_path.0, timing: &timing, headers: &headers,
+                    source_ip: &source_ip, user_agent: &user_agent, trace_context: &trace_context, request_size,
+                },
+            )).await;
+        }
+        IdempotencyStage::Proceed { ms, guard } => (ms, guard),
+    };
+    record_prepare_timing(&ctx, request_was_encrypted, tenant_validation_started_at, [tenant_id_validation_ms, request_validate_ms, idempotency_ms], &mut timing);
+    Box::pin(execute_live_gateway_pipeline(
+        &ctx,
+        LivePipelineArgs {
+            tenant_uuid, tenant_product_detail: &tenant_product_detail, crypto_profile: &crypto_profile,
+            http_path: &http_path.0, headers: &headers, source_ip: &source_ip, user_agent: &user_agent,
+            trace_context: &trace_context, request_size, timing: &mut timing, idem_guard, balance_guard,
+        },
+    )).await
+}
+
+struct DecryptPayloadArgs<'a> {
+    state: &'a AppState,
+    claims: &'a MazbriClaims,
+    request_id: &'a str,
+    tenant_uuid: Uuid,
+    body_payload: super::validation::GatewayRequestPayload,
+    http_path: &'a str,
+    envelope_nonce_prechecked: bool,
+    rejection_slot: Option<&'a RejectionSlot>,
+}
+
+async fn decrypt_and_validate_payload(
+    args: DecryptPayloadArgs<'_>,
+) -> Result<(GatewayRequest, TenantCryptoProfile, bool, u64), ProxyError> {
     let transport_started_at = Instant::now();
-    let (req, crypto_profile, request_was_encrypted, crypto_timing) = state
+    let (req, crypto_profile, request_was_encrypted, crypto_timing) = args
+        .state
         .proxy_state
         .crypto_state
         .decrypt_request_value_with_precheck(
-            tenant_uuid,
-            body_payload,
-            &http_path.0,
-            envelope_nonce_prechecked.is_some(),
+            args.tenant_uuid,
+            args.body_payload,
+            args.http_path,
+            args.envelope_nonce_prechecked,
         )
         .await?;
     let transport_elapsed = transport_started_at.elapsed();
+    if request_was_encrypted && let Some(slot) = args.rejection_slot {
+        slot.update_inner_request(req.product_id.clone(), req.method.clone(), req.path.clone());
+    }
     let ctx = HandlerCtx {
-        state: &state,
-        claims: &claims,
+        state: args.state,
+        claims: args.claims,
         req: &req,
-        request_id: &request_id,
+        request_id: args.request_id,
     };
     log_transport_stage(&ctx, request_was_encrypted, &crypto_timing, transport_elapsed);
     let request_validate_started_at = Instant::now();
     req.validate()?;
     let request_validate_ms = mazbri_core::num::millis_u64(request_validate_started_at.elapsed());
-    let (idempotency_ms, idempotency_acquired) = match idempotency_stage(&ctx).await? {
-        IdempotencyStage::Replay(response) => return Ok(response),
-        IdempotencyStage::Proceed { ms, acquired } => (ms, acquired),
-    };
-    let tenant_validation_elapsed = tenant_validation_started_at.elapsed();
-    timing.tenant_validation_ms = mazbri_core::num::millis_u64(tenant_validation_elapsed);
+    Ok((req, crypto_profile, request_was_encrypted, request_validate_ms))
+}
+
+fn record_prepare_timing(
+    ctx: &HandlerCtx<'_>,
+    request_was_encrypted: bool,
+    started_at: Instant,
+    stage_ms: [u64; 3],
+    timing: &mut GatewayRequestTiming,
+) {
+    let elapsed = started_at.elapsed();
+    timing.tenant_validation_ms = mazbri_core::num::millis_u64(elapsed);
     log_request_prepare(
-        &ctx,
+        ctx,
         request_was_encrypted,
         [
-            tenant_id_validation_ms,
-            request_validate_ms,
-            idempotency_ms,
+            stage_ms[0],
+            stage_ms[1],
+            stage_ms[2],
             timing.tenant_validation_ms,
         ],
-        tenant_validation_elapsed,
+        elapsed,
     );
-    let tenant_product_detail =
-        resolve_product_detail(&ctx, tenant_uuid, tenant_product_detail, &mut timing).await?;
+}
+
+fn check_post_decrypt_api_ratelimit(
+    ctx: &HandlerCtx<'_>,
+    request_was_encrypted: bool,
+    tenant_uuid: Uuid,
+    source_ip: &str,
+    request_size: u64,
+) -> Option<Response> {
+    if !request_was_encrypted {
+        return None;
+    }
+    let Some(LocalRateLimitDecision::Deny {
+        policy_version,
+        retry_after_ms,
+        reason,
+        snapshot_age_ms,
+        degraded,
+        quota,
+    }) = ctx
+        .state
+        .proxy_state
+        .local_ratelimiter
+        .check_api_limit_only(&LocalRateLimitInput {
+            tenant_id: tenant_uuid,
+            product_id: Some(ctx.req.product_id.clone()),
+            api_endpoint: ctx.req.path.clone(),
+            client_ip: source_ip.to_string(),
+            request_bytes: request_size,
+        })
+    else {
+        return None;
+    };
+    let stage_ids = super::stage_log::stage_span("ratelimit_inner", Duration::ZERO)
+        .product(&ctx.req.product_id)
+        .tenant(&ctx.claims.tenant_code)
+        .failed()
+        .record();
+    stage_log!(
+        warn,
+        "gateway.stage",
+        &StageCtx::new(&ctx.request_id, ctx.claims, &ctx.req.product_id),
+        &stage_ids,
+        "ratelimit",
+        0_u64,
+        api_endpoint = %ctx.req.path,
+        policy_version,
+        retry_after_ms,
+        reason = %reason,
+        snapshot_age_ms,
+        degraded,
+        source = "local_post_decrypt",
+        decision = "deny",
+        message = "Gateway post-decrypt API rate limit rejected encrypted request",
+    );
+    Some(crate::auth::middleware::rate_limit_error_response(
+        i32::saturating_from((retry_after_ms / 1000).max(1)),
+        &reason,
+        quota,
+    ))
+}
+
+async fn resolve_product_and_reserve_balance(
+    ctx: &HandlerCtx<'_>,
+    tenant_uuid: Uuid,
+    prechecked_gate: Option<Extension<PrecheckedProductGate>>,
+    tenant_product_detail_ext: Option<Extension<TenantProductDetail>>,
+    timing: &mut GatewayRequestTiming,
+) -> Result<Result<(TenantProductDetail, BalanceReservationGuard), Response>, ProxyError> {
+    match prechecked_gate {
+        Some(Extension(gate)) => {
+            let guard = gate.take_guard(tenant_uuid);
+            Ok(Ok((gate.detail, guard)))
+        }
+        None if ctx.state.billing_state.is_some() => {
+            let stage_ctx = StageCtx::new(&ctx.request_id, ctx.claims, &ctx.req.product_id);
+            match enforce_product_and_balance_gate(
+                ctx.state,
+                tenant_uuid,
+                &ctx.req.product_id,
+                stage_ctx,
+                timing,
+            )
+            .await
+            {
+                Ok(res) => Ok(Ok(res)),
+                Err(rejection) => Ok(Err(rejection.into_response())),
+            }
+        }
+        None => {
+            let detail =
+                resolve_product_detail(ctx, tenant_uuid, tenant_product_detail_ext, timing).await?;
+            Ok(Ok((detail, BalanceReservationGuard::none(tenant_uuid))))
+        }
+    }
+}
+
+struct LivePipelineArgs<'a> {
+    tenant_uuid: Uuid,
+    tenant_product_detail: &'a TenantProductDetail,
+    crypto_profile: &'a TenantCryptoProfile,
+    http_path: &'a str,
+    headers: &'a HeaderMap,
+    source_ip: &'a str,
+    user_agent: &'a str,
+    trace_context: &'a TraceContext,
+    request_size: u64,
+    timing: &'a mut GatewayRequestTiming,
+    idem_guard: Option<super::idempotency::IdempotencyInFlightGuard>,
+    balance_guard: BalanceReservationGuard,
+}
+
+async fn execute_live_gateway_pipeline(
+    ctx: &HandlerCtx<'_>,
+    args: LivePipelineArgs<'_>,
+) -> Result<Response, ProxyError> {
+    let LivePipelineArgs {
+        tenant_uuid,
+        tenant_product_detail,
+        crypto_profile,
+        http_path,
+        headers,
+        source_ip,
+        user_agent,
+        trace_context,
+        request_size,
+        timing,
+        mut idem_guard,
+        mut balance_guard,
+    } = args;
     let fallback_enabled =
         tenant_product_detail.cb_pro_enabled && tenant_product_detail.cb_pro_fallback;
-    let cache_enabled = tenant_product_detail.response_cache.enabled;
-    let fetched =
-        fetch_response(&ctx, fallback_enabled, cache_enabled, &trace_context, timing.started_at)
-            .await?;
-    record_fetched_timing_and_cache(&ctx, &fetched, cache_enabled, &mut timing);
+    let (cache_allowed, cache_key) = resolve_request_cache_key(
+        ctx,
+        tenant_uuid,
+        tenant_product_detail.response_cache.enabled,
+    )
+    .await;
+
+    let fetched = match fetch_response(
+        ctx,
+        fallback_enabled,
+        cache_allowed,
+        cache_key,
+        trace_context,
+        timing.started_at,
+    )
+    .await
+    {
+        Ok(fetched) => fetched,
+        Err(err) => {
+            release_guards(&mut idem_guard, &mut balance_guard).await;
+            return Err(err);
+        }
+    };
+
+    record_fetched_timing_and_cache(ctx, &fetched, cache_allowed, trace_context, timing);
     let status = fetched.response.status;
     let http_status = StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
     let response_error = (!(200..300).contains(&status)).then(|| fetched.response.error.clone());
-    let serialized = serialize_stage(&ctx, &fetched.response, response_error.as_deref())?;
-    let request_size = content_length(&headers) as u64;
+    let serialized = match serialize_stage(ctx, &fetched.response, response_error.as_deref()) {
+        Ok(s) => s,
+        Err(err) => {
+            release_guards(&mut idem_guard, &mut balance_guard).await;
+            return Err(err);
+        }
+    };
     record_bandwidth(
-        &ctx,
-        &timing,
+        ctx,
+        timing,
         tenant_uuid,
-        &source_ip,
+        source_ip,
         request_size,
         &serialized,
         &fetched,
     );
     let encrypted_response =
-        encrypt_stage(&ctx, tenant_uuid, &crypto_profile, &serialized, &http_path.0).await?;
-    if idempotency_acquired && serialized.success {
-        complete_idempotency(&ctx, &serialized).await;
-    }
+        match encrypt_stage(ctx, tenant_uuid, crypto_profile, &serialized, http_path).await {
+            Ok(enc) => enc,
+            Err(err) => {
+                release_guards(&mut idem_guard, &mut balance_guard).await;
+                return Err(err);
+            }
+        };
+
+    let idempotency_epoch_id = settle_idempotency_guard(
+        idem_guard,
+        status,
+        &serialized,
+        fetched.from_cbpro_fallback,
+        &crypto_profile.encryption_mode,
+    )
+    .await;
+
+    let reserved_amount = balance_guard.take_reserved();
     finish_request(
-        &ctx,
+        ctx,
         &mut CompletedRequest {
             fetched: &fetched,
             serialized: &serialized,
             response_error,
             request_size,
-            timing: &mut timing,
-            headers: &headers,
-            source_ip: &source_ip,
-            user_agent: &user_agent,
-            trace_context: &trace_context,
+            timing,
+            headers,
+            source_ip,
+            user_agent,
+            trace_context,
             tenant_uuid,
-            tenant_product_detail: &tenant_product_detail,
+            tenant_product_detail,
+            idempotency_epoch_id,
+            reserved_amount,
         },
     );
     let mut response = build_response(http_status, encrypted_response, serialized.bytes)?;
-    response.extensions_mut().insert(super::rejection_log::AccessLogged);
+    response.extensions_mut().insert(AccessLogged);
     Ok(response)
+}
+
+async fn resolve_request_cache_key(
+    ctx: &HandlerCtx<'_>,
+    tenant_uuid: Uuid,
+    snapshot_enabled: bool,
+) -> (bool, String) {
+    let cache_policy = ctx
+        .state
+        .proxy_state
+        .cache_policy_lookup
+        .resolve(tenant_uuid, snapshot_enabled)
+        .await;
+    let cache_allowed = cache_policy.is_request_cacheable(&ctx.req.method, &ctx.req.path);
+    let has_route_override = ctx
+        .state
+        .proxy_state
+        .route_engine
+        .load()
+        .has_tenant_override(&ctx.claims.tenant_id, &ctx.req.product_id);
+    let cache_key = super::response_cache::build_proxy_cache_key(
+        &ctx.claims.tenant_id,
+        ctx.req,
+        cache_policy.tenant_isolated,
+        has_route_override,
+    );
+    (cache_allowed, cache_key)
+}
+
+async fn settle_idempotency_guard(
+    idem_guard: Option<super::idempotency::IdempotencyInFlightGuard>,
+    status: u16,
+    serialized: &SerializedProxyResponse,
+    from_cbpro_fallback: bool,
+    encryption_mode: &str,
+) -> Option<Uuid> {
+    let mut guard = idem_guard?;
+    let epoch_id = guard.epoch_id();
+    if (200..300).contains(&status) && serialized.success && !from_cbpro_fallback {
+        guard.complete(serialized, encryption_mode).await;
+    } else {
+        guard.release_now().await;
+    }
+    Some(epoch_id)
+}
+
+async fn release_guards(
+    idem_guard: &mut Option<super::idempotency::IdempotencyInFlightGuard>,
+    balance_guard: &mut BalanceReservationGuard,
+) {
+    if let Some(g) = idem_guard {
+        g.release_now().await;
+    }
+    balance_guard.release_now().await;
+}
+
+struct ReplayResponseArgs<'a> {
+    tenant_uuid: Uuid,
+    crypto_profile: &'a TenantCryptoProfile,
+    replayed: &'a ReplayedIdempotencyResponse,
+    http_path: &'a str,
+    timing: &'a GatewayRequestTiming,
+    headers: &'a HeaderMap,
+    source_ip: &'a str,
+    user_agent: &'a str,
+    trace_context: &'a TraceContext,
+    request_size: u64,
+}
+
+async fn build_idempotency_replay_response(
+    ctx: &HandlerCtx<'_>,
+    args: ReplayResponseArgs<'_>,
+) -> Result<Response, ProxyError> {
+    let serialized = &args.replayed.serialized;
+    if let Some(prepaid) = args.timing.bandwidth_prepaid {
+        ctx.state
+            .proxy_state
+            .local_ratelimiter
+            .record_transfer(TransferRecord {
+                tenant_id: args.tenant_uuid,
+                product_id: Some(ctx.req.product_id.clone()),
+                api_endpoint: ctx.req.path.clone(),
+                client_ip: args.source_ip.to_string(),
+                policy_version: prepaid.policy_version,
+                snapshot_age_ms: prepaid.snapshot_age_ms,
+                degraded: prepaid.degraded,
+                bytes_in: args.request_size,
+                bytes_out: serialized.response_bytes,
+                prepaid_request_bytes: prepaid.prepaid_request_bytes,
+                bandwidth_enabled: prepaid.bandwidth_enabled,
+            });
+    }
+    let encrypted_response = encrypt_stage(
+        ctx,
+        args.tenant_uuid,
+        args.crypto_profile,
+        serialized,
+        args.http_path,
+    )
+    .await?;
+    emit_replay_access_log(ctx, &args);
+    let http_status = StatusCode::from_u16(serialized.status).unwrap_or(StatusCode::OK);
+    let mut response = build_response(http_status, encrypted_response, serialized.bytes.clone())?;
+    response.extensions_mut().insert(AccessLogged);
+    Ok(response)
+}
+
+fn emit_replay_access_log(ctx: &HandlerCtx<'_>, args: &ReplayResponseArgs<'_>) {
+    let serialized = &args.replayed.serialized;
+    let elapsed_ms = mazbri_core::num::millis_u64(args.timing.started_at.elapsed());
+    let dependency_wait_ms = args.timing.ratelimit_ms
+        + args.timing.balance_check_ms
+        + args.timing.product_detail_lookup_ms;
+    let header_str = |name: &str| {
+        args.headers
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+            .map(ToString::to_string)
+    };
+    let outcome = classify_outcome("", "", serialized.status);
+    let event = AccessLogEvent::builder(ctx.state.proxy_state.service_name.as_ref().to_string())
+        .trace_context(args.trace_context)
+        .route(AccessRouteFields {
+            tenant_id: Some(ctx.claims.tenant_id.clone()),
+            tenant_code: Some(ctx.claims.tenant_code.clone()),
+            product_id: Some(ctx.req.product_id.clone()),
+            api_key_id: Some(ctx.claims.api_key_id.clone()).filter(|id| !id.is_empty()),
+            ..AccessRouteFields::default()
+        })
+        .http(AccessHttpFields {
+            method: ctx.req.method.clone(),
+            protocol: "HTTP/2".to_string(),
+            host_header: header_str("host"),
+            path: ctx.req.path.clone(),
+            route_template: ctx.req.path.clone(),
+            status_code: serialized.status,
+            request_bytes: args.request_size,
+            response_bytes: serialized.response_bytes,
+            user_agent: Some(args.user_agent.to_string()),
+        })
+        .timing(AccessTimingFields {
+            duration_ms: elapsed_ms,
+            upstream_service_time_ms: Some(0),
+            dependency_wait_ms,
+            internal_ms: elapsed_ms,
+            post_response_ms: 0,
+        })
+        .billing(AccessBillingFields {
+            event_id: args.replayed.epoch_id.to_string(),
+            billable: false,
+            price: String::new(),
+            billing_code: 0,
+            cost: "0".to_string(),
+        })
+        .network(AccessNetworkFields {
+            upstream_status_code: Some(0),
+            client_ip: Some(args.source_ip.to_string()),
+            xff: header_str("x-forwarded-for"),
+            cache_hit: true,
+            fallback_used: false,
+            retry_reasons: super::retry_ledger::current_retry_reasons(),
+            ..AccessNetworkFields::default()
+        })
+        .outcome(AccessOutcomeFields {
+            error_code: String::new(),
+            error_stage: String::new(),
+            response_flags: outcome.response_flags.to_string(),
+            error_source: outcome.error_source.as_str().to_string(),
+            error_class: classify_error_class(serialized.status, serialized.success, ""),
+        })
+        .build();
+    emit_access_log("gateway.access", &event);
 }
 
 fn record_fetched_timing_and_cache(
     ctx: &HandlerCtx<'_>,
     fetched: &FetchedResponse,
-    cache_enabled: bool,
+    cache_allowed: bool,
+    trace_context: &TraceContext,
     timing: &mut GatewayRequestTiming,
 ) {
     timing.cache_lookup_ms = fetched.cache_lookup_ms;
@@ -238,7 +673,7 @@ fn record_fetched_timing_and_cache(
     };
     timing.bypass_hop_ms = mazbri_core::num::millis_u64(hop_duration);
     log_upstream_stage(ctx, timing.upstream_ms, fetched);
-    spawn_cache_populate(ctx, fetched, cache_enabled);
+    spawn_cache_populate(ctx, fetched, cache_allowed, trace_context);
 }
 
 fn log_request_prepare(
@@ -259,11 +694,19 @@ fn log_request_prepare(
         .tenant(&claims.tenant_code)
         .record();
     stage_log!(
-        info, "gateway.stage",
+        info,
+        "gateway.stage",
         &StageCtx::new(&request_id, claims, &req.product_id),
-        &stage_ids, "request_prepare", tenant_validation_ms,
-        method = % req.method, path = % req.path, encrypted_request = request_was_encrypted,
-        tenant_id_validation_ms, request_validate_ms, idempotency_ms, tenant_validation_ms,
+        &stage_ids,
+        "request_prepare",
+        tenant_validation_ms,
+        method = %req.method,
+        path = %req.path,
+        encrypted_request = request_was_encrypted,
+        tenant_id_validation_ms,
+        request_validate_ms,
+        idempotency_ms,
+        tenant_validation_ms,
         message = "Gateway request preparation stage completed",
     );
 }
@@ -290,14 +733,21 @@ fn log_upstream_stage(ctx: &HandlerCtx<'_>, upstream_ms: u64, fetched: &FetchedR
     }
     let stage_ids = stage.record();
     stage_log!(
-        info, "gateway.stage",
+        info,
+        "gateway.stage",
         &StageCtx::new(&request_id, claims, &req.product_id).route(route),
-        &stage_ids, "upstream", upstream_ms,
-        method = % req.method, path = % req.path, upstream_service_time_ms = upstream_ms,
+        &stage_ids,
+        "upstream",
+        upstream_ms,
+        method = %req.method,
+        path = %req.path,
+        upstream_service_time_ms = upstream_ms,
         from_cache = fetched.from_cache,
-        upstream_mode = % route.map_or("", |r| r.upstream_mode.as_str()),
-        contract_id = % route.map_or("", |r| r.contract_id.as_str()), error_class = % error_class,
-        result, message = "Gateway upstream stage completed",
+        upstream_mode = %route.map_or("", |r| r.upstream_mode.as_str()),
+        contract_id = %route.map_or("", |r| r.contract_id.as_str()),
+        error_class = %error_class,
+        result,
+        message = "Gateway upstream stage completed",
     );
 }
 
@@ -321,8 +771,9 @@ fn build_response(
 fn validate_claims_tenant(claims: &MazbriClaims, request_id: &str) -> Result<Uuid, ProxyError> {
     validate_tenant_id(&claims.tenant_id).map_err(|e| {
         tracing::warn!(
-            tenant_id = % sanitize_input(& claims.tenant_id), request_id = %
-            request_id, error = % e,
+            tenant_id = %sanitize_input(&claims.tenant_id),
+            request_id = %request_id,
+            error = %e,
             "Gateway rejected request: invalid tenant_id in JWT claims"
         );
         ProxyError::Forbidden(TENANT_ACCESS_DENIED.to_string())
@@ -342,30 +793,42 @@ fn log_transport_stage(
         .record();
     if request_was_encrypted {
         stage_log!(
-            info, "gateway.stage",
+            info,
+            "gateway.stage",
             &StageCtx::new(&request_id, claims, &req.product_id),
-            &stage_ids, "transport", crypto_timing.transport_total,
-            method = % req.method, path = % req.path, encrypted_request = true,
+            &stage_ids,
+            "transport",
+            crypto_timing.transport_total,
+            method = %req.method,
+            path = %req.path,
+            encrypted_request = true,
             transport_profile_ms = crypto_timing.transport_profile,
             transport_total_ms = crypto_timing.transport_total,
             crypto_total_ms = crypto_timing.transport_total,
             crypto_profile_ms = crypto_timing.transport_profile,
             crypto_envelope_ms = crypto_timing.envelope,
-            crypto_preflight_ms = crypto_timing.preflight, crypto_nonce_ms = crypto_timing.nonce,
+            crypto_preflight_ms = crypto_timing.preflight,
+            crypto_nonce_ms = crypto_timing.nonce,
             crypto_tenant_key_ms = crypto_timing.tenant_key,
             crypto_tenant_key_db_ms = crypto_timing.tenant_key_db,
             crypto_tenant_key_root_material_ms = crypto_timing.tenant_key_root_material,
             crypto_tenant_key_local_ms = crypto_timing.tenant_key_local,
             crypto_signature_ms = crypto_timing.signature,
-            crypto_decrypt_ms = crypto_timing.decrypt, crypto_parse_ms = crypto_timing.parse,
+            crypto_decrypt_ms = crypto_timing.decrypt,
+            crypto_parse_ms = crypto_timing.parse,
             message = "Gateway transport stage completed",
         );
     } else {
         stage_log!(
-            info, "gateway.stage",
+            info,
+            "gateway.stage",
             &StageCtx::new(&request_id, claims, &req.product_id),
-            &stage_ids, "transport", crypto_timing.transport_total,
-            method = % req.method, path = % req.path, encrypted_request = false,
+            &stage_ids,
+            "transport",
+            crypto_timing.transport_total,
+            method = %req.method,
+            path = %req.path,
+            encrypted_request = false,
             transport_profile_ms = crypto_timing.transport_profile,
             transport_total_ms = crypto_timing.transport_total,
             message = "Gateway transport stage completed",
@@ -373,86 +836,70 @@ fn log_transport_stage(
     }
 }
 
-fn replay_response(record: crate::crypto::IdempotencyRecord) -> Result<Response, ProxyError> {
-    // Safe transport retry: return prior success body, skip re-billing.
-    let status = StatusCode::from_u16(record.http_status).unwrap_or(StatusCode::OK);
-    let content_type = record.content_type.as_deref().unwrap_or("application/json");
-    Response::builder()
-        .status(status)
-        .header(axum::http::header::CONTENT_TYPE, content_type)
-        .body(Body::from(record.body))
-        .map_err(|error| {
-            ProxyError::InternalError(format!(
-                "failed to build idempotent replay response: {error}"
-            ))
-        })
-}
-
-async fn idempotency_stage(ctx: &HandlerCtx<'_>) -> Result<IdempotencyStage, ProxyError> {
+async fn idempotency_stage(
+    ctx: &HandlerCtx<'_>,
+    tenant_uuid: Uuid,
+) -> Result<IdempotencyStage, ProxyError> {
     let (request_id, claims, req) = (ctx.request_id, ctx.claims, ctx.req);
-    let Some(fingerprint) = req.fingerprint.as_deref() else {
+    let Some(fingerprint) = req.fingerprint.as_deref().filter(|fp| !fp.trim().is_empty()) else {
         return Ok(IdempotencyStage::Proceed {
             ms: 0,
-            acquired: false,
+            guard: None,
         });
     };
     let idempotency_started_at = Instant::now();
-    let acquired = match ctx
+    let outcome = ctx
         .state
         .proxy_state
-        .crypto_state
-        .check_idempotency(fingerprint, IDEMPOTENCY_TTL_SECS)
-        .await
-    {
-        Ok(crate::crypto::IdempotencyOutcome::InProgress) => {
-            warn!(
-                "[{}] Duplicate request still processing fingerprint: {}",
-                request_id, fingerprint
-            );
-            return Err(ProxyError::Conflict(format!(
-                "Duplicate request is still processing: {fingerprint}"
-            )));
-        }
-        Ok(crate::crypto::IdempotencyOutcome::Completed(record)) => {
-            let idempotency_elapsed = idempotency_started_at.elapsed();
-            let idempotency_ms = mazbri_core::num::millis_u64(idempotency_elapsed);
-            let stage_ids = super::stage_log::stage_span("idempotency", idempotency_elapsed)
-                .product(&req.product_id)
-                .tenant(&claims.tenant_code)
-                .record();
-            stage_log!(
-                info, "gateway.stage",
-                &StageCtx::new(&request_id, claims, &req.product_id),
-                &stage_ids, "idempotency", idempotency_ms,
-                method = %req.method, path = %req.path, fingerprint = %fingerprint, replay = true,
-                message = "Gateway idempotency replay of completed fingerprint",
-            );
-            return replay_response(record).map(IdempotencyStage::Replay);
-        }
-        Ok(crate::crypto::IdempotencyOutcome::Acquired) => true,
-        Err(error) => {
-            // Fail-closed: idempotency store unavailable → 503 (keyless requests never reach here).
-            error!("[{}] Idempotency check failed: {}", request_id, error);
-            return Err(error);
-        }
-    };
+        .idempotency
+        .check_or_acquire(tenant_uuid, req, fingerprint, request_id)
+        .await?;
     let idempotency_elapsed = idempotency_started_at.elapsed();
     let idempotency_ms = mazbri_core::num::millis_u64(idempotency_elapsed);
     let stage_ids = super::stage_log::stage_span("idempotency", idempotency_elapsed)
         .product(&req.product_id)
         .tenant(&claims.tenant_code)
         .record();
-    stage_log!(
-        info, "gateway.stage",
-        &StageCtx::new(&request_id, claims, &req.product_id),
-        &stage_ids, "idempotency", idempotency_ms,
-        method = %req.method, path = %req.path, fingerprint = %fingerprint, acquired,
-        message = "Gateway idempotency stage completed",
-    );
-    Ok(IdempotencyStage::Proceed {
-        ms: idempotency_ms,
-        acquired,
-    })
+    match outcome {
+        IdempotencyCheckOutcome::Replay(replayed) => {
+            stage_log!(
+                info,
+                "gateway.stage",
+                &StageCtx::new(&request_id, claims, &req.product_id),
+                &stage_ids,
+                "idempotency",
+                idempotency_ms,
+                method = %req.method,
+                path = %req.path,
+                fingerprint = %fingerprint,
+                replay = true,
+                message = "Gateway idempotency replay of completed fingerprint",
+            );
+            Ok(IdempotencyStage::Replay {
+                ms: idempotency_ms,
+                replayed,
+            })
+        }
+        IdempotencyCheckOutcome::Acquired(guard) => {
+            stage_log!(
+                info,
+                "gateway.stage",
+                &StageCtx::new(&request_id, claims, &req.product_id),
+                &stage_ids,
+                "idempotency",
+                idempotency_ms,
+                method = %req.method,
+                path = %req.path,
+                fingerprint = %fingerprint,
+                acquired = true,
+                message = "Gateway idempotency stage completed",
+            );
+            Ok(IdempotencyStage::Proceed {
+                ms: idempotency_ms,
+                guard: Some(guard),
+            })
+        }
+    }
 }
 
 async fn resolve_product_detail(
@@ -486,10 +933,14 @@ async fn resolve_product_detail(
     }
     let stage_ids = stage.record();
     stage_log!(
-        info, "gateway.stage",
+        info,
+        "gateway.stage",
         &StageCtx::new(&request_id, claims, &req.product_id),
-        &stage_ids, "product_detail_lookup", timing.product_detail_lookup_ms,
-        method = % req.method, path = % req.path,
+        &stage_ids,
+        "product_detail_lookup",
+        timing.product_detail_lookup_ms,
+        method = %req.method,
+        path = %req.path,
         product_detail_lookup_ms = timing.product_detail_lookup_ms,
         message = "Gateway product detail lookup stage completed",
     );
@@ -507,32 +958,29 @@ async fn resolve_product_detail(
 async fn fetch_response(
     ctx: &HandlerCtx<'_>,
     fallback_enabled: bool,
-    cache_enabled: bool,
+    cache_allowed: bool,
+    cache_key: String,
     trace_context: &TraceContext,
     start: Instant,
 ) -> Result<FetchedResponse, ProxyError> {
     let (state, request_id, claims, req) = (ctx.state, ctx.request_id, ctx.claims, ctx.req);
     let fetch_started = Instant::now();
-    // H-05: try tenant response cache before upstream (fail-open).
-    // Snapshot gate lives inside try_get_cached_response — disabled = zero RPC.
-    let cache_key = super::response_cache::build_proxy_cache_key(req);
     let cache_lookup_started = Instant::now();
     let cache_hit = super::response_cache::try_get_cached_response(
         &state.proxy_state.tarpc_pool,
         &state.proxy_state.services_config.cache,
         &claims.tenant_id,
         &cache_key,
-        cache_enabled,
+        cache_allowed,
     )
     .await;
-    let cache_lookup_elapsed = if cache_enabled {
+    let cache_lookup_elapsed = if cache_allowed {
         cache_lookup_started.elapsed()
     } else {
         Duration::ZERO
     };
     let cache_lookup_ms = mazbri_core::num::millis_u64(cache_lookup_elapsed);
     if let Some(cached) = cache_hit {
-        // Attach matched product route so customer-calls shows CB: + channel, not "-".
         let matched_route =
             super::execution::match_primary_route_metadata(&state.proxy_state, claims, req);
         let stage_ids = super::stage_log::stage_span("response_cache", cache_lookup_elapsed)
@@ -540,10 +988,15 @@ async fn fetch_response(
             .tenant(&claims.tenant_code)
             .record();
         stage_log!(
-            info, "gateway.stage",
+            info,
+            "gateway.stage",
             &StageCtx::new(&request_id, claims, &req.product_id).route(matched_route.as_ref()),
-            &stage_ids, "response_cache", cache_lookup_ms,
-            path = %req.path, cache_key = %cache_key, message = "Gateway response cache hit",
+            &stage_ids,
+            "response_cache",
+            cache_lookup_ms,
+            path = %req.path,
+            cache_key = %cache_key,
+            message = "Gateway response cache hit",
         );
         let fetch_wall_duration = fetch_started.elapsed();
         return Ok(FetchedResponse {
@@ -591,9 +1044,17 @@ async fn fetch_response(
     }
 }
 
-/// Populate cache after successful upstream (not on cache hits).
-fn spawn_cache_populate(ctx: &HandlerCtx<'_>, fetched: &FetchedResponse, cache_enabled: bool) {
-    if fetched.from_cache || !super::response_cache::should_attempt_cache_rpc(cache_enabled) {
+/// Populate cache after successful live upstream response (never on cache hits or `CBPro` fallback!).
+fn spawn_cache_populate(
+    ctx: &HandlerCtx<'_>,
+    fetched: &FetchedResponse,
+    cache_allowed: bool,
+    trace_context: &TraceContext,
+) {
+    if fetched.from_cache
+        || fetched.from_cbpro_fallback
+        || !super::response_cache::should_attempt_cache_rpc(cache_allowed)
+    {
         return;
     }
     let pool = ctx.state.proxy_state.tarpc_pool.clone();
@@ -602,18 +1063,22 @@ fn spawn_cache_populate(ctx: &HandlerCtx<'_>, fetched: &FetchedResponse, cache_e
     let cache_key = fetched.cache_key.clone();
     let path = ctx.req.path.clone();
     let to_cache = fetched.response.clone();
-    tokio::spawn(async move {
-        super::response_cache::try_put_cached_response(
-            &pool,
-            &endpoint,
-            &tenant_id,
-            &cache_key,
-            &to_cache,
-            &path,
-            cache_enabled,
-        )
-        .await;
-    });
+    drop(mazbri_core::panic_policy::spawn_request_subtask(
+        "response_cache_populate",
+        trace_context.clone(),
+        async move {
+            super::response_cache::try_put_cached_response(
+                &pool,
+                &endpoint,
+                &tenant_id,
+                &cache_key,
+                &to_cache,
+                &path,
+                cache_allowed,
+            )
+            .await;
+        },
+    ));
 }
 
 fn serialize_stage(
@@ -637,10 +1102,14 @@ fn serialize_stage(
         .tenant(&claims.tenant_code)
         .record();
     stage_log!(
-        info, "gateway.stage",
+        info,
+        "gateway.stage",
         &StageCtx::new(&request_id, claims, &req.product_id),
-        &stage_ids, "response_serialize", response_serialize_ms,
-        method = % req.method, path = % req.path,
+        &stage_ids,
+        "response_serialize",
+        response_serialize_ms,
+        method = %req.method,
+        path = %req.path,
         response_body_kind = serialized_response.body_kind,
         response_body_encoding = serialized_response.body_encoding,
         payload_bytes_len = response.body_bytes_len,
@@ -650,7 +1119,6 @@ fn serialize_stage(
     Ok(serialized_response)
 }
 
-/// U3: settle bandwidth token bucket + emit bytes usage without double-counting QPS.
 fn record_bandwidth(
     ctx: &HandlerCtx<'_>,
     timing: &GatewayRequestTiming,
@@ -709,39 +1177,18 @@ async fn encrypt_stage(
         .tenant(&claims.tenant_code)
         .record();
     stage_log!(
-        info, "gateway.stage",
+        info,
+        "gateway.stage",
         &StageCtx::new(&request_id, claims, &req.product_id),
-        &stage_ids, "response_encrypt", response_encrypt_ms,
-        method = % req.method, path = % req.path, response_encrypt_ms,
+        &stage_ids,
+        "response_encrypt",
+        response_encrypt_ms,
+        method = %req.method,
+        path = %req.path,
+        response_encrypt_ms,
         message = "Gateway response encryption stage completed",
     );
     Ok(Some(encrypted))
-}
-
-/// Complete fingerprint after business success so transport retries replay safely.
-async fn complete_idempotency(ctx: &HandlerCtx<'_>, serialized: &SerializedProxyResponse) {
-    let Some(fingerprint) = ctx.req.fingerprint.as_deref() else {
-        return;
-    };
-    let record = crate::crypto::IdempotencyRecord::done(
-        serialized.status,
-        serialized.bytes.clone(),
-        Some("application/json".to_string()),
-    );
-    if let Err(error) = ctx
-        .state
-        .proxy_state
-        .crypto_state
-        .complete_idempotency(fingerprint, IDEMPOTENCY_TTL_SECS, &record)
-        .await
-    {
-        warn!(
-            request_id = %ctx.request_id,
-            fingerprint = %fingerprint,
-            error = %error,
-            "Failed to complete idempotency record"
-        );
-    }
 }
 
 fn finish_request(ctx: &HandlerCtx<'_>, done: &mut CompletedRequest<'_>) {
@@ -759,6 +1206,7 @@ fn finish_request(ctx: &HandlerCtx<'_>, done: &mut CompletedRequest<'_>) {
         ctx.state,
         PostResponseTaskArgs {
             request_id: ctx.request_id.to_string(),
+            trace_context: done.trace_context.clone(),
             tenant_id: done.tenant_uuid,
             req: req.clone(),
             request_size: done.request_size,
@@ -770,9 +1218,11 @@ fn finish_request(ctx: &HandlerCtx<'_>, done: &mut CompletedRequest<'_>) {
             tenant_product_detail: Some(done.tenant_product_detail.clone()),
             tenant_product_id: done.tenant_product_detail.product_id,
             interaction_event_id: fetched.interaction_event_id,
+            idempotency_epoch_id: done.idempotency_epoch_id,
+            from_cbpro_fallback: fetched.from_cbpro_fallback,
+            reserved_amount: done.reserved_amount,
             service_total_ms,
             upstream_route: fetched.upstream_route.clone(),
-            fingerprint: req.fingerprint.clone(),
             usage_event,
             usage_event_produced,
             stage_ctx: stage_ctx.clone(),
@@ -781,7 +1231,6 @@ fn finish_request(ctx: &HandlerCtx<'_>, done: &mut CompletedRequest<'_>) {
     let timing = &*done.timing;
     let elapsed = timing.started_at.elapsed();
     let customer_total_ms = mazbri_core::num::millis_u64(elapsed);
-    // 仅平台依赖等待（限流/余额/产品），不含上游出站等待
     let dependency_wait_ms =
         timing.ratelimit_ms + timing.balance_check_ms + timing.product_detail_lookup_ms;
     let live_upstream = !(fetched.from_cache || fetched.from_cbpro_fallback);
@@ -791,7 +1240,6 @@ fn finish_request(ctx: &HandlerCtx<'_>, done: &mut CompletedRequest<'_>) {
         Duration::ZERO
     };
     let internal_duration = elapsed.saturating_sub(wire_duration);
-    // 网关本地段 = 总耗时 Duration − 上游网络耗时 Duration（先减 Duration 再转毫秒，避免截断偏差）
     let internal_ms = mazbri_core::num::millis_u64(internal_duration);
     let upstream_mode = fetched
         .upstream_route
@@ -803,7 +1251,6 @@ fn finish_request(ctx: &HandlerCtx<'_>, done: &mut CompletedRequest<'_>) {
         .tenant(&ctx.claims.tenant_code)
         .mode(upstream_mode)
         .record();
-    // 平台摘要全量保留，便于算 platform_ms
     if super::stage_log::always_log_stage() {
         stage_log!(
             info,
@@ -833,7 +1280,6 @@ fn finish_request(ctx: &HandlerCtx<'_>, done: &mut CompletedRequest<'_>) {
         done,
         AccessTimingFields {
             duration_ms: customer_total_ms,
-            // Cache/CBPro: treat as platform-local serve (no live upstream RTT).
             upstream_service_time_ms: Some(if fetched.from_cache || fetched.from_cbpro_fallback {
                 0
             } else {
@@ -865,8 +1311,6 @@ fn observe_proxy_histograms(
         .observe(wire_duration.as_secs_f64());
 }
 
-/// Builds the request's usage event, enqueues it for background batch produce when billable,
-/// and returns (billable event for the post-response path, enqueued flag, access-log billing fields).
 fn prepare_usage_event(
     ctx: &HandlerCtx<'_>,
     done: &CompletedRequest<'_>,
@@ -878,7 +1322,6 @@ fn prepare_usage_event(
 ) {
     let req = ctx.req;
     let fetched = done.fetched;
-    // 计费入队 span：事件的 trace_parent 指向它，计费 worker 的批量 span 以 link 关联回来。
     let enqueue_span = tracing::info_span!("billing.enqueue", product_id = %req.product_id);
     let (usage_event, billable) = enqueue_span.in_scope(|| {
         super::post_response::build_usage_event(&UsageChargeContext {
@@ -891,7 +1334,8 @@ fn prepare_usage_event(
             response_bytes: done.serialized.response_bytes,
             service_total_ms,
             interaction_event_id: fetched.interaction_event_id,
-            fingerprint: req.fingerprint.as_deref(),
+            idempotency_epoch_id: done.idempotency_epoch_id,
+            from_cbpro_fallback: fetched.from_cbpro_fallback,
         })
     });
     let billable = billable && ctx.state.billing_state.is_some();
@@ -918,7 +1362,6 @@ fn prepare_usage_event(
     )
 }
 
-/// Upstream cost of this request: the channel cost price when a live upstream call happened.
 fn upstream_cost(fetched: &FetchedResponse) -> String {
     let live_upstream = !(fetched.from_cache || fetched.from_cbpro_fallback);
     match fetched.upstream_route.as_ref() {
@@ -927,12 +1370,7 @@ fn upstream_cost(fetched: &FetchedResponse) -> String {
     }
 }
 
-/// L1: enqueue the usage event for background batch produce (never awaits the broker).
-/// Returns false (caller falls back to the outbox/deferred path) when disabled or queue full.
-fn produce_usage_event(
-    ctx: &HandlerCtx<'_>,
-    event: mazbri_billing::UsageOutboxEvent,
-) -> bool {
+fn produce_usage_event(ctx: &HandlerCtx<'_>, event: mazbri_billing::UsageOutboxEvent) -> bool {
     let Some(producer) = ctx.state.usage_event_producer.as_ref() else {
         return false;
     };
@@ -1016,11 +1454,9 @@ fn emit_gateway_access_log(
         .timing(timing_fields)
         .billing(billing_fields)
         .network(AccessNetworkFields {
-            // Cache / CBPro did not call live upstream — do not imply an upstream host RTT.
             upstream_host: route
                 .filter(|_| live_upstream)
                 .and_then(|r| normalize_upstream_host(&r.upstream_url)),
-            // 缓存 / CBPro 兜底没打到上游：上游状态记 0（对标 Envoy 未连上游时 `-`）。
             upstream_status_code: Some(if live_upstream { status } else { 0 }),
             client_ip: Some(done.source_ip.to_string()),
             xff: header_str("x-forwarded-for"),
@@ -1046,4 +1482,3 @@ fn emit_gateway_access_log(
         .build();
     emit_access_log("gateway.access", &event);
 }
-

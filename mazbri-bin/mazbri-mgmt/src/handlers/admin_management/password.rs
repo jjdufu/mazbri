@@ -52,5 +52,6 @@ pub async fn reset_admin_password(
         client_ip,
     )
     .await?;
+    crate::middleware::auth::invalidate_admin_subject_state(&state.redis, id).await;
     Ok(ApiResponse::ok(data).into_response())
 }

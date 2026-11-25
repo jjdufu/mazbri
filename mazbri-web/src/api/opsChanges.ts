@@ -17,14 +17,18 @@ export interface ChangesResponse {
   events: ChangeEvent[];
 }
 
-export async function fetchOpsChanges(params: {
-  start?: number;
-  end?: number;
-  limit?: number;
-}) {
+export async function fetchOpsChanges(
+  params: {
+    start?: number;
+    end?: number;
+    limit?: number;
+  },
+  signal?: AbortSignal,
+) {
   return request.get<ChangesResponse>({
     url: `${API_BASE_PATH}/stats/ops/changes`,
     params,
+    signal,
     showErrorMessage: false,
   });
 }

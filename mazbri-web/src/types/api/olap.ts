@@ -139,7 +139,7 @@ export interface TenantOverviewRow {
   calls: number;
   success_rate: number;
   p95_ms: number;
-  cost: string;
+  cost?: string | null;
 }
 
 export interface TenantErrorRow {

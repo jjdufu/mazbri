@@ -4,10 +4,12 @@
 
 use crate::greptimedb::GreptimeDBClient;
 use crate::metrics::{
-    MAZBRI_SLO_BURN_PAGE, MAZBRI_SLO_BURN_TICKET, MAZBRI_SLO_ERROR_BUDGET_REMAINING, MAZBRI_SLO_SLI,
+    MAZBRI_SLO_BURN_PAGE, MAZBRI_SLO_BURN_TICKET, MAZBRI_SLO_ERROR_BUDGET_REMAINING,
+    MAZBRI_SLO_EVAL_ERRORS_TOTAL, MAZBRI_SLO_SLI,
 };
 use mazbri_core::sqlx::{self, PgPool, Row};
 use serde::Deserialize;
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -75,6 +77,47 @@ pub fn error_budget_remaining(consumed_fraction: f64, objective: f64) -> f64 {
     1.0 - (consumed_fraction.clamp(0.0, 1.0) / budget)
 }
 
+/// 按 `window_days`（如 7d / 30d）累计 `slo_sli_5m` 桶样本计算剩余错误预算比例。
+#[must_use]
+pub fn cumulative_error_budget_remaining(
+    bad_bucket_sum: f64,
+    sample_count: u64,
+    current_bad_fraction: f64,
+    window_days: i32,
+    interval_secs: u64,
+    objective: f64,
+) -> f64 {
+    let days = u64::try_from(window_days.max(1)).unwrap_or(30);
+    let window_secs = days.saturating_mul(86_400);
+    let step_secs = interval_secs.max(1);
+    let expected_buckets = (window_secs / step_secs).max(1);
+    let denom_buckets = expected_buckets.max(sample_count.saturating_add(1));
+    let denom_u32 = u32::try_from(denom_buckets).unwrap_or(u32::MAX).max(1);
+    let total_bad = bad_bucket_sum.max(0.0) + current_bad_fraction.clamp(0.0, 1.0);
+    let consumed_fraction = total_bad / f64::from(denom_u32);
+    error_budget_remaining(consumed_fraction, objective).clamp(-1.0, 1.0)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum SliSample {
+    Value(f64),
+    ZeroTraffic,
+}
+
+fn sample_burn_rate(sample: SliSample, objective: f64) -> f64 {
+    match sample {
+        SliSample::ZeroTraffic => 0.0,
+        SliSample::Value(sli) => burn_rate(sli, objective),
+    }
+}
+
+const fn sample_sli_value(sample: SliSample) -> f64 {
+    match sample {
+        SliSample::ZeroTraffic => 1.0,
+        SliSample::Value(sli) => sli,
+    }
+}
+
 /// Google SRE workbook 快烧：任一对 (1h&5m@14.4) 或 (6h&30m@6) 同时成立。
 #[must_use]
 pub fn is_fast_burn(w: &BurnWindows) -> bool {
@@ -99,10 +142,12 @@ struct SliRow {
 struct Runner {
     greptime: Arc<GreptimeDBClient>,
     pool: Arc<PgPool>,
+    interval_secs: u64,
+    active_slos: HashSet<String>,
 }
 
 impl Runner {
-    async fn run(self, interval: Duration) {
+    async fn run(mut self, interval: Duration) {
         if let Err(e) = self.ensure_table().await {
             tracing::warn!(target: "slo", error = %e, "创建 slo_sli_5m 失败（将重试）");
         }
@@ -136,19 +181,63 @@ CREATE TABLE IF NOT EXISTS slo_sli_5m (
 )
 ";
         self.greptime
-            .execute_query_rows(ddl, "create slo_sli_5m")
+            .with_query_timeout(
+                "slo_create_table",
+                self.greptime.execute_query_rows(ddl, "create slo_sli_5m"),
+            )
             .await
             .map_err(|e| e.to_string())?;
         Ok(())
     }
 
-    async fn tick(&self) -> Result<(), String> {
+    async fn tick(&mut self) -> Result<(), String> {
         let defs = self.load_defs().await?;
+        if let Err(e) = self.cleanup_orphan_burn_alerts(&defs).await {
+            tracing::warn!(target: "slo", error = %e, "清理孤儿 SLO 告警规则失败");
+        }
         for def in defs {
             if let Err(e) = self.eval_one(&def).await {
-                tracing::warn!(target: "slo", slo = %def.name, error = %e, "单条 SLO 计算失败");
+                MAZBRI_SLO_EVAL_ERRORS_TOTAL
+                    .with_label_values(&[def.name.as_str()])
+                    .inc();
+                tracing::warn!(
+                    target: "slo",
+                    slo = %def.name,
+                    error = %e,
+                    "单条 SLO 计算失败，保留上一有效指标值"
+                );
             }
         }
+        Ok(())
+    }
+
+    async fn cleanup_orphan_burn_alerts(&mut self, defs: &[SloDef]) -> Result<(), String> {
+        let mut expected_rule_names = Vec::with_capacity(defs.len().saturating_mul(2));
+        let mut current_slos = HashSet::with_capacity(defs.len());
+        for def in defs {
+            expected_rule_names.push(format!("SLO 快烧 {}", def.name));
+            expected_rule_names.push(format!("SLO 慢烧 {}", def.name));
+            current_slos.insert(def.name.clone());
+        }
+        sqlx::query(
+            "DELETE FROM alert_rules \
+             WHERE labels ->> 'category' = 'slo' \
+               AND NOT (labels ? 'seed') \
+               AND NOT (name = ANY($1))",
+        )
+        .bind(&expected_rule_names)
+        .execute(self.pool.as_ref())
+        .await
+        .map_err(|e| e.to_string())?;
+
+        for stale in self.active_slos.difference(&current_slos) {
+            let label = stale.as_str();
+            let _ = MAZBRI_SLO_SLI.remove_label_values(&[label]);
+            let _ = MAZBRI_SLO_ERROR_BUDGET_REMAINING.remove_label_values(&[label]);
+            let _ = MAZBRI_SLO_BURN_PAGE.remove_label_values(&[label]);
+            let _ = MAZBRI_SLO_BURN_TICKET.remove_label_values(&[label]);
+        }
+        self.active_slos = current_slos;
         Ok(())
     }
 
@@ -178,13 +267,24 @@ CREATE TABLE IF NOT EXISTS slo_sli_5m (
         if def.query_kind != "promql" {
             return Err(format!("暂不支持 query_kind={}", def.query_kind));
         }
-        let sli = self.instant_sli(&def.query).await?;
-        let burns = self.collect_burns(def).await;
+        let base_query = rewrite_window(&def.query, "5m");
+        let sample = self.instant_sli(&base_query).await?;
+        let sli = sample_sli_value(sample);
+        let burns = self.collect_burns(def).await?;
         let page = if is_fast_burn(&burns) { 1.0 } else { 0.0 };
         let ticket = if is_slow_burn(&burns) { 1.0 } else { 0.0 };
-        let consumed = (1.0 - sli).clamp(0.0, 1.0);
-        let remaining = error_budget_remaining(consumed, def.objective).clamp(-1.0, 1.0);
-        let _ = def.window_days;
+
+        let (bad_sum, sample_count) = self
+            .query_historical_budget(&def.name, def.window_days)
+            .await?;
+        let remaining = cumulative_error_budget_remaining(
+            bad_sum,
+            sample_count,
+            (1.0 - sli).clamp(0.0, 1.0),
+            def.window_days,
+            self.interval_secs,
+            def.objective,
+        );
 
         let label = def.name.as_str();
         MAZBRI_SLO_SLI.with_label_values(&[label]).set(sli);
@@ -218,7 +318,47 @@ CREATE TABLE IF NOT EXISTS slo_sli_5m (
         Ok(())
     }
 
-    async fn collect_burns(&self, def: &SloDef) -> BurnWindows {
+    async fn query_historical_budget(
+        &self,
+        slo_name: &str,
+        window_days: i32,
+    ) -> Result<(f64, u64), String> {
+        let window_secs = i64::from(window_days.max(1)).saturating_mul(86_400);
+        let slo_esc = slo_name.replace('\\', "\\\\").replace('\'', "''");
+        let sql = format!(
+            "SELECT COALESCE(SUM(1.0 - sli), 0.0) AS bad_sum, COUNT(*) AS cnt \
+             FROM slo_sli_5m \
+             WHERE slo = '{slo_esc}' AND ts > now() - INTERVAL '{window_secs} seconds'"
+        );
+        let rows = self
+            .greptime
+            .with_query_timeout(
+                "slo_budget_agg",
+                self.greptime
+                    .execute_query_rows(&sql, "aggregate slo_sli_5m"),
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+        let Some(first) = rows.first() else {
+            return Ok((0.0, 0));
+        };
+        let bad_sum = first
+            .get("bad_sum")
+            .and_then(|v| v.as_f64().or_else(|| v.as_str()?.parse::<f64>().ok()))
+            .filter(|v| v.is_finite())
+            .unwrap_or(0.0);
+        let cnt = first
+            .get("cnt")
+            .and_then(|v| {
+                v.as_u64()
+                    .or_else(|| v.as_i64().and_then(|i| u64::try_from(i).ok()))
+                    .or_else(|| v.as_str()?.parse::<u64>().ok())
+            })
+            .unwrap_or(0);
+        Ok((bad_sum, cnt))
+    }
+
+    async fn collect_burns(&self, def: &SloDef) -> Result<BurnWindows, String> {
         let mut burns = BurnWindows::default();
         let pairs = [
             ("1h", "hour"),
@@ -231,14 +371,8 @@ CREATE TABLE IF NOT EXISTS slo_sli_5m (
         ];
         for (win, field) in pairs {
             let q = rewrite_window(&def.query, win);
-            let sli_w = match self.instant_sli(&q).await {
-                Ok(v) => v,
-                Err(e) => {
-                    tracing::debug!(target: "slo", slo = %def.name, window = win, error = %e, "窗口 SLI 查询失败，按 1.0 计");
-                    1.0
-                }
-            };
-            let rate = burn_rate(sli_w, def.objective);
+            let sample = self.instant_sli(&q).await?;
+            let rate = sample_burn_rate(sample, def.objective);
             match field {
                 "hour" => burns.hour = rate,
                 "five_min" => burns.five_min = rate,
@@ -250,24 +384,26 @@ CREATE TABLE IF NOT EXISTS slo_sli_5m (
                 _ => {}
             }
         }
-        burns
+        Ok(burns)
     }
 
-    async fn instant_sli(&self, query: &str) -> Result<f64, String> {
+    async fn instant_sli(&self, query: &str) -> Result<SliSample, String> {
         let series = self
             .greptime
-            .query_instant_vector(query)
+            .with_query_timeout("slo_instant_sli", self.greptime.query_instant_vector(query))
             .await
             .map_err(|e| e.to_string())?;
-        let v = series.into_iter().next().map_or(1.0, |(_, value)| value);
-        if !v.is_finite() {
-            return Ok(1.0);
+        let Some((_, value)) = series.into_iter().next() else {
+            return Ok(SliSample::ZeroTraffic);
+        };
+        if !value.is_finite() {
+            return Err("SLI 查询返回非有限数值".to_string());
         }
-        Ok(v.clamp(0.0, 1.0))
+        Ok(SliSample::Value(value.clamp(0.0, 1.0)))
     }
 
     async fn write_row(&self, row: &SliRow) -> Result<(), String> {
-        let slo_esc = row.slo.replace('\'', "''");
+        let slo_esc = row.slo.replace('\\', "\\\\").replace('\'', "''");
         let b = row.burns;
         let sql = format!(
             "INSERT INTO slo_sli_5m(slo, sli, error_budget_remaining, burn_1h, burn_5m, burn_6h, burn_30m, burn_24h, burn_2h, burn_3d, burn_page, burn_ticket, ts) \
@@ -285,7 +421,10 @@ CREATE TABLE IF NOT EXISTS slo_sli_5m (
             ticket = row.ticket,
         );
         self.greptime
-            .execute_query_rows(&sql, "insert slo_sli_5m")
+            .with_query_timeout(
+                "slo_write_row",
+                self.greptime.execute_query_rows(&sql, "insert slo_sli_5m"),
+            )
             .await
             .map_err(|e| e.to_string())?;
         Ok(())
@@ -342,20 +481,114 @@ CREATE TABLE IF NOT EXISTS slo_sli_5m (
     }
 }
 
-/// 将查询中第一个 `[…]` 时间窗替换为 `new_window`（如 `5m`→`1h`）。
+fn is_promql_duration(raw: &str) -> bool {
+    let s = raw.trim();
+    if s.is_empty() {
+        return false;
+    }
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let digits_start = i;
+        while i < bytes.len() && bytes[i].is_ascii_digit() {
+            i += 1;
+        }
+        if i == digits_start || i >= bytes.len() {
+            return false;
+        }
+        if i + 1 < bytes.len() && &bytes[i..i + 2] == b"ms" {
+            i += 2;
+        } else if matches!(bytes[i], b's' | b'm' | b'h' | b'd' | b'w' | b'y') {
+            i += 1;
+        } else {
+            return false;
+        }
+    }
+    true
+}
+
+/// 遍历替换 `PromQL` 中全部非引号字面量内的区间向量选择器 `[duration]` 与 `{{window}}` 占位符，
+/// 确保分子与分母的时间窗完全同步，同时保留引号内正则（如 `path=~"/v1/[0-9]+"`）。
 #[must_use]
 pub fn rewrite_window(query: &str, new_window: &str) -> String {
-    if let Some(start) = query.find('[')
-        && let Some(rel) = query[start + 1..].find(']')
-    {
-        let end = start + 1 + rel;
-        let mut out = String::with_capacity(query.len() + new_window.len());
-        out.push_str(&query[..=start]);
-        out.push_str(new_window);
-        out.push_str(&query[end..]);
-        return out;
+    let mut out = String::with_capacity(query.len() + new_window.len() * 2);
+    let mut i = 0;
+    let bytes = query.as_bytes();
+    let mut quote: Option<u8> = None;
+
+    while i < bytes.len() {
+        let b = bytes[i];
+        if let Some(q) = quote {
+            out.push(char::from(b));
+            if b == b'\\' && q != b'`' && i + 1 < bytes.len() {
+                // Copy full UTF-8 char after escape
+                let next_str = &query[i + 1..];
+                if let Some(ch) = next_str.chars().next() {
+                    out.push(ch);
+                    i += 1 + ch.len_utf8();
+                    continue;
+                }
+            }
+            if b == q {
+                quote = None;
+            }
+            i += 1;
+            continue;
+        }
+
+        if matches!(b, b'"' | b'\'' | b'`') {
+            quote = Some(b);
+            out.push(char::from(b));
+            i += 1;
+            continue;
+        }
+
+        if query[i..].starts_with("{{window}}") {
+            out.push_str(new_window);
+            i += "{{window}}".len();
+            continue;
+        }
+
+        if b == b'['
+            && let Some(rel_end) = query[i + 1..].find(']')
+        {
+            let inner = &query[i + 1..i + 1 + rel_end];
+            if inner.trim() == "{{window}}" {
+                out.push('[');
+                out.push_str(new_window);
+                out.push(']');
+                i += rel_end + 2;
+                continue;
+            }
+            if let Some((dur_part, step_part)) = inner.split_once(':') {
+                if (dur_part.trim() == "{{window}}" || is_promql_duration(dur_part))
+                    && (step_part.trim().is_empty() || is_promql_duration(step_part))
+                {
+                    out.push('[');
+                    out.push_str(new_window);
+                    out.push(':');
+                    out.push_str(step_part);
+                    out.push(']');
+                    i += rel_end + 2;
+                    continue;
+                }
+            } else if is_promql_duration(inner) {
+                out.push('[');
+                out.push_str(new_window);
+                out.push(']');
+                i += rel_end + 2;
+                continue;
+            }
+        }
+
+        if let Some(ch) = query[i..].chars().next() {
+            out.push(ch);
+            i += ch.len_utf8();
+        } else {
+            break;
+        }
     }
-    query.to_string()
+    out
 }
 
 /// # Errors
@@ -376,7 +609,12 @@ pub fn spawn(
         tracing::warn!(target: "slo", "GreptimeDB 未配置，跳过 SLO 任务");
         return Ok(());
     };
-    let runner = Runner { greptime, pool };
+    let runner = Runner {
+        greptime,
+        pool,
+        interval_secs: config.interval_secs,
+        active_slos: HashSet::new(),
+    };
     let interval = Duration::from_secs(config.interval_secs);
     tokio::spawn(runner.run(interval));
     tracing::info!(target: "slo", interval_secs = config.interval_secs, "SLO 计算已启动");
@@ -394,9 +632,25 @@ mod tests {
     }
 
     #[test]
-    fn budget_remaining() {
+    fn zero_traffic_window_produces_zero_burn_rate() {
+        assert!((sample_burn_rate(SliSample::ZeroTraffic, 0.999) - 0.0).abs() < 1e-12);
+        assert!((sample_sli_value(SliSample::ZeroTraffic) - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn budget_remaining_and_cumulative_windows() {
         let rem = error_budget_remaining(0.0005, 0.999);
         assert!((rem - 0.5).abs() < 1e-9);
+
+        // 30d window @ 300s step = 8640 buckets; objective 99.9% => allowed bad buckets = 8.64.
+        // 4.32 bad buckets consumed so far + 0 current => 50% budget remaining.
+        let rem_30d = cumulative_error_budget_remaining(4.32, 100, 0.0, 30, 300, 0.999);
+        assert!((rem_30d - 0.5).abs() < 1e-6, "got {rem_30d}");
+
+        // 7d window @ 300s step = 2016 buckets; objective 99.0% => allowed bad buckets = 20.16.
+        // 20.16 bad buckets consumed => 0% budget remaining.
+        let rem_7d = cumulative_error_budget_remaining(20.16, 200, 0.0, 7, 300, 0.99);
+        assert!(rem_7d.abs() < 1e-6, "got {rem_7d}");
     }
 
     #[test]
@@ -438,11 +692,23 @@ mod tests {
     }
 
     #[test]
-    fn rewrite_window_replaces_first() {
-        let q = r#"sum(rate(api_proxy_requests_total{result="ok"}[5m])) / x"#;
+    fn rewrite_window_replaces_all_selectors_and_preserves_quoted_regex() {
+        let q = r#"sum(rate(api_proxy_requests_total{result="ok",path=~"/v1/[0-9]+/[5m]"}[5m])) / (sum(rate(api_proxy_requests_total{path=~"/v1/[0-9]+"}[5m])) > 0)"#;
         assert_eq!(
             rewrite_window(q, "1h"),
-            r#"sum(rate(api_proxy_requests_total{result="ok"}[1h])) / x"#
+            r#"sum(rate(api_proxy_requests_total{result="ok",path=~"/v1/[0-9]+/[5m]"}[1h])) / (sum(rate(api_proxy_requests_total{path=~"/v1/[0-9]+"}[1h])) > 0)"#
+        );
+
+        let templated = "sum(rate(x[{{window}}])) / sum(rate(y[{{window}}]))";
+        assert_eq!(
+            rewrite_window(templated, "6h"),
+            "sum(rate(x[6h])) / sum(rate(y[6h]))"
+        );
+
+        let subq = "max_over_time(rate(http_requests_total[5m])[30m:1m])";
+        assert_eq!(
+            rewrite_window(subq, "2h"),
+            "max_over_time(rate(http_requests_total[2h])[2h:1m])"
         );
     }
 

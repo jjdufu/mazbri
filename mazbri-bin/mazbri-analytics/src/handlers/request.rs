@@ -440,6 +440,7 @@ pub(super) fn build_query_params(
         event_target: req.event_target,
         filters,
         latest_universe_limit,
+        errors_only: false,
         limit: req.capped_page_size() as usize,
         offset: req.capped_offset() as usize,
     }
@@ -510,6 +511,14 @@ pub async fn query_request_logs(
         (Ok(start), Ok(end)) => (start, end),
         (Err(error), _) | (_, Err(error)) => return bad_request(error),
     };
+    if let (Some(s), Some(e)) = (parsed_start, parsed_end)
+        && s >= e
+    {
+        return bad_request(HandlerError {
+            error: "invalid_time_range".to_string(),
+            message: "start_time 必须小于 end_time".to_string(),
+        });
+    }
     let has_time_params = parsed_start.is_some() || parsed_end.is_some();
     let has_timestamp_filters = mazbri_analytics::list_query::filters_have_timestamp(&filters);
     let query_mode = if req.is_selective_lookup() {

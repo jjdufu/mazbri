@@ -28,27 +28,40 @@ pub fn get_row_field_i16(row: &sqlx::postgres::PgRow, field: &str, context: &str
         }
     }
 }
-pub fn instant_from_db_timestamp(name: &str, db_last_change: Option<DateTime<Utc>>) -> Instant {
+pub fn unix_ms_from_db_timestamp(name: &str, db_last_change: Option<DateTime<Utc>>) -> i64 {
+    let now_ms = Utc::now().timestamp_millis();
     match db_last_change {
         Some(ts) => {
-            let elapsed = Utc::now() - ts;
-            if let Ok(duration) = elapsed.to_std() {
-                Instant::now().checked_sub(duration).unwrap()
-            } else {
+            let ts_ms = ts.timestamp_millis();
+            if ts_ms > now_ms {
                 warn!(
-                    circuit_breaker = % name, db_ts = % ts,
+                    circuit_breaker = %name,
+                    db_ts = %ts,
                     "last_state_change is in the future (clock skew), treating as just transitioned"
                 );
-                Instant::now()
+                now_ms
+            } else {
+                ts_ms
             }
         }
-        None => Instant::now(),
+        None => now_ms,
     }
 }
-pub fn build_cache_entry(state: CircuitState, last_state_change: Instant) -> LocalCacheEntry {
+
+#[cfg(test)]
+pub fn build_cache_entry(state: CircuitState, last_state_change_unix_ms: i64) -> LocalCacheEntry {
+    build_cache_entry_with_failures(state, last_state_change_unix_ms, 0)
+}
+
+pub fn build_cache_entry_with_failures(
+    state: CircuitState,
+    last_state_change_unix_ms: i64,
+    failure_count: u64,
+) -> LocalCacheEntry {
     LocalCacheEntry {
         state,
-        last_state_change,
-        cached_at: Instant::now(),
+        failure_count,
+        last_state_change_unix_ms,
+        fetched_at: Instant::now(),
     }
 }

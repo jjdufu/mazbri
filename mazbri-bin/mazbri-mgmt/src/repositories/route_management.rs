@@ -179,15 +179,15 @@ fn push_channel_scope(
         let pat = pattern.to_string();
         builder.push(" AND (c.name ILIKE ");
         builder.push_bind(pat.clone());
-        builder.push(" OR c.channel_code ILIKE ");
+        builder.push(" ESCAPE '\\' OR c.channel_code ILIKE ");
         builder.push_bind(pat.clone());
-        builder.push(" OR c.path_prefix ILIKE ");
+        builder.push(" ESCAPE '\\' OR c.path_prefix ILIKE ");
         builder.push_bind(pat.clone());
-        builder.push(" OR s.name ILIKE ");
+        builder.push(" ESCAPE '\\' OR s.name ILIKE ");
         builder.push_bind(pat.clone());
-        builder.push(" OR s.supplier_code ILIKE ");
+        builder.push(" ESCAPE '\\' OR s.supplier_code ILIKE ");
         builder.push_bind(pat);
-        builder.push(")");
+        builder.push(" ESCAPE '\\')");
     }
     crate::list_query::apply_pg_filters(builder, filters)
 }
@@ -408,20 +408,20 @@ fn push_route_rule_scope(
         builder.push_bind(value);
     }
     if let Some(value) = search.map(str::trim).filter(|value| !value.is_empty()) {
-        let pattern = format!("%{value}%");
+        let pattern = mazbri_core::config::contains_ilike_pattern(value);
         builder.push(" AND (metadata #>> '{route_config,product_name}' ILIKE ");
         builder.push_bind(pattern.clone());
-        builder.push(" OR metadata #>> '{route_config,product_code}' ILIKE ");
+        builder.push(" ESCAPE '\\' OR metadata #>> '{route_config,product_code}' ILIKE ");
         builder.push_bind(pattern.clone());
-        builder.push(" OR metadata #>> '{route_config,tenant_name}' ILIKE ");
+        builder.push(" ESCAPE '\\' OR metadata #>> '{route_config,tenant_name}' ILIKE ");
         builder.push_bind(pattern.clone());
-        builder.push(" OR metadata #>> '{route_config,tenant_code}' ILIKE ");
+        builder.push(" ESCAPE '\\' OR metadata #>> '{route_config,tenant_code}' ILIKE ");
         builder.push_bind(pattern.clone());
-        builder.push(" OR product_id::text ILIKE ");
+        builder.push(" ESCAPE '\\' OR product_id::text ILIKE ");
         builder.push_bind(pattern.clone());
-        builder.push(" OR tenant_id::text ILIKE ");
+        builder.push(" ESCAPE '\\' OR tenant_id::text ILIKE ");
         builder.push_bind(pattern);
-        builder.push(")");
+        builder.push(" ESCAPE '\\')");
     }
     if let Some(value) = status {
         builder.push(" AND status = ");

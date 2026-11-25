@@ -53,4 +53,25 @@ impl CacheConfig {
         }
         true
     }
+    /// Returns `true` when `endpoint` matches an explicit non-wildcard path rule in `api_ttl`
+    /// (excluding catch-all `"*"` or `"/*"` rules and zero-TTL entries).
+    #[must_use]
+    pub fn has_explicit_api_ttl(&self, endpoint: &str) -> bool {
+        if self.api_ttl.get(endpoint).is_some_and(|ttl| *ttl > 0) {
+            return true;
+        }
+        for (pattern, ttl) in &self.api_ttl {
+            if *ttl == 0 {
+                continue;
+            }
+            if let Some(prefix) = pattern.strip_suffix('*')
+                && !prefix.is_empty()
+                && prefix != "/"
+                && endpoint.starts_with(prefix)
+            {
+                return true;
+            }
+        }
+        false
+    }
 }

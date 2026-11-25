@@ -15,6 +15,45 @@ const ENQUEUE_INSERT_SQL: &str = "INSERT INTO usage_charge_queue \
      (tenant_id, account_id, usage_record_id, amount, payload, max_retries, trace_parent) \
      VALUES ($1, $2, $3, $4, $5, $6, $7) \
      ON CONFLICT (usage_record_id) DO NOTHING RETURNING id";
+const CLAIM_PENDING_QUEUE_SQL: &str = r"
+WITH claimed AS (
+    SELECT id
+    FROM usage_charge_queue
+    WHERE status IN ('pending', 'failed')
+      AND scheduled_at <= NOW()
+    ORDER BY created_at ASC
+    LIMIT $1
+    FOR UPDATE SKIP LOCKED
+)
+UPDATE usage_charge_queue q
+SET status = 'processing',
+    worker_node = $2,
+    locked_at = NOW(),
+    lease_seq = q.lease_seq + 1
+FROM claimed
+WHERE q.id = claimed.id
+RETURNING q.id, q.tenant_id, q.account_id, q.usage_record_id, q.amount, q.payload,
+          q.status::VARCHAR as status, q.lease_seq, q.retry_count, q.max_retries,
+          q.error_message, q.scheduled_at, q.transaction_id, q.created_at, q.trace_parent
+";
+const MARK_COMPLETED_FENCED_SQL: &str = r"UPDATE usage_charge_queue
+   SET status = 'completed', transaction_id = $2, processed_at = $3
+   WHERE id = $1 AND status = 'processing' AND lease_seq = $4";
+const MARK_FAILED_LOCK_FENCED_SQL: &str = r"SELECT tenant_id, account_id, amount, retry_count, max_retries
+   FROM usage_charge_queue
+   WHERE id = $1 AND status = 'processing' AND lease_seq = $2
+   FOR UPDATE";
+const MARK_FAILED_RETRY_FENCED_SQL: &str = r"UPDATE usage_charge_queue
+   SET status = 'failed', retry_count = retry_count + 1,
+       error_message = $1, scheduled_at = $2
+   WHERE id = $3 AND status = 'processing' AND lease_seq = $4";
+const MARK_FAILED_DEAD_LETTER_FENCED_SQL: &str = r"UPDATE usage_charge_queue
+   SET status = 'dead_letter', error_message = $1
+   WHERE id = $2 AND status = 'processing' AND lease_seq = $3";
+const MARK_USAGE_CHARGE_FAILED_SQL: &str = "UPDATE usage_records \
+     SET charge_status = 'charge_failed' \
+     WHERE charge_queue_id = $1 AND charge_status IS DISTINCT FROM 'charged'";
+
 /// 一条待入队的扣费。
 #[derive(Debug, Clone)]
 pub struct ChargeEnqueue<'a> {
@@ -27,7 +66,7 @@ pub struct ChargeEnqueue<'a> {
     pub trace_parent: Option<&'a str>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ChargeQueue {
     db: PgPool,
     config: QueueConfig,
@@ -59,7 +98,11 @@ impl ChargeQueue {
         amount: Decimal,
         payload: Option<serde_json::Value>,
     ) -> Result<Uuid, BillingError> {
-        // 直接入队的调用方（tarpc charge、中间件）以当前 span 作为扣费 worker 的 link 目标。
+        if amount < Decimal::ZERO {
+            return Err(BillingError::InvalidAmount(format!(
+                "Charge enqueue amount must be non-negative, got {amount}"
+            )));
+        }
         let trace_parent = mazbri_core::trace_propagation::current_span_context()
             .map(|span_context| mazbri_core::trace_spans::traceparent_of(&span_context));
         let mut tx = self.db.begin().await?;
@@ -101,6 +144,11 @@ impl ChargeQueue {
             payload,
             trace_parent,
         } = item;
+        if amount < Decimal::ZERO {
+            return Err(BillingError::InvalidAmount(format!(
+                "Charge enqueue amount must be non-negative, got {amount}"
+            )));
+        }
         let inserted: Option<Uuid> = sqlx::query_scalar(ENQUEUE_INSERT_SQL)
             .bind(tenant_id)
             .bind(account_id)
@@ -168,42 +216,15 @@ impl ChargeQueue {
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn fetch_pending(&self, limit: i32) -> Result<Vec<ChargeQueueItem>, BillingError> {
-        let mut tx = self.db.begin().await?;
-        let rows = sqlx::query_as::<
-            _,
-            ChargeQueueItem,
-        >(
-                r"SELECT id, tenant_id, account_id, usage_record_id, amount, payload,
-                      status::VARCHAR as status, retry_count, max_retries, error_message, scheduled_at,
-                      transaction_id, created_at, trace_parent
-               FROM usage_charge_queue
-               WHERE status IN ('pending', 'failed')
-                 AND scheduled_at <= NOW()
-               ORDER BY created_at ASC
-               LIMIT $1
-               FOR UPDATE SKIP LOCKED",
-            )
+        let mut rows = sqlx::query_as::<_, ChargeQueueItem>(CLAIM_PENDING_QUEUE_SQL)
             .bind(i64::from(limit))
-            .fetch_all(&mut *tx)
+            .bind(&self.config.worker_node_id)
+            .fetch_all(&self.db)
             .await?;
-        if rows.is_empty() {
-            tx.commit().await?;
-            return Ok(Vec::new());
+        rows.sort_by_key(|r| r.created_at);
+        if !rows.is_empty() {
+            debug!("Fetched {} pending charge items for processing", rows.len());
         }
-        let ids: Vec<Uuid> = rows.iter().map(|r| r.id).collect();
-        let now = Utc::now();
-        sqlx::query(
-            r"UPDATE usage_charge_queue
-               SET status = 'processing', worker_node = $1, locked_at = $2
-               WHERE id = ANY($3)",
-        )
-        .bind(&self.config.worker_node_id)
-        .bind(now)
-        .bind(&ids)
-        .execute(&mut *tx)
-        .await?;
-        tx.commit().await?;
-        debug!("Fetched {} pending charge items for processing", rows.len());
         Ok(rows)
     }
     /// # Errors
@@ -212,29 +233,38 @@ impl ChargeQueue {
     pub async fn mark_completed(
         &self,
         queue_id: Uuid,
+        lease_seq: i64,
         transaction_id: Uuid,
-    ) -> Result<(), BillingError> {
+    ) -> Result<bool, BillingError> {
         let now = Utc::now();
-        sqlx::query(
-            r"UPDATE usage_charge_queue
-               SET status = 'completed', transaction_id = $2, processed_at = $3
-               WHERE id = $1",
-        )
-        .bind(queue_id)
-        .bind(transaction_id)
-        .bind(now)
-        .execute(&self.db)
-        .await?;
+        let mut tx = self.db.begin().await?;
+        let updated = sqlx::query(MARK_COMPLETED_FENCED_SQL)
+            .bind(queue_id)
+            .bind(transaction_id)
+            .bind(now)
+            .bind(lease_seq)
+            .execute(&mut *tx)
+            .await?;
+        if updated.rows_affected() == 0 {
+            tx.commit().await?;
+            debug!(
+                %queue_id,
+                lease_seq,
+                "mark_completed fenced out: queue row no longer owned by this lease"
+            );
+            return Ok(false);
+        }
         sqlx::query(
             "UPDATE usage_records SET charge_status = 'charged', charged_at = $1 \
-             WHERE charge_queue_id = $2",
+             WHERE charge_queue_id = $2 AND (charge_status IS NULL OR charge_status != 'charged')",
         )
         .bind(now)
         .bind(queue_id)
-        .execute(&self.db)
+        .execute(&mut *tx)
         .await?;
+        tx.commit().await?;
         debug!("Marked charge queue item as completed: {}", queue_id);
-        Ok(())
+        Ok(true)
     }
     /// # Errors
     ///
@@ -242,76 +272,88 @@ impl ChargeQueue {
     pub async fn mark_failed(
         &self,
         queue_id: Uuid,
+        lease_seq: i64,
         error_message: &str,
     ) -> Result<bool, BillingError> {
-        let (retry_count, max_retries): (i32, i32) =
-            sqlx::query_as("SELECT retry_count, max_retries FROM usage_charge_queue WHERE id = $1")
+        let mut tx = self.db.begin().await?;
+        let locked: Option<(Uuid, Uuid, Decimal, i32, i32)> =
+            sqlx::query_as(MARK_FAILED_LOCK_FENCED_SQL)
                 .bind(queue_id)
-                .fetch_one(&self.db)
+                .bind(lease_seq)
+                .fetch_optional(&mut *tx)
                 .await?;
+        let Some((tenant_id, account_id, amount, retry_count, max_retries)) = locked else {
+            tx.commit().await?;
+            debug!(
+                %queue_id,
+                lease_seq,
+                "mark_failed fenced out: queue row no longer in processing for this lease"
+            );
+            return Ok(false);
+        };
         if retry_count < max_retries {
             const MAX_RETRY_DELAY_SECS: i64 = 3600;
-            let backoff_factor = 2i64.pow(u32::saturating_from(retry_count.min(30)));
+            let backoff_factor = 2i64.pow(u32::saturating_from(retry_count.clamp(0, 30)));
             let delay_secs =
                 (self.config.retry_interval_secs * backoff_factor).min(MAX_RETRY_DELAY_SECS);
             let scheduled_at = Utc::now() + ChronoDuration::seconds(delay_secs);
-            sqlx::query(
-                r"UPDATE usage_charge_queue
-                   SET status = 'failed', retry_count = retry_count + 1,
-                       error_message = $1, scheduled_at = $2
-                   WHERE id = $3",
-            )
-            .bind(error_message)
-            .bind(scheduled_at)
-            .bind(queue_id)
-            .execute(&self.db)
-            .await?;
-            sqlx::query(
-                    "UPDATE usage_records SET charge_status = 'charge_failed' WHERE charge_queue_id = $1",
-                )
+            let res = sqlx::query(MARK_FAILED_RETRY_FENCED_SQL)
+                .bind(error_message)
+                .bind(scheduled_at)
                 .bind(queue_id)
-                .execute(&self.db)
+                .bind(lease_seq)
+                .execute(&mut *tx)
                 .await?;
+            if res.rows_affected() == 0 {
+                tx.commit().await?;
+                return Ok(false);
+            }
+            sqlx::query(MARK_USAGE_CHARGE_FAILED_SQL)
+                .bind(queue_id)
+                .execute(&mut *tx)
+                .await?;
+            tx.commit().await?;
             warn!(
-                "Charge queue item {} failed (attempt {}/{}), will retry at {}",
+                "Charge queue item {} failed (attempt {}/{}, lease_seq={}), will retry at {}",
                 queue_id,
                 retry_count + 1,
                 max_retries,
+                lease_seq,
                 scheduled_at
             );
             Ok(true)
         } else {
-            sqlx::query(
-                    r"UPDATE usage_charge_queue SET status = 'dead_letter', error_message = $1 WHERE id = $2",
-                )
+            let res = sqlx::query(MARK_FAILED_DEAD_LETTER_FENCED_SQL)
                 .bind(error_message)
                 .bind(queue_id)
-                .execute(&self.db)
+                .bind(lease_seq)
+                .execute(&mut *tx)
                 .await?;
-            let item: ChargeQueueItem = sqlx::query_as(
-                "SELECT id, tenant_id, account_id, usage_record_id, amount, payload, \
-                 status::VARCHAR as status, retry_count, max_retries, error_message, scheduled_at, \
-                 transaction_id, created_at, trace_parent FROM usage_charge_queue WHERE id = $1",
-            )
-            .bind(queue_id)
-            .fetch_one(&self.db)
-            .await?;
+            if res.rows_affected() == 0 {
+                tx.commit().await?;
+                return Ok(false);
+            }
+            sqlx::query(MARK_USAGE_CHARGE_FAILED_SQL)
+                .bind(queue_id)
+                .execute(&mut *tx)
+                .await?;
             sqlx::query(
                 r"INSERT INTO charge_failures
                    (queue_id, tenant_id, account_id, amount, error_message, attempt_number)
                    VALUES ($1, $2, $3, $4, $5, $6)",
             )
             .bind(queue_id)
-            .bind(item.tenant_id)
-            .bind(item.account_id)
-            .bind(item.amount)
+            .bind(tenant_id)
+            .bind(account_id)
+            .bind(amount)
             .bind(error_message)
-            .bind(item.retry_count)
-            .execute(&self.db)
+            .bind(retry_count)
+            .execute(&mut *tx)
             .await?;
+            tx.commit().await?;
             warn!(
-                "Charge queue item {} moved to dead letter after {} attempts",
-                queue_id, max_retries
+                "Charge queue item {} moved to dead letter after {} attempts (lease_seq={})",
+                queue_id, max_retries, lease_seq
             );
             Ok(false)
         }
@@ -320,7 +362,11 @@ impl ChargeQueue {
 
 #[cfg(test)]
 mod enqueue_sql_tests {
-    use super::{ENQUEUE_INSERT_SQL, ENQUEUE_MARK_QUEUED_SQL};
+    use super::{
+        CLAIM_PENDING_QUEUE_SQL, ENQUEUE_INSERT_SQL, ENQUEUE_MARK_QUEUED_SQL,
+        MARK_COMPLETED_FENCED_SQL, MARK_FAILED_DEAD_LETTER_FENCED_SQL, MARK_FAILED_LOCK_FENCED_SQL,
+        MARK_FAILED_RETRY_FENCED_SQL, MARK_USAGE_CHARGE_FAILED_SQL,
+    };
 
     #[test]
     fn insert_is_idempotent_per_usage_record() {
@@ -332,5 +378,30 @@ mod enqueue_sql_tests {
     fn mark_queued_never_downgrades_charged() {
         assert!(ENQUEUE_MARK_QUEUED_SQL.contains("charge_status IS DISTINCT FROM 'charged'"));
         assert!(ENQUEUE_MARK_QUEUED_SQL.contains("WHERE id = $2"));
+    }
+
+    #[test]
+    fn claim_and_failure_transitions_enforce_lease_seq_fence() {
+        assert!(CLAIM_PENDING_QUEUE_SQL.contains("lease_seq = q.lease_seq + 1"));
+        assert!(CLAIM_PENDING_QUEUE_SQL.contains("RETURNING q.id"));
+        assert!(CLAIM_PENDING_QUEUE_SQL.contains("q.lease_seq"));
+
+        assert!(
+            MARK_COMPLETED_FENCED_SQL
+                .contains("WHERE id = $1 AND status = 'processing' AND lease_seq = $4")
+        );
+        assert!(
+            MARK_FAILED_LOCK_FENCED_SQL
+                .contains("WHERE id = $1 AND status = 'processing' AND lease_seq = $2")
+        );
+        assert!(
+            MARK_FAILED_RETRY_FENCED_SQL
+                .contains("WHERE id = $3 AND status = 'processing' AND lease_seq = $4")
+        );
+        assert!(
+            MARK_FAILED_DEAD_LETTER_FENCED_SQL
+                .contains("WHERE id = $2 AND status = 'processing' AND lease_seq = $3")
+        );
+        assert!(MARK_USAGE_CHARGE_FAILED_SQL.contains("IS DISTINCT FROM 'charged'"));
     }
 }

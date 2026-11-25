@@ -21,19 +21,25 @@ export function searchTraces(params: TraceSearchQuery) {
 export function fetchTrace(
   traceId: string,
   params: { start?: number; end?: number } = {},
+  signal?: AbortSignal,
 ) {
   return request.get<TraceDetail>({
     url: `${BASE_PATH}/${traceId}`,
     params,
+    signal,
     showErrorMessage: false,
   });
 }
 
 
-export function fetchTraceBilling(requestIds: string[]) {
+export function fetchTraceBilling(
+  requestIds: string[],
+  signal?: AbortSignal,
+) {
   return request.get<TraceBillingRow[]>({
     url: `${BASE_PATH}/billing`,
     params: { request_ids: requestIds.join(",") },
+    signal,
     showErrorMessage: false,
   });
 }

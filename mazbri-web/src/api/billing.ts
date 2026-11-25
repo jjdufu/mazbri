@@ -1,6 +1,5 @@
 import request from "@/utils/http";
 import type {
-  Account,
   AccountListResponse,
   AccountListQuery,
   Bill,
@@ -11,7 +10,6 @@ import type {
   BillListQuery,
   GenerateBillRequest,
   GenerateBillResponse,
-  UsageSummary,
 } from "@/types/api/billing";
 import { API_BASE_PATH, API_PATHS } from "@/config/api";
 type BillApiRow = Partial<Bill> & {
@@ -124,11 +122,6 @@ export function fetchAccountList(params?: AccountListQuery) {
     params,
   });
 }
-export function fetchAccountByTenant(tenantId: string) {
-  return request.get<Account>({
-    url: `${API_BASE_PATH}${API_PATHS.BILLING}/accounts/tenant/${tenantId}`,
-  });
-}
 export async function fetchBillList(params?: BillListQuery) {
   return normalizeBillListResponse(
     await request.get<BillListResponse>({
@@ -149,15 +142,6 @@ export async function deleteBill(id: string) {
   await request.del<void>({
     url: `${API_BASE_PATH}${API_PATHS.BILLING}/bills/${id}`,
     showSuccessMessage: true,
-  });
-}
-export function fetchUsageSummary(
-  tenantId: string,
-  period?: "daily" | "weekly" | "monthly",
-) {
-  return request.get<UsageSummary>({
-    url: `${API_BASE_PATH}${API_PATHS.BILLING}/usage/${tenantId}`,
-    params: { period },
   });
 }
 

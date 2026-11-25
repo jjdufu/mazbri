@@ -1,7 +1,7 @@
 use super::{
     ConfigCenterCtx, MAX_EXTRACTED_FILE_SIZE, MAX_TOTAL_EXTRACTED_SIZE, cert_service_request,
-    dependency_internal_error, log_config_center_error, validate_zip_entry, validate_zip_path,
-    validation_error,
+    dependency_internal_error, ensure_service_name, log_config_center_error,
+    reject_raw_enc_ciphertext, validate_zip_entry, validate_zip_path, validation_error,
 };
 use crate::audit::{AuditAction, config_center_audit};
 use crate::error::ApiError;
@@ -11,22 +11,158 @@ use axum::body::Body;
 use axum::extract::{FromRequest, Multipart, Request};
 use axum::http::header;
 use axum::response::Response;
-use std::io::{Cursor, Write};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::io::{Cursor, Read, Write};
 use std::path::Path;
 use tracing::info;
 use zip::{ZipWriter, write::SimpleFileOptions};
 
 const MAX_IMPORT_REQUEST_BYTES: usize = 10 * 1024 * 1024;
+const EXPORT_MANIFEST_FILE: &str = "manifest.json";
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct ManifestServiceMeta {
+    #[serde(default)]
+    is_sensitive: bool,
+}
+
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+struct ExportManifest {
+    #[serde(default = "default_manifest_version")]
+    version: u32,
+    #[serde(default)]
+    services: BTreeMap<String, ManifestServiceMeta>,
+}
+
+const fn default_manifest_version() -> u32 {
+    1
+}
+
+async fn fetch_decrypted_export_entries(
+    ctx: ConfigCenterCtx<'_>,
+    configs: Vec<serde_json::Value>,
+    client_ip: Option<String>,
+    request_id: &str,
+    trace_id: &str,
+) -> Result<(ExportManifest, Vec<(String, String)>), ApiError> {
+    let mut manifest = ExportManifest {
+        version: 1,
+        services: BTreeMap::new(),
+    };
+    let mut exported_entries = Vec::with_capacity(configs.len());
+
+    for config in configs {
+        let service_name = config
+            .get("service_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+        if service_name.is_empty() {
+            continue;
+        }
+        let is_sensitive = config
+            .get("is_sensitive")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
+        let fallback_content = config
+            .get("content")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string();
+
+        let detail_path = format!("/configs/{}", urlencoding::encode(service_name));
+        let detail_resp = cert_service_request(
+            ctx,
+            reqwest::Method::GET,
+            &detail_path,
+            None,
+            client_ip.clone(),
+            request_id,
+            trace_id,
+        )
+        .await?;
+        let plaintext = if detail_resp.status().is_success() {
+            detail_resp.text().await.map_err(|e| {
+                dependency_internal_error(
+                    "config_center_export_read_plaintext_failed",
+                    request_id,
+                    trace_id,
+                    &e,
+                )
+            })?
+        } else if !is_sensitive && !fallback_content.trim_start().starts_with("enc:") {
+            fallback_content
+        } else {
+            return Err(dependency_internal_error(
+                "config_center_export_decrypt_failed",
+                request_id,
+                trace_id,
+                &format!(
+                    "failed to fetch decrypted plaintext for {service_name}: {}",
+                    detail_resp.status()
+                ),
+            ));
+        };
+
+        manifest
+            .services
+            .insert(service_name.to_string(), ManifestServiceMeta { is_sensitive });
+        exported_entries.push((service_name.to_string(), plaintext));
+    }
+    Ok((manifest, exported_entries))
+}
+
+async fn build_export_zip_bytes(
+    exported_entries: Vec<(String, String)>,
+    manifest_json: Vec<u8>,
+    request_id: &str,
+    trace_id: &str,
+) -> Result<Vec<u8>, ApiError> {
+    mazbri_core::panic_policy::spawn_blocking_recoverable(move || {
+        let buffer = Cursor::new(Vec::new());
+        let mut zip = ZipWriter::new(buffer);
+        for (service_name, content) in exported_entries {
+            let path = format!("{service_name}.toml");
+            zip.start_file(&path, SimpleFileOptions::default())?;
+            zip.write_all(content.as_bytes())?;
+        }
+        zip.start_file(EXPORT_MANIFEST_FILE, SimpleFileOptions::default())?;
+        zip.write_all(&manifest_json)?;
+        let finished = zip.finish()?;
+        Ok::<Vec<u8>, std::io::Error>(finished.into_inner())
+    })
+    .await
+    .map_err(|e| dependency_internal_error("config_center_export_join_failed", request_id, trace_id, &e))?
+    .map_err(|e| dependency_internal_error("config_center_export_panic", request_id, trace_id, &e))?
+    .map_err(|e| dependency_internal_error("config_center_export_zip_failed", request_id, trace_id, &e))
+}
+
 pub async fn export_configs(
     ctx: ConfigCenterCtx<'_>,
     claims: &auth::AdminClaims,
     client_ip: Option<String>,
-    _params: &ExportParams,
+    params: &ExportParams,
     request_id: &str,
     trace_id: &str,
 ) -> Result<Response, ApiError> {
     info!("Exporting configs");
     let user_id = auth::extract_user_id(claims)?;
+    let selected_services: Option<BTreeSet<String>> = params
+        .service_names
+        .as_deref()
+        .map(|raw| {
+            raw.split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+                .collect::<BTreeSet<_>>()
+        })
+        .filter(|set| !set.is_empty());
+    if let Some(ref set) = selected_services {
+        for svc in set {
+            ensure_service_name(svc, request_id, trace_id)?;
+        }
+    }
+
     let resp = cert_service_request(
         ctx,
         reqwest::Method::GET,
@@ -37,55 +173,50 @@ pub async fn export_configs(
         trace_id,
     )
     .await?;
-    let configs: Vec<serde_json::Value> = resp.json().await.map_err(|e| {
+    let all_configs: Vec<serde_json::Value> = resp.json().await.map_err(|e| {
         dependency_internal_error("config_center_export_failed", request_id, trace_id, &e)
     })?;
-    let config_count = configs.len();
-    let buffer = Cursor::new(Vec::new());
-    let mut zip = ZipWriter::new(buffer);
-    for config in configs {
-        let service_name = config
-            .get("service_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
-        let content = config
-            .get("content")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
-        if service_name.is_empty() {
-            continue;
-        }
-        let path = format!("{service_name}.toml");
-        if let Err(e) = zip.start_file(&path, SimpleFileOptions::default()) {
-            log_config_center_error(
-                "config_center_export_zip_entry_failed",
-                "INTERNAL_ERROR",
-                request_id,
-                trace_id,
-                &e,
-            );
-            continue;
-        }
-        if let Err(e) = zip.write_all(content.as_bytes()) {
-            log_config_center_error(
-                "config_center_export_zip_write_failed",
-                "INTERNAL_ERROR",
-                request_id,
-                trace_id,
-                &e,
-            );
-        }
-    }
-    let buffer = zip.finish().map_err(|e| {
-        dependency_internal_error("config_center_export_zip_failed", request_id, trace_id, &e)
+    let configs: Vec<serde_json::Value> = all_configs
+        .into_iter()
+        .filter(|c| {
+            let svc = c
+                .get("service_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default();
+            !svc.is_empty() && selected_services.as_ref().is_none_or(|set| set.contains(svc))
+        })
+        .collect();
+
+    let (manifest, exported_entries) = fetch_decrypted_export_entries(
+        ctx,
+        configs,
+        client_ip.clone(),
+        request_id,
+        trace_id,
+    )
+    .await?;
+    let config_count = exported_entries.len();
+    let exported_service_names: Vec<String> = exported_entries
+        .iter()
+        .map(|(svc, _)| svc.clone())
+        .collect();
+    let manifest_json = serde_json::to_vec_pretty(&manifest).map_err(|e| {
+        dependency_internal_error("config_center_export_manifest_failed", request_id, trace_id, &e)
     })?;
+    let zip_bytes =
+        build_export_zip_bytes(exported_entries, manifest_json, request_id, trace_id).await?;
+
     let filename = "configs.zip";
     info!("Exported {} configs", config_count);
     ctx.audit.log(config_center_audit(
         user_id,
         AuditAction::ConfigCenterExport,
         None::<String>,
-        Some(serde_json::json!({ "config_count" : config_count, })),
+        Some(serde_json::json!({
+            "config_count": config_count,
+            "services": exported_service_names,
+            "filtered": selected_services.is_some(),
+        })),
         client_ip,
     ));
     Response::builder()
@@ -95,7 +226,7 @@ pub async fn export_configs(
             "Content-Disposition",
             format!("attachment; filename=\"{filename}\""),
         )
-        .body(Body::from(buffer.into_inner()))
+        .body(Body::from(zip_bytes))
         .map_err(|e| {
             dependency_internal_error(
                 "config_center_export_response_failed",
@@ -110,6 +241,7 @@ pub async fn export_configs(
 pub struct PreparedImport {
     /// `(service_name, toml_content)`
     files: Vec<(String, String)>,
+    manifest_sensitive: HashMap<String, bool>,
     errors: Vec<String>,
     total_bytes: u64,
 }
@@ -140,6 +272,11 @@ fn validate_toml_entry(
     }
     mazbri_core::validate_config_entry_name(service_name)
         .map_err(|e| format!("{display_name}: {e}"))?;
+    if content.trim_start().starts_with("enc:") {
+        return Err(format!(
+            "{display_name}: 配置内容禁止包含裸 enc: 密文，请导入明文 TOML"
+        ));
+    }
     if let Err(errs) = mazbri_core::validation::validate_service_config(&content) {
         let details = errs
             .iter()
@@ -151,7 +288,7 @@ fn validate_toml_entry(
     Ok((service_name.to_string(), content))
 }
 
-/// 从 `ZIP` 归档中提取 `service_name.toml` 条目并追加到 `prepared`。
+/// 从 `ZIP` 归档中安全限长提取 `service_name.toml` 与可选 `manifest.json`。
 fn append_zip_entries<R: std::io::Read + std::io::Seek>(
     archive: &mut zip::ZipArchive<R>,
     prepared: &mut PreparedImport,
@@ -200,7 +337,29 @@ fn append_zip_entries<R: std::io::Read + std::io::Seek>(
                 .push(format!("Security violation in {name}: {e}"));
             continue;
         }
-        prepared.total_bytes += uncompressed_size;
+
+        // 流式限长读取，杜绝伪造 ZIP 头绕过单文件或累计上限（防 ZIP 炸弹 OOM）。
+        let mut content = String::new();
+        let mut bounded_reader = file.take(MAX_EXTRACTED_FILE_SIZE + 1);
+        if let Err(e) = bounded_reader.read_to_string(&mut content) {
+            log_config_center_error(
+                "config_center_import_zip_read_failed",
+                "VALIDATION_ERROR",
+                request_id,
+                trace_id,
+                &e,
+            );
+            prepared.errors.push(format!("Failed to read UTF-8 text from {name}"));
+            continue;
+        }
+        let actual_len = content.len() as u64;
+        if actual_len > MAX_EXTRACTED_FILE_SIZE {
+            prepared.errors.push(format!(
+                "File {name} exceeds size limit ({actual_len} bytes, max: {MAX_EXTRACTED_FILE_SIZE} bytes)"
+            ));
+            continue;
+        }
+        prepared.total_bytes = prepared.total_bytes.saturating_add(actual_len);
         if prepared.total_bytes > MAX_TOTAL_EXTRACTED_SIZE {
             return Err(validation_error(
                 "config_center_import_total_size_exceeded",
@@ -209,6 +368,16 @@ fn append_zip_entries<R: std::io::Read + std::io::Seek>(
                 trace_id,
             ));
         }
+
+        if name == EXPORT_MANIFEST_FILE {
+            if let Ok(manifest) = serde_json::from_str::<ExportManifest>(&content) {
+                for (svc, meta) in manifest.services {
+                    prepared.manifest_sensitive.insert(svc, meta.is_sensitive);
+                }
+            }
+            continue;
+        }
+
         if !has_extension_ignore_ascii_case(&name, "toml") || name.len() <= 5 {
             prepared.errors.push(format!(
                 "Invalid path format: {name} (expected: service_name.toml)"
@@ -216,35 +385,56 @@ fn append_zip_entries<R: std::io::Read + std::io::Seek>(
             continue;
         }
         let raw_service_name = &name[..name.len() - 5];
-        let content = match std::io::read_to_string(file) {
-            Ok(c) if (c.len() as u64) <= MAX_EXTRACTED_FILE_SIZE => c,
-            Ok(c) => {
-                prepared.errors.push(format!(
-                    "File {} exceeds size limit ({} bytes, max: {} bytes)",
-                    name,
-                    c.len(),
-                    MAX_EXTRACTED_FILE_SIZE
-                ));
-                continue;
-            }
-            Err(e) => {
-                log_config_center_error(
-                    "config_center_import_zip_read_failed",
-                    "INTERNAL_ERROR",
-                    request_id,
-                    trace_id,
-                    &e,
-                );
-                prepared.errors.push(format!("Failed to read {name}"));
-                continue;
-            }
-        };
         match validate_toml_entry(raw_service_name, content, &name) {
             Ok(entry) => prepared.files.push(entry),
             Err(err) => prepared.errors.push(err),
         }
     }
     Ok(())
+}
+
+async fn append_zip_bytes_blocking(
+    raw_bytes: axum::body::Bytes,
+    mut prepared: PreparedImport,
+    display_label: String,
+    strict_archive_error: bool,
+    request_id: String,
+    trace_id: String,
+) -> Result<PreparedImport, ApiError> {
+    mazbri_core::panic_policy::spawn_blocking_recoverable(move || {
+        let reader = Cursor::new(raw_bytes.as_ref());
+        match zip::ZipArchive::new(reader) {
+            Ok(mut archive) => {
+                append_zip_entries(&mut archive, &mut prepared, &request_id, &trace_id)?;
+                Ok(prepared)
+            }
+            Err(e) => {
+                log_config_center_error(
+                    "config_center_import_zip_invalid",
+                    "VALIDATION_ERROR",
+                    &request_id,
+                    &trace_id,
+                    &e,
+                );
+                if strict_archive_error {
+                    Err(validation_error(
+                        "config_center_import_zip_invalid",
+                        "ZIP 文件格式不合法",
+                        &request_id,
+                        &trace_id,
+                    ))
+                } else {
+                    prepared
+                        .errors
+                        .push(format!("{display_label}: ZIP 文件格式不合法"));
+                    Ok(prepared)
+                }
+            }
+        }
+    })
+    .await
+    .map_err(|e| dependency_internal_error("config_center_import_join_failed", "", "", &e))?
+    .map_err(|e| dependency_internal_error("config_center_import_panic", "", "", &e))?
 }
 
 fn append_toml_bytes(
@@ -261,7 +451,7 @@ fn append_toml_bytes(
         ));
         return Ok(());
     }
-    prepared.total_bytes += size;
+    prepared.total_bytes = prepared.total_bytes.saturating_add(size);
     if prepared.total_bytes > MAX_TOTAL_EXTRACTED_SIZE {
         return Err(validation_error(
             "config_center_import_total_size_exceeded",
@@ -276,6 +466,12 @@ fn append_toml_bytes(
             .push(format!("{file_name}: 文件内容不是合法的 UTF-8 编码"));
         return Ok(());
     };
+    if reject_raw_enc_ciphertext(&content, request_id, trace_id).is_err() {
+        prepared.errors.push(format!(
+            "{file_name}: 配置内容禁止包含裸 enc: 密文，请导入明文 TOML"
+        ));
+        return Ok(());
+    }
     let raw_service_name = &file_name[..file_name.len() - 5];
     match validate_toml_entry(raw_service_name, content, file_name) {
         Ok(entry) => prepared.files.push(entry),
@@ -344,24 +540,15 @@ async fn extract_multipart_import(
             ));
         }
         if has_extension_ignore_ascii_case(&file_name, "zip") {
-            let reader = Cursor::new(bytes.as_ref());
-            match zip::ZipArchive::new(reader) {
-                Ok(mut archive) => {
-                    append_zip_entries(&mut archive, &mut prepared, request_id, trace_id)?;
-                }
-                Err(e) => {
-                    log_config_center_error(
-                        "config_center_import_zip_invalid",
-                        "VALIDATION_ERROR",
-                        request_id,
-                        trace_id,
-                        &e,
-                    );
-                    prepared
-                        .errors
-                        .push(format!("{file_name}: ZIP 文件格式不合法"));
-                }
-            }
+            prepared = append_zip_bytes_blocking(
+                bytes,
+                prepared,
+                file_name,
+                false,
+                request_id.to_string(),
+                trace_id.to_string(),
+            )
+            .await?;
         } else if has_extension_ignore_ascii_case(&file_name, "toml") && file_name.len() > 5 {
             append_toml_bytes(&file_name, bytes.as_ref(), &mut prepared, request_id, trace_id)?;
         } else {
@@ -408,25 +595,37 @@ fn extract_cert_error_detail(error_text: &str) -> String {
         .unwrap_or_else(|| error_text.to_string())
 }
 
+struct ImportUpsertItem<'a> {
+    svc_name: &'a str,
+    content: String,
+    is_sensitive: Option<bool>,
+}
+
 /// 把单个配置通过 `PUT /configs/{svc_name}` Upsert 写入 `cert` 配置中心；失败时返回错误描述。
 async fn upsert_import_file(
     ctx: ConfigCenterCtx<'_>,
-    claims: &auth::AdminClaims,
+    updated_by: &str,
     client_ip: Option<String>,
-    svc_name: &str,
-    content: String,
+    item: ImportUpsertItem<'_>,
     request_id: &str,
     trace_id: &str,
 ) -> Result<(), String> {
+    let svc_name = item.svc_name;
     let url_path = format!("/configs/{}", urlencoding::encode(svc_name));
+    let mut body = serde_json::json!({
+        "content": item.content,
+        "updated_by": updated_by,
+    });
+    if let Some(sens) = item.is_sensitive
+        && let Some(obj) = body.as_object_mut()
+    {
+        obj.insert("is_sensitive".to_string(), serde_json::Value::Bool(sens));
+    }
     let upsert_res = cert_service_request(
         ctx,
         reqwest::Method::PUT,
         &url_path,
-        Some(serde_json::json!({
-            "content": content,
-            "updated_by": claims.sub.clone(),
-        })),
+        Some(body),
         client_ip,
         request_id,
         trace_id,
@@ -515,24 +714,15 @@ pub async fn precheck_import_configs(
                 trace_id,
             )
         })?;
-    let reader = Cursor::new(bytes.as_ref());
-    let mut archive = zip::ZipArchive::new(reader).map_err(|e| {
-        log_config_center_error(
-            "config_center_import_zip_invalid",
-            "VALIDATION_ERROR",
-            request_id,
-            trace_id,
-            &e,
-        );
-        validation_error(
-            "config_center_import_zip_invalid",
-            "ZIP 文件格式不合法",
-            request_id,
-            trace_id,
-        )
-    })?;
-    let mut prepared = PreparedImport::default();
-    append_zip_entries(&mut archive, &mut prepared, request_id, trace_id)?;
+    let prepared = append_zip_bytes_blocking(
+        bytes,
+        PreparedImport::default(),
+        "upload.zip".to_string(),
+        true,
+        request_id.to_string(),
+        trace_id.to_string(),
+    )
+    .await?;
     finalize_prepared_import(prepared, request_id, trace_id)
 }
 
@@ -548,17 +738,22 @@ pub async fn import_configs(
     info!("Importing configs (by {})", claims.sub);
     let user_id = auth::extract_user_id(claims)?;
     let total_extracted_size = prepared.total_bytes;
+    let manifest_sensitive = prepared.manifest_sensitive;
     let mut imported = 0u32;
     let mut skipped = 0u32;
     let mut imported_services: Vec<String> = Vec::with_capacity(prepared.files.len());
     let mut errors = prepared.errors;
     for (svc_name, content) in prepared.files {
+        let is_sensitive = manifest_sensitive.get(&svc_name).copied();
         match upsert_import_file(
             ctx,
-            claims,
+            &claims.sub,
             client_ip.clone(),
-            &svc_name,
-            content,
+            ImportUpsertItem {
+                svc_name: &svc_name,
+                content,
+                is_sensitive,
+            },
             request_id,
             trace_id,
         )

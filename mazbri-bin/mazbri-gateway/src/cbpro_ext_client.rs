@@ -8,7 +8,6 @@ use mazbri_rpc::{
 
 type InstrumentedCBProExtClient =
     CBProExtServiceClient<RpcMetricsChannel<CBProExtServiceRequest, CBProExtServiceResponse>>;
-use mazbri_tls::ManagedCertificate;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
@@ -24,6 +23,7 @@ struct CachedClient {
 pub struct CBProExtClient {
     endpoint: ServiceEndpoint,
     client: Arc<RwLock<Option<CachedClient>>>,
+    connect_lock: Arc<tokio::sync::Mutex<()>>,
     tls_connector: mazbri_tls::TlsConnector,
     client_ttl: Duration,
 }
@@ -32,22 +32,27 @@ impl CBProExtClient {
     /// # Errors
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-    pub fn new(
+    pub fn new_dynamic(
         endpoint: ServiceEndpoint,
-        tls_ca_cert: &str,
-        client_cert: &ManagedCertificate,
+        cert_handle: &mazbri_tls::ManagedCertHandle,
         tls_config: &mazbri_tls::TlsConfig,
         client_ttl_secs: u64,
     ) -> Result<Self, CoreError> {
-        let tls_connector =
-            mazbri_tls::TlsConnector::new(tls_ca_cert, Some(client_cert), tls_config)
-                .map_err(|error| CoreError::Tls(error.to_string()))?;
+        let tls_connector = mazbri_tls::TlsConnector::from_cert_handle(cert_handle, tls_config)
+            .map_err(|error| CoreError::Tls(error.to_string()))?;
         Ok(Self {
             endpoint,
             client: Arc::new(RwLock::new(None)),
+            connect_lock: Arc::new(tokio::sync::Mutex::new(())),
             tls_connector,
             client_ttl: Duration::from_secs(client_ttl_secs.max(1)),
         })
+    }
+
+    fn rpc_context(&self) -> tarpc::context::Context {
+        let mut ctx = tarpc::context::current();
+        ctx.deadline = Instant::now() + self.endpoint.timeout().max(Duration::from_millis(50));
+        ctx
     }
 
     async fn invalidate_client(&self) {
@@ -70,14 +75,14 @@ impl CBProExtClient {
                 return Ok(cached.client.clone());
             }
         }
+        let _connect_guard = self.connect_lock.lock().await;
         {
-            let mut guard = self.client.write().await;
+            let guard = self.client.read().await;
             if let Some(cached) = guard.as_ref()
                 && cached.created_at.elapsed() < self.client_ttl
             {
                 return Ok(cached.client.clone());
             }
-            *guard = None;
         }
 
         debug!(url = %self.endpoint.url(), "Creating new CBPro-Ext client (mTLS)");
@@ -172,11 +177,8 @@ impl CBProExtClient {
         match self
             .call_rpc_once_with_reconnect(|client| {
                 let request = request.clone();
-                async move {
-                    client
-                        .get_runtime_decision(tarpc::context::current(), request)
-                        .await
-                }
+                let ctx = self.rpc_context();
+                async move { client.get_runtime_decision(ctx, request).await }
             })
             .await
         {
@@ -204,11 +206,8 @@ impl CBProExtClient {
         match self
             .call_rpc_once_with_reconnect(|client| {
                 let request = request.clone();
-                async move {
-                    client
-                        .record_observation(tarpc::context::current(), request)
-                        .await
-                }
+                let ctx = self.rpc_context();
+                async move { client.record_observation(ctx, request).await }
             })
             .await
         {

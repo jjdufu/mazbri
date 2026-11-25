@@ -77,11 +77,11 @@ fn push_admin_scope(
         let pat = p.to_string();
         builder.push(" AND (username ILIKE ");
         builder.push_bind(pat.clone());
-        builder.push(" OR display_name ILIKE ");
+        builder.push(" ESCAPE '\\' OR display_name ILIKE ");
         builder.push_bind(pat.clone());
-        builder.push(" OR email ILIKE ");
+        builder.push(" ESCAPE '\\' OR email ILIKE ");
         builder.push_bind(pat);
-        builder.push(")");
+        builder.push(" ESCAPE '\\')");
     }
     crate::list_query::apply_pg_filters(builder, filters)
 }

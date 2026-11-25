@@ -6,6 +6,7 @@ use mazbri_crypto::aead::AEAD_NONCE_LEN;
 use mazbri_crypto::{AeadAlgorithm, AeadSeal, KeyPurpose, KeyRef};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
+use zeroize::Zeroizing;
 
 pub const COMMERCIAL_ROOT_PROTECTION_STORAGE_INFO: &str = "commercial-root-protection-storage-v1";
 pub const COMMERCIAL_ROOT_PROTECTION_STORAGE_KEY_ID: &str =
@@ -154,10 +155,10 @@ pub fn is_root_package_renewable(status: &str) -> bool {
     status != "revoked" && status != "deleted"
 }
 
-fn derive_storage_key(password: &str) -> [u8; 32] {
+fn derive_storage_key(password: &str) -> Zeroizing<[u8; 32]> {
     let hkdf = Hkdf::<Sha256>::new(Some(b"mazbri-cert-root-storage-salt"), password.as_bytes());
-    let mut key = [0u8; 32];
-    hkdf.expand(COMMERCIAL_ROOT_PROTECTION_STORAGE_INFO.as_bytes(), &mut key)
+    let mut key = Zeroizing::new([0u8; 32]);
+    hkdf.expand(COMMERCIAL_ROOT_PROTECTION_STORAGE_INFO.as_bytes(), &mut *key)
         .expect("HKDF expand should not fail");
     key
 }

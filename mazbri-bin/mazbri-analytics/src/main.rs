@@ -20,28 +20,21 @@ fn start_admin_server(
     service_name: &str,
 ) -> Result<Option<Arc<AdminState>>> {
     let admin_state = if config.admin.enabled {
-        let state = Arc::new(AdminState::new(
-            service_name.to_owned(),
-            Arc::new(REGISTRY.clone()),
-        ));
-        let state_for_check = state.clone();
         let server = AdminServerBuilder::new(service_name, config.admin.port)
             .bind_addr(&config.admin.bind_addr)
             .registry(Arc::new(REGISTRY.clone()))
-            .readiness_check(move || {
-                let ready = state_for_check.is_ready();
-                async move {
-                    if ready {
-                        ReadinessResult::healthy(vec![])
-                    } else {
-                        ReadinessResult {
-                            status: CheckStatus::Failed,
-                            checks: vec![],
-                        }
+            .readiness_check_with_state(|st| async move {
+                if st.is_ready() {
+                    ReadinessResult::healthy(vec![])
+                } else {
+                    ReadinessResult {
+                        status: CheckStatus::Failed,
+                        checks: vec![],
                     }
                 }
             })
             .build()?;
+        let state = server.state();
         let _handle = server.spawn();
         info!("Admin server started on port {}", config.admin.port);
         if let Err(e) = register_health_metrics() {
@@ -50,7 +43,7 @@ fn start_admin_server(
                 e
             );
         }
-        let state_for_ready = state.clone();
+        let state_for_ready = Arc::clone(&state);
         let updater = HealthMetricsUpdater::new(service_name.to_owned(), None, None, None)
             .with_ready_check(move || state_for_ready.is_ready());
         drop(updater.spawn());
@@ -214,6 +207,7 @@ async fn main() -> Result<()> {
     let app_state = AppState {
         greptimedb_client,
         clickhouse_client,
+        internal_token: Arc::from(config.auth.internal_token.as_str()),
     };
     let app = router::create_router(app_state);
     let addr = config.server.socket_addr()?;

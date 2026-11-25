@@ -5,6 +5,20 @@ import { SystemThemeTypes } from "@/types/store";
 import { getDarkColor, getLightColor, setElementThemeColor } from "@/utils/ui";
 import { usePreferredDark } from "@vueuse/core";
 import { watch } from "vue";
+
+function syncHtmlThemeClass(el: HTMLElement, targetClassName?: string): void {
+  const knownThemeClasses = Object.values(AppConfig.systemThemeStyles)
+    .flatMap((style) => style.className.split(/\s+/))
+    .filter(Boolean);
+  if (knownThemeClasses.length > 0) {
+    el.classList.remove(...knownThemeClasses);
+  }
+  const nextClasses = (targetClassName ?? "").split(/\s+/).filter(Boolean);
+  if (nextClasses.length > 0) {
+    el.classList.add(...nextClasses);
+  }
+}
+
 export function useTheme() {
   const settingStore = useSettingStore();
   const disableTransitions = () => {
@@ -40,7 +54,7 @@ export function useTheme() {
     }
     requestAnimationFrame(() => {
       if (currentTheme) {
-        el.setAttribute("class", currentTheme.className);
+        syncHtmlThemeClass(el, currentTheme.className);
       }
       colorVariables.forEach(({ name, value }) => {
         el.style.setProperty(name, value);
@@ -80,7 +94,7 @@ export function initializeTheme() {
   const settingStore = useSettingStore();
   const prefersDark = usePreferredDark();
   const applyThemeByMode = () => {
-    const el = document.getElementsByTagName("html")[0];
+    const el = document.documentElement;
     let actualTheme = settingStore.systemThemeType;
     if (settingStore.systemThemeMode === SystemThemeEnum.AUTO) {
       actualTheme = prefersDark.value
@@ -91,34 +105,34 @@ export function initializeTheme() {
     const currentTheme =
       AppConfig.systemThemeStyles[actualTheme as keyof SystemThemeTypes];
     if (currentTheme) {
-      el.setAttribute("class", currentTheme.className);
+      syncHtmlThemeClass(el, currentTheme.className);
     }
     setElementThemeColor(settingStore.systemThemeColor);
     const radiusRem = `${settingStore.customRadius}rem`;
     const isZero = parseFloat(String(settingStore.customRadius)) === 0;
     if (isZero) {
-      document.documentElement.classList.add("radius-zero");
+      el.classList.add("radius-zero");
     } else {
-      document.documentElement.classList.remove("radius-zero");
+      el.classList.remove("radius-zero");
     }
-    document.documentElement.style.setProperty("--custom-radius", radiusRem);
-    document.documentElement.style.setProperty(
+    el.style.setProperty("--custom-radius", radiusRem);
+    el.style.setProperty(
       "--el-border-radius-base",
       `calc(${radiusRem} / 3 + 2px)`,
     );
-    document.documentElement.style.setProperty(
+    el.style.setProperty(
       "--el-border-radius-small",
       `calc(${radiusRem} / 3 + 4px)`,
     );
-    document.documentElement.style.setProperty(
+    el.style.setProperty(
       "--el-messagebox-border-radius",
       `calc(${radiusRem} / 3 + 4px)`,
     );
-    document.documentElement.style.setProperty(
+    el.style.setProperty(
       "--el-popover-border-radius",
       `calc(${radiusRem} / 3 + 4px)`,
     );
-    document.documentElement.style.setProperty(
+    el.style.setProperty(
       "--el-card-border-radius",
       `calc(${radiusRem} + 4px)`,
     );

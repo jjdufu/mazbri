@@ -65,6 +65,7 @@ mod tests {
     async fn allow_private_network_permits_private_and_loopback() {
         let checker = SsrfConfig {
             allow_private_network: true,
+            ..Default::default()
         }
         .checker();
         for url in [

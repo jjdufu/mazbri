@@ -167,6 +167,13 @@ impl MemoryCache {
         self.publish(&cache, delta);
         Ok(())
     }
+    pub async fn clear_all(&self) {
+        let mut cache = self.data.write().await;
+        cache.clear();
+        self.bytes.store(0, Ordering::Relaxed);
+        CACHE_ENTRIES.set(0);
+        CACHE_MEMORY_BYTES.set(0);
+    }
     pub async fn len(&self) -> usize {
         self.data.read().await.len()
     }

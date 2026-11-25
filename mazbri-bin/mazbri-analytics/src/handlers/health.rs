@@ -20,6 +20,7 @@ pub struct HealthResponse {
 pub struct AppState {
     pub greptimedb_client: Option<Arc<GreptimeDBClient>>,
     pub clickhouse_client: Arc<ClickHouseClient>,
+    pub internal_token: Arc<str>,
 }
 pub async fn health_check(State(state): State<AppState>) -> Response {
     let clickhouse_connected = match state.clickhouse_client.test_connection().await {

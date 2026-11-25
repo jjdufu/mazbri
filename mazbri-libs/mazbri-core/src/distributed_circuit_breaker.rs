@@ -14,15 +14,17 @@ mod storage_sync;
 #[derive(Debug, Clone)]
 pub(crate) struct LocalCacheEntry {
     state: CircuitState,
-    last_state_change: Instant,
-    cached_at: Instant,
+    failure_count: u64,
+    last_state_change_unix_ms: i64,
+    fetched_at: Instant,
 }
 impl Default for LocalCacheEntry {
     fn default() -> Self {
         Self {
             state: CircuitState::Closed,
-            last_state_change: Instant::now(),
-            cached_at: Instant::now(),
+            failure_count: 0,
+            last_state_change_unix_ms: Utc::now().timestamp_millis(),
+            fetched_at: Instant::now(),
         }
     }
 }
@@ -84,7 +86,7 @@ impl DistributedCircuitBreaker {
         {
             let cache = self.local_cache.read().await;
             if let Some(ref entry) = *cache
-                && entry.cached_at.elapsed() < self.cache_ttl
+                && entry.fetched_at.elapsed() < self.cache_ttl
             {
                 return Ok(entry.clone());
             }
@@ -107,10 +109,17 @@ impl DistributedCircuitBreaker {
         let entry = if let Some(r) = row {
             let state_value: i16 = storage_sync::get_row_field_i16(&r, "state", "load_from_db");
             let state = state_machine::state_from_db_value(state_value);
+            let failure_count = u64::saturating_from(
+                storage_sync::get_row_field_i64(&r, "failure_count", "load_from_db").max(0),
+            );
             let db_last_change: Option<DateTime<Utc>> = r.try_get("last_state_change").ok();
-            let last_state_change =
-                storage_sync::instant_from_db_timestamp(&self.name, db_last_change);
-            storage_sync::build_cache_entry(state, last_state_change)
+            let last_state_change_unix_ms =
+                storage_sync::unix_ms_from_db_timestamp(&self.name, db_last_change);
+            storage_sync::build_cache_entry_with_failures(
+                state,
+                last_state_change_unix_ms,
+                failure_count,
+            )
         } else {
             let entry = LocalCacheEntry::default();
             self.insert_default_record().await?;
@@ -151,7 +160,7 @@ impl DistributedCircuitBreaker {
         let entry = self.get_or_load_state().await?;
         match entry.state {
             CircuitState::Open => Ok(state_machine::open_state_cooldown_passed(
-                entry.last_state_change,
+                entry.last_state_change_unix_ms,
                 self.config.cooldown_duration,
             )),
             CircuitState::Closed | CircuitState::HalfOpen => Ok(true),
@@ -185,13 +194,15 @@ impl DistributedCircuitBreaker {
             }
             CircuitState::Closed => {
                 let result = request_fn().await;
-                self.handle_closed(result).await
+                self.handle_closed(&entry, result).await
             }
         }
     }
     async fn handle_open_state<T>(&self, entry: &LocalCacheEntry) -> CircuitResult<T> {
-        let cooldown_passed = state_machine::open_state_cooldown_passed(
-            entry.last_state_change,
+        let now_unix_ms = Utc::now().timestamp_millis();
+        let cooldown_passed = state_machine::open_state_cooldown_passed_at(
+            now_unix_ms,
+            entry.last_state_change_unix_ms,
             self.config.cooldown_duration,
         );
         if cooldown_passed {
@@ -205,10 +216,11 @@ impl DistributedCircuitBreaker {
                 retry_after: Duration::from_secs(0),
             };
         }
-        let retry_after = self
-            .config
-            .cooldown_duration
-            .saturating_sub(entry.last_state_change.elapsed());
+        let retry_after = state_machine::remaining_cooldown_at(
+            now_unix_ms,
+            entry.last_state_change_unix_ms,
+            self.config.cooldown_duration,
+        );
         self.rejected_requests.fetch_add(1, Ordering::Relaxed);
         warn!(
             circuit_breaker = % self.name, retry_after_secs = retry_after.as_secs(),
@@ -267,10 +279,16 @@ impl DistributedCircuitBreaker {
             }
         }
     }
-    async fn handle_closed<T>(&self, result: Result<T, String>) -> CircuitResult<T> {
+    async fn handle_closed<T>(
+        &self,
+        entry: &LocalCacheEntry,
+        result: Result<T, String>,
+    ) -> CircuitResult<T> {
         match result {
             Ok(value) => {
-                if let Err(e) = self.reset_failure_count().await {
+                if entry.failure_count > 0
+                    && let Err(e) = self.reset_failure_count().await
+                {
                     warn!(
                         circuit_breaker = % self.name, error = % e,
                         "Failed to reset failure count after success"
@@ -440,5 +458,88 @@ impl DistributedCircuitBreaker {
             self.total_requests.load(Ordering::Relaxed),
             self.rejected_requests.load(Ordering::Relaxed),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{DistributedCircuitBreaker, state_machine, storage_sync};
+    use crate::{CircuitBreakerConfig, CircuitResult, CircuitState};
+    use chrono::Utc;
+    use sqlx::postgres::PgPoolOptions;
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    fn dummy_pool() -> Arc<sqlx::PgPool> {
+        Arc::new(
+            PgPoolOptions::new()
+                .max_connections(1)
+                .connect_lazy("postgres://postgres:postgres@127.0.0.1:1/mazbri")
+                .expect("lazy pool creation must succeed"),
+        )
+    }
+
+    #[tokio::test]
+    async fn thirty_day_old_db_last_change_never_panics_and_evaluates_cooldown() {
+        let db_last_change = Utc::now() - chrono::Duration::days(30);
+        let ts_ms = storage_sync::unix_ms_from_db_timestamp("cb-30d", Some(db_last_change));
+        let entry = storage_sync::build_cache_entry(CircuitState::Open, ts_ms);
+
+        assert!(state_machine::open_state_cooldown_passed(
+            entry.last_state_change_unix_ms,
+            Duration::from_secs(60),
+        ));
+        assert!(!state_machine::open_state_cooldown_passed(
+            entry.last_state_change_unix_ms,
+            Duration::from_hours(1440),
+        ));
+
+        let breaker_ready = DistributedCircuitBreaker::new(
+            "cb-30d-ready".to_string(),
+            CircuitBreakerConfig {
+                cooldown_duration: Duration::from_secs(45),
+                ..CircuitBreakerConfig::default()
+            },
+            dummy_pool(),
+            Duration::from_secs(45),
+        );
+        *breaker_ready.local_cache.write().await = Some(entry.clone());
+        assert!(breaker_ready.is_request_allowed().await.expect("allowed"));
+
+        let breaker_waiting = DistributedCircuitBreaker::new(
+            "cb-30d-waiting".to_string(),
+            CircuitBreakerConfig {
+                cooldown_duration: Duration::from_hours(1440),
+                ..CircuitBreakerConfig::default()
+            },
+            dummy_pool(),
+            Duration::from_secs(45),
+        );
+        *breaker_waiting.local_cache.write().await = Some(entry);
+        assert!(
+            !breaker_waiting
+                .is_request_allowed()
+                .await
+                .expect("not yet allowed")
+        );
+        let outcome = breaker_waiting
+            .execute(|| async { Ok::<_, String>(42_u32) })
+            .await;
+        match outcome {
+            CircuitResult::Rejected { retry_after, .. } => {
+                assert!(retry_after >= Duration::from_hours(696));
+            }
+            other => panic!("expected Rejected, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn future_clock_skew_clamps_without_panic() {
+        let future_change = Utc::now() + chrono::Duration::hours(2);
+        let ts_ms = storage_sync::unix_ms_from_db_timestamp("cb-skew", Some(future_change));
+        assert!(!state_machine::open_state_cooldown_passed(
+            ts_ms,
+            Duration::from_secs(30),
+        ));
     }
 }

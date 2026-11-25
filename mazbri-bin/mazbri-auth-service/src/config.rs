@@ -49,6 +49,10 @@ impl ValidateConfig for AuthServiceConfig {
                 self.auth.validation_cache_max_entries
             );
         }
+        anyhow::ensure!(
+            self.platform_database.is_some(),
+            "platform_database is required for tenant status and IP whitelist enforcement"
+        );
         self.config_watch.validate()?;
         Ok(())
     }

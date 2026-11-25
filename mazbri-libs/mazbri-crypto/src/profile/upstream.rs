@@ -52,6 +52,16 @@ pub enum CanonKeyAffix {
     Suffix,
 }
 
+trait IsDefaultValue {
+    fn is_default_value(&self) -> bool;
+}
+
+impl IsDefaultValue for CanonKeyAffix {
+    fn is_default_value(&self) -> bool {
+        matches!(self, Self::None)
+    }
+}
+
 /// Hex 字母大小写。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -108,7 +118,7 @@ pub enum IvSource {
     Random,
     /// 随机并前置到密文。
     RandomPrefix,
-    /// 由密钥材料派生。
+    /// 由密钥材料派生（仅限 Legacy CBC 兼容，AEAD / CTR / CFB 严禁使用）。
     KeyDerive,
     /// 取自具名字段。
     Field,
@@ -179,6 +189,28 @@ pub struct WrapSpec {
     pub alg: AlgorithmId,
 }
 
+/// 判断对称算法是否为流密码模式（CTR / CFB），此类模式与 AEAD 一样严禁重用固定 IV。
+#[must_use]
+pub const fn is_stream_mode(alg: AlgorithmId) -> bool {
+    matches!(
+        alg,
+        AlgorithmId::Aes256Ctr
+            | AlgorithmId::Aes128Ctr
+            | AlgorithmId::Aes256Cfb
+            | AlgorithmId::Aes128Cfb
+            | AlgorithmId::Sm4Ctr
+    )
+}
+
+/// 判断对称算法是否为零 IV 的 ECB 模式。
+#[must_use]
+pub const fn is_ecb_mode(alg: AlgorithmId) -> bool {
+    matches!(
+        alg,
+        AlgorithmId::Aes128Ecb | AlgorithmId::Aes256Ecb | AlgorithmId::Sm4EcbPkcs7
+    )
+}
+
 /// 上游报文 Profile。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UpstreamCryptoProfile {
@@ -206,11 +238,17 @@ pub struct UpstreamCryptoProfile {
     pub iv: IvSource,
     /// 密文作用域。
     pub scope: CipherScope,
-    /// 可选响应侧解密规格（缺省表示与请求对称或明文）。
+    /// 可选响应侧解密规格（配置时自动启用响应强制解密）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response_crypt: Option<CryptSpec>,
-        /// 拼串时是否缀密钥（仅 digest-as-sign / 旧互操作；MAC/非对称签名忽略）。
-    #[serde(default, skip_serializing_if = "is_canon_key_affix_none")]
+    /// 是否强制校验上游响应签名 / MAC（默认 `false`；开启后缺失或验签失败一律 Fail-Closed）。
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub verify_response: bool,
+    /// 是否强制使用 `response_crypt`（缺省回退 `crypt`）解密上游响应（默认 `false`；开启后失败一律 Fail-Closed）。
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub decrypt_response: bool,
+    /// 拼串时是否缀密钥（仅 digest-as-sign / 旧互操作；MAC/非对称签名忽略）。
+    #[serde(default, skip_serializing_if = "IsDefaultValue::is_default_value")]
     pub canon_key_affix: CanonKeyAffix,
     /// 是否允许 Legacy 算法。
     #[serde(default)]
@@ -233,16 +271,30 @@ impl UpstreamCryptoProfile {
             iv: IvSource::Random,
             scope: CipherScope::WholeBody,
             response_crypt: None,
+            verify_response: false,
+            decrypt_response: false,
             canon_key_affix: CanonKeyAffix::None,
             allow_insecure: false,
         }
+    }
+
+    /// 当前 Profile 是否要求解密上游响应。
+    #[must_use]
+    pub const fn should_decrypt_response(&self) -> bool {
+        self.decrypt_response || self.response_crypt.is_some()
+    }
+
+    /// 当前 Profile 是否要求对上游响应执行密码学验签或解密（Fail-Closed）。
+    #[must_use]
+    pub const fn should_open_response(&self) -> bool {
+        self.verify_response || self.decrypt_response || self.response_crypt.is_some()
     }
 
     /// 校验相对注册表的组合规则。
     ///
     /// # Errors
     ///
-    /// 顺序与子规格不匹配、非 AEAD 缺完整性、Legacy 未放行、算法未登记等。
+    /// 顺序与子规格不匹配、非 AEAD 缺完整性、Legacy 未放行、固定 IV 用在 AEAD/CTR/CFB 等。
     pub fn validate(&self, registry: &AlgorithmRegistry) -> Result<(), CryptoError> {
         if self.version == 0 {
             return Err(CryptoError::InvalidProfile {
@@ -289,9 +341,19 @@ impl UpstreamCryptoProfile {
             CryptoOrder::SignThenEncrypt | CryptoOrder::EncryptThenSign => {
                 self.require_sign(registry)?;
                 let crypt = self.require_crypt(registry, "crypt")?;
-                // 有独立签名步骤时，对称完整性由 sign 承担；仍拒绝 AEAD 以外的「无任何完整性」组合已覆盖。
                 let _ = crypt;
             }
+        }
+
+        if self.verify_response && self.sign.is_none() {
+            return Err(CryptoError::InvalidProfile {
+                reason: "verify_response=true requires sign".to_owned(),
+            });
+        }
+        if self.decrypt_response && self.crypt.is_none() && self.response_crypt.is_none() {
+            return Err(CryptoError::InvalidProfile {
+                reason: "decrypt_response=true requires crypt or response_crypt".to_owned(),
+            });
         }
 
         if let Some(wrap) = &self.wrap {
@@ -321,7 +383,36 @@ impl UpstreamCryptoProfile {
             }
         }
 
+        self.validate_iv_safety()?;
         self.validate_scope_fields()?;
+        Ok(())
+    }
+
+    fn validate_iv_safety(&self) -> Result<(), CryptoError> {
+        if self.iv != IvSource::KeyDerive {
+            return Ok(());
+        }
+        for (label, spec_opt) in [("crypt", &self.crypt), ("response_crypt", &self.response_crypt)] {
+            let Some(spec) = spec_opt else {
+                continue;
+            };
+            if spec.alg.kind() == AlgorithmKind::Aead || is_stream_mode(spec.alg) {
+                return Err(CryptoError::InvalidProfile {
+                    reason: format!(
+                        "iv=key_derive is strictly forbidden for AEAD and stream modes ({label}.alg={}) due to catastrophic nonce reuse",
+                        spec.alg
+                    ),
+                });
+            }
+            if !is_ecb_mode(spec.alg) && !self.allow_insecure {
+                return Err(CryptoError::InvalidProfile {
+                    reason: format!(
+                        "iv=key_derive with block cipher {} requires allow_insecure=true",
+                        spec.alg
+                    ),
+                });
+            }
+        }
         Ok(())
     }
 
@@ -332,9 +423,7 @@ impl UpstreamCryptoProfile {
         let meta = registry.get(sign.alg)?;
         match meta.kind {
             AlgorithmKind::Mac | AlgorithmKind::AsymSign => {}
-            AlgorithmKind::Digest if self.allow_insecure => {
-                // 旧互操作：明文摘要当作「签名」字段（须显式 allow_insecure）。
-            }
+            AlgorithmKind::Digest if self.allow_insecure => {}
             other => {
                 return Err(CryptoError::InvalidProfile {
                     reason: format!(
@@ -376,7 +465,10 @@ impl UpstreamCryptoProfile {
             AlgorithmKind::Aead | AlgorithmKind::BlockCipher => {}
             other => {
                 return Err(CryptoError::InvalidProfile {
-                    reason: format!("{field}.alg {} kind {other:?} is not aead|block_cipher", crypt.alg),
+                    reason: format!(
+                        "{field}.alg {} kind {other:?} is not aead|block_cipher",
+                        crypt.alg
+                    ),
                 });
             }
         }
@@ -384,8 +476,6 @@ impl UpstreamCryptoProfile {
         Ok(())
     }
 
-    /// 非 AEAD 在无签名步骤时必须拒绝（CBC 等禁止裸用）。
-    /// `allow_insecure=true` 时放行旧厂 `encrypt_only` 裸分组密码（DES/ECB 等）。
     fn ensure_block_has_integrity(
         crypt: &CryptSpec,
         has_sign_step: bool,
@@ -428,6 +518,22 @@ impl UpstreamCryptoProfile {
                 reason: "scope=named_fields requires response_crypt.fields".to_owned(),
             });
         }
+        if self.sign.is_some() && self.canon == CanonStyle::Raw {
+            if self.crypt.as_ref().is_some_and(|c| c.fields.len() > 1) {
+                return Err(CryptoError::InvalidProfile {
+                    reason: "canon=raw with scope=named_fields and sign cannot have crypt.fields.len() > 1; use sorted_kv or concat".to_owned(),
+                });
+            }
+            if self
+                .response_crypt
+                .as_ref()
+                .is_some_and(|c| c.fields.len() > 1)
+            {
+                return Err(CryptoError::InvalidProfile {
+                    reason: "canon=raw with scope=named_fields and sign cannot have response_crypt.fields.len() > 1; use sorted_kv or concat".to_owned(),
+                });
+            }
+        }
         Ok(())
     }
 }
@@ -438,8 +544,81 @@ impl CryptSpec {
     }
 }
 
-#[allow(clippy::trivially_copy_pass_by_ref)]
-fn is_canon_key_affix_none(v: &CanonKeyAffix) -> bool {
-    matches!(v, CanonKeyAffix::None)
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
+    #[test]
+    fn forbids_key_derive_on_aead_and_stream_even_with_allow_insecure() {
+        let reg = AlgorithmRegistry::default_registry();
+        for alg in [
+            AlgorithmId::Aes256Gcm,
+            AlgorithmId::Chacha20Poly1305,
+            AlgorithmId::Aes256Ctr,
+            AlgorithmId::Aes256Cfb,
+            AlgorithmId::Sm4Ctr,
+        ] {
+            let order = if alg.kind() == AlgorithmKind::Aead {
+                CryptoOrder::AeadOnly
+            } else {
+                CryptoOrder::EncryptThenSign
+            };
+            let mut p = UpstreamCryptoProfile::skeleton(order);
+            p.iv = IvSource::KeyDerive;
+            p.allow_insecure = true;
+            p.crypt = Some(CryptSpec {
+                alg,
+                encoding: None,
+                fields: Vec::new(),
+            });
+            if order == CryptoOrder::EncryptThenSign {
+                p.sign = Some(SignSpec {
+                    alg: AlgorithmId::HmacSha256,
+                    encoding: None,
+                });
+            }
+            assert!(
+                p.validate(&reg).is_err(),
+                "iv=key_derive must be rejected for {alg}"
+            );
+        }
+
+        // CBC + KeyDerive rejected when allow_insecure=false, allowed when allow_insecure=true
+        let mut cbc = UpstreamCryptoProfile::skeleton(CryptoOrder::EncryptThenSign);
+        cbc.iv = IvSource::KeyDerive;
+        cbc.crypt = Some(CryptSpec {
+            alg: AlgorithmId::Aes256Cbc,
+            encoding: None,
+            fields: Vec::new(),
+        });
+        cbc.sign = Some(SignSpec {
+            alg: AlgorithmId::HmacSha256,
+            encoding: None,
+        });
+        cbc.allow_insecure = false;
+        assert!(cbc.validate(&reg).is_err());
+        cbc.allow_insecure = true;
+        assert!(cbc.validate(&reg).is_ok());
+    }
+
+    #[test]
+    fn forbids_canon_raw_when_named_fields_has_multiple_fields_with_sign() {
+        let reg = AlgorithmRegistry::default_registry();
+        let mut p = UpstreamCryptoProfile::skeleton(CryptoOrder::SignThenEncrypt);
+        p.scope = CipherScope::NamedFields;
+        p.canon = CanonStyle::Raw;
+        p.crypt = Some(CryptSpec {
+            alg: AlgorithmId::Aes256Gcm,
+            encoding: None,
+            fields: vec!["f1".into(), "f2".into()],
+        });
+        p.sign = Some(SignSpec {
+            alg: AlgorithmId::HmacSha256,
+            encoding: None,
+        });
+        assert!(p.validate(&reg).is_err());
+
+        p.canon = CanonStyle::SortedKv;
+        assert!(p.validate(&reg).is_ok());
+    }
+}

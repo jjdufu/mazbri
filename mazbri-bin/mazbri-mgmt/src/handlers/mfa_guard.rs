@@ -277,15 +277,27 @@ pub(crate) async fn load_checked_subject(
     }
 }
 
-/// 要求当前会话的这一类提权窗口有效。窗口在有效期内可重复使用。
-///
-/// # Errors
-///
-/// 会话无效返回 401；未绑定、锁定或没有窗口返回 403；依赖故障返回 503。
-pub async fn require_category(
+fn step_up_fresh_required(category: Category) -> Response {
+    let message = mazbri_i18n::mfa::step_up_required();
+    let body = serde_json::json!({
+        "success": false,
+        "code": "MFA_REQUIRED",
+        "reason": WindowReason::Expired.as_str(),
+        "category": category.as_str(),
+        "error": message,
+    });
+    crate::audit::set_failure_reason("mfa_fresh_required");
+    crate::audit::mark_security_event();
+    let mut response = (StatusCode::FORBIDDEN, Json(body)).into_response();
+    crate::audit::AuditErrorInfo::attach(&mut response, "MFA_REQUIRED", &message);
+    response
+}
+
+async fn verify_category_window(
     state: &AppState,
     claims: &AdminClaims,
     category: Category,
+    fresh_max_age_secs: Option<i64>,
 ) -> Result<CategoryVerified, Box<Response>> {
     let checked = load_checked_subject(&state.admin_db, &state.password_policy_cache, claims)
         .await
@@ -297,6 +309,11 @@ pub async fn require_category(
     let now = Utc::now().timestamp();
     match step_up::classify_window(&window, &checked.user_id.to_string(), checked.epoch, now) {
         Ok(()) => {
+            if let Some(max_age) = fresh_max_age_secs
+                && now.saturating_sub(window.issued_at) > max_age.max(1)
+            {
+                return Err(Box::new(step_up_fresh_required(category)));
+            }
             crate::audit::add_detail("mfa", serde_json::json!(category.as_str()));
             crate::audit::add_detail("category", serde_json::json!(category.as_str()));
             crate::audit::add_detail("step_up_opened_at", serde_json::json!(window.opened_at));
@@ -324,6 +341,33 @@ pub async fn require_category(
             )))
         }
     }
+}
+
+/// 要求当前会话的这一类提权窗口有效。窗口在有效期内可重复使用。
+///
+/// # Errors
+///
+/// 会话无效返回 401；未绑定、锁定或没有窗口返回 403；依赖故障返回 503。
+pub async fn require_category(
+    state: &AppState,
+    claims: &AdminClaims,
+    category: Category,
+) -> Result<CategoryVerified, Box<Response>> {
+    verify_category_window(state, claims, category, None).await
+}
+
+/// 要求当前会话的这一类提权窗口有效且签发时间不超过 `max_age_secs` 秒。
+///
+/// # Errors
+///
+/// 会话无效返回 401；窗口缺失、过期或签发超过 `max_age_secs` 秒返回 403 `MFA_REQUIRED`；依赖故障返回 503。
+pub async fn require_category_fresh(
+    state: &AppState,
+    claims: &AdminClaims,
+    category: Category,
+    max_age_secs: i64,
+) -> Result<CategoryVerified, Box<Response>> {
+    verify_category_window(state, claims, category, Some(max_age_secs)).await
 }
 
 #[cfg(test)]

@@ -116,8 +116,10 @@ pub(crate) fn match_primary_route_metadata(
 pub(crate) async fn get_or_create_breaker(
     state: &ProxyState,
     product_id: &str,
+    channel: &GatewayCandidateChannel,
 ) -> Arc<CircuitBreaker> {
-    if let Some(breaker) = state.circuit_breakers.get(product_id) {
+    let breaker_key = format!("channel:{}", channel.channel_id);
+    if let Some(breaker) = state.circuit_breakers.get(&breaker_key) {
         return breaker;
     }
     let cb_cfg = &state.circuit_breaker_config;
@@ -127,25 +129,26 @@ pub(crate) async fn get_or_create_breaker(
             success_threshold: u64::saturating_from(product.cb_success_threshold),
             cooldown_duration: Duration::from_secs(u64::saturating_from(product.cb_cooldown_secs)),
             request_timeout: Duration::from_secs(u64::saturating_from(product.timeout_secs)),
+            half_open_max_calls: 2,
         },
         _ => CircuitBreakerConfig {
             failure_threshold: u64::from(cb_cfg.failure_threshold),
             success_threshold: u64::from(cb_cfg.success_threshold),
             cooldown_duration: Duration::from_secs(cb_cfg.cooldown_secs),
             request_timeout: Duration::from_secs(cb_cfg.request_timeout_secs),
+            half_open_max_calls: 2,
         },
     };
-    state.circuit_breakers.get_with_by_ref(product_id, || {
-        let breaker = Arc::new(CircuitBreaker::new(
-            format!("product:{product_id}"),
-            cb_config.clone(),
-        ));
+    state.circuit_breakers.get_with_by_ref(&breaker_key, || {
+        let breaker = Arc::new(CircuitBreaker::new(breaker_key.clone(), cb_config.clone()));
         info!(
+            channel_id = %channel.channel_id,
+            channel_code = %channel.channel_code,
             product_id = %product_id,
             failure_threshold = cb_config.failure_threshold,
             success_threshold = cb_config.success_threshold,
             cooldown_secs = cb_config.cooldown_duration.as_secs(),
-            "Created new circuit breaker for product"
+            "Created new channel-scoped circuit breaker"
         );
         breaker
     })

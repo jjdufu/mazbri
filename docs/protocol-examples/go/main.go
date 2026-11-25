@@ -37,15 +37,18 @@ import (
 type Doc struct {
 	TestOnly bool `json:"test_only"`
 	Common   struct {
-		HTTPPath string `json:"http_path"`
-		TenantID string `json:"tenant_id"`
+		HTTPPath   string `json:"http_path"`
+		TenantID   string `json:"tenant_id"`
+		KeyVersion string `json:"key_version"`
 	} `json:"common"`
 	Keys struct {
-		HmacBindingKeyB64 string                       `json:"hmac_binding_key_b64"`
-		Asymmetric        map[string]map[string]string `json:"asymmetric"`
+		TenantSecretKeyB64 string                       `json:"tenant_secret_key_b64"`
+		HmacBindingKeyB64  string                       `json:"hmac_binding_key_b64"`
+		Asymmetric         map[string]map[string]string `json:"asymmetric"`
 	} `json:"keys"`
 	Transport []struct {
 		Name       string  `json:"name"`
+		Direction  string  `json:"direction"`
 		DataAlg    string  `json:"data_alg"`
 		MacAlg     *string `json:"mac_alg"`
 		DataKeyHex string  `json:"data_key_hex"`
@@ -130,6 +133,22 @@ func hmacOf(alg string, key, msg []byte) []byte {
 	return m.Sum(nil)
 }
 
+func hkdfSha256(salt, ikm, info []byte, length int) []byte {
+	prkMac := hmac.New(sha256.New, salt)
+	prkMac.Write(ikm)
+	prk := prkMac.Sum(nil)
+	var out, prev []byte
+	for counter := byte(1); len(out) < length; counter++ {
+		h := hmac.New(sha256.New, prk)
+		h.Write(prev)
+		h.Write(info)
+		h.Write([]byte{counter})
+		prev = h.Sum(nil)
+		out = append(out, prev...)
+	}
+	return out[:length]
+}
+
 // encrypt 返回 (ciphertext 不含 tag, tag)；ok=false 表示标准库不支持该算法。
 func encrypt(alg string, key, iv, aad, pt []byte) (ct, tag []byte, ok bool) {
 	block, err := aes.NewCipher(key)
@@ -181,6 +200,8 @@ func main() {
 	must(json.Unmarshal(raw, &d))
 	check(d.TestOnly, "test_only")
 
+	masterKey, err := base64.StdEncoding.DecodeString(d.Keys.TenantSecretKeyB64)
+	must(err)
 	var skipped []string
 	nt := 0
 	for _, t := range d.Transport {
@@ -188,11 +209,29 @@ func main() {
 			skipped = append(skipped, t.Name)
 			continue
 		}
+		dir := t.Direction
+		if dir == "" {
+			dir = "c2g"
+		}
+		dataKey := unhex(t.DataKeyHex)
+		derivedEnc := hkdfSha256([]byte(d.Common.KeyVersion), masterKey,
+			[]byte("mazbri-transport-v1|"+d.Common.TenantID+"|"+dir+"|enc"), len(dataKey))
+		check(bytes.Equal(dataKey, derivedEnc), t.Name+" hkdf enc")
+
+		var env envelope
+		must(json.Unmarshal([]byte(t.Expected.EnvelopeJSON), &env))
+		macAlgStr := ""
+		if t.MacAlg != nil {
+			macAlgStr = *t.MacAlg
+		}
+		expectedAAD := strings.Join([]string{"v1", dir, d.Common.TenantID, d.Common.HTTPPath,
+			env.KeyVersion, t.DataAlg, macAlgStr, strconv.FormatInt(env.Timestamp, 10), env.Nonce, env.IV}, "\n")
 		aad := []byte{}
 		if t.AADUTF8 != nil {
+			check(*t.AADUTF8 == expectedAAD, t.Name+" aad")
 			aad = []byte(*t.AADUTF8)
 		}
-		ct, tag, ok := encrypt(t.DataAlg, unhex(t.DataKeyHex), unhex(t.IVHex), aad, []byte(t.Plaintext))
+		ct, tag, ok := encrypt(t.DataAlg, dataKey, unhex(t.IVHex), aad, []byte(t.Plaintext))
 		if !ok {
 			skipped = append(skipped, t.Name)
 			continue
@@ -203,14 +242,14 @@ func main() {
 			tagB64 = b64(tag)
 		}
 		check(tagB64 == t.Expected.TagB64, t.Name+" tag")
-		var env envelope
-		must(json.Unmarshal([]byte(t.Expected.EnvelopeJSON), &env))
 		sig := ""
 		if t.MacAlg != nil {
-			canon := strings.Join([]string{d.Common.TenantID, d.Common.HTTPPath, env.KeyVersion,
-				strconv.FormatInt(env.Timestamp, 10), env.Nonce, env.IV, env.Ciphertext, env.Tag}, "\n")
+			derivedMac := hkdfSha256([]byte(d.Common.KeyVersion), masterKey,
+				[]byte("mazbri-transport-v1|"+d.Common.TenantID+"|"+dir+"|mac"), 32)
+			check(bytes.Equal(unhex(*t.MacKeyHex), derivedMac), t.Name+" hkdf mac")
+			canon := strings.Join([]string{expectedAAD, env.Ciphertext, env.Tag}, "\n")
 			check(canon == *t.Expected.MacCanonical, t.Name+" canonical")
-			sig = hex.EncodeToString(hmacOf(*t.MacAlg, unhex(*t.MacKeyHex), []byte(canon)))
+			sig = hex.EncodeToString(hmacOf(*t.MacAlg, derivedMac, []byte(canon)))
 		}
 		check(sig == t.Expected.SignatureHex, t.Name+" signature")
 		fmt.Println("  ok transport", t.Name)

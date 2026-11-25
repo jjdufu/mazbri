@@ -18,11 +18,11 @@
  │ ◀───────────── {access_token, expires_in} ────│
  │                                               │
  │ POST /api/v1/gateway                          │
- │   Authorization: Bearer <access_token>        │  ① JWT 校验 + scope
+ │   Authorization: Bearer <access_token>        │  ① JWT 校验 + scope + 租户活性/IP 白名单
  │   [X-Mazbri-* 请求绑定头]                       │  ② 请求绑定（按租户 profile，可选/必选）
- │   body = 明文 GatewayRequest | 加密信封          │  ③ 信封：时间窗 → nonce 去重 → MAC → 解密
- │ ─────────────────────────────────────────────▶│  ④ 转发上游
- │ ◀──── 明文响应 | 加密信封（mode=full）──────────│  ⑤ mode=full 时封装响应
+ │   body = 明文 GatewayRequest | 加密信封          │  ③ 信封：时间窗 → 验签解密(c2g) → nonce 去重
+ │ ─────────────────────────────────────────────▶│  ④ 产品门禁 / 幂等校验 / 转发上游
+ │ ◀──── 明文响应 | 加密信封(g2c, mode=full)──────│  ⑤ mode=full 时以 g2c 子密钥封装响应
 ```
 
 租户侧需要从平台运营方拿到的材料（均通过管理端 mgmt 生成，平台**只展示一次**的值需租户自行妥善保存）：
@@ -57,16 +57,17 @@ Content-Type: application/json
 }
 ```
 
-  `expires_in` 单位秒，由租户配置决定；示例值仅示意。调用网关前须确认 token 未过期，过期后重新换取。
-  token 是不透明凭据，租户不应解析其内容。平台在 JWT 里记录签发它的 API Key ID（claim `api_key_id`，不含密钥本身），用于按凭证审计与统计；升级到带该 claim 的版本后，旧 token 校验失败（401），重新换取即可。
+  `expires_in` 单位秒（合法范围 `60..=86400`，默认 `1800`），由租户配置决定；示例值仅示意。调用网关前须确认 token 未过期，过期后重新换取。
+  token 是不透明凭据，租户不应解析其内容。平台在 JWT 里记录签发它的 API Key ID（claim `api_key_id`，不含密钥本身），用于按凭证审计与统计；缺少该 claim 的凭据返回 401，重新换取即可。
 
 - 失败：`{"success": false, "error": "<原因>"}`，HTTP 状态：
 
 | 错误 | HTTP | 说明 |
 |---|---|---|
 | InvalidApiKey | 401 | API Key 错误 / 超长 / grant_type 不支持 |
+| TenantSuspended / IpDenied | 403 | 租户已停用或源 IP 不在租户白名单 |
 | TenantNotFound | 404 | 租户不存在 |
-| TenantSuspended | 403 | 租户已停用 |
+| RateLimited | 429 | 源 IP 换票请求超限，响应带 `Retry-After` |
 | RpcError | 503 | 依赖服务暂不可用，可重试 |
 | InternalError | 500 | 内部错误 |
 
@@ -87,7 +88,7 @@ Content-Type: application/json
 | `product_id` | string | 是 | 产品 ID（由平台分配） |
 | `path` | string | 是 | 上游路径 |
 | `method` | string | 否 | 缺省 `POST` |
-| `fingerprint` | string | 否 | 幂等指纹；同指纹重复请求重放已完成结果 |
+| `fingerprint` | string | 否 | 幂等指纹（按租户+产品+方法+路径隔离）；同指纹同载荷重放已完成结果，同指纹不同载荷返回 422 `E4221` |
 | `query` | object | 否 | 上游 query |
 | `headers` | object | 否 | 上游 header |
 | `body` | any | 否 | 上游 body |
@@ -167,12 +168,17 @@ RateLimit: "tenant";r=998;t=1
 信封中的 `dataAlg` / `macAlg` 必须与 profile 生效算法**完全一致**，否则 400 `E4000`（`invalid transport envelope/profile: ...`）。
 算法 id 为 kebab-case 闭集，不接受大小写变体或历史别名。
 
-### 3.2 密钥派生
+### 3.2 四向子密钥派生（HKDF-SHA256）
 
-传输密钥 `tenantSecretKey` 恒为 32 字节（base64 解码后）：
+传输主密钥 `tenantSecretKey` 恒为 32 字节（base64 解码后）。请求与响应、数据加密与外挂 MAC 分别使用单向正交子密钥（RFC 5869 `HKDF-SHA256`）：
 
-- **数据密钥** = 前 `key_len(data_alg)` 字节（见 §3.4）；
-- **MAC 密钥** = 完整 32 字节。
+- `ikm` = `tenantSecretKey`（32 字节）；
+- `salt` = `keyVersion` 的 UTF-8 字节（如 `b"v1"`）；
+- 方向标识 `direction`：客户端 → 网关请求为 `"c2g"`，网关 → 客户端响应为 `"g2c"`；
+- **数据加密子密钥**：`info = "mazbri-transport-v1|{tenant_id}|{direction}|enc"`，输出长度 = `key_len(data_alg)` 字节（见 §3.4）；
+- **外挂 MAC 子密钥**：`info = "mazbri-transport-v1|{tenant_id}|{direction}|mac"`，输出长度 = 32 字节。
+
+`c2g` 与 `g2c` 子密钥互不相交，请求信封无法被反射冒充为网关响应。
 
 ### 3.3 信封格式（JSON，camelCase）
 
@@ -194,33 +200,40 @@ RateLimit: "tenant";r=998;t=1
 | 字段 | 编码 | 说明 |
 |---|---|---|
 | `encrypted` | bool | 必须为 `true` |
-| `keyVersion` | string | 传输密钥版本 |
+| `keyVersion` | string | 传输密钥版本（非空） |
 | `dataAlg` / `macAlg` | string | 与 profile 一致；无 MAC 时省略 `macAlg` |
 | `timestamp` | 整数（unix 秒） | 与服务器时间偏差 ≤ `clock_skew_seconds` |
 | `nonce` | base64url 无填充 | 防重放；参考实现为 16 字节随机数（22 字符）。同租户 + 同 keyVersion 在 `nonce_ttl_seconds` 内只能用一次 |
-| `iv` | 标准 base64 | 每次随机，长度见 §3.4 |
-| `ciphertext` | 标准 base64 | 明文 = `GatewayRequest` JSON 的 UTF-8 字节 |
+| `iv` | 标准 base64 | 每次随机，长度见 §3.4（ECB 模式为 0 字节 `""`） |
+| `ciphertext` | 标准 base64 | 明文 = `GatewayRequest` JSON（或响应 JSON）的 UTF-8 字节 |
 | `tag` | 标准 base64 | AEAD 的 16 字节认证标签；非 AEAD 为 `""` |
 | `signature` | 小写 hex | 外挂 MAC，见下 |
 
-**AAD**（仅 AEAD）= 租户 ID 字符串（UUID 小写带连字符，即 token 中 `tenant_info.tenant_id`）的 UTF-8 字节。非 AEAD 无 AAD。
-
-**MAC canonical string**（7 个 `\n`，无结尾换行）：
+**AEAD AAD**（仅 AEAD，UTF-8 字节，9 个 `\n`，无结尾换行）：
 
 ```
-{tenant_id}\n{http_path}\n{keyVersion}\n{timestamp}\n{nonce}\n{iv}\n{ciphertext}\n{tag}
+v1\n{direction}\n{tenant_id}\n{http_path}\n{keyVersion}\n{dataAlg}\n{macAlg_or_empty}\n{timestamp}\n{nonce}\n{iv}
 ```
 
-- `http_path` = 本次 HTTP 请求的 path（含 query，如有），即 `/api/v1/gateway`；
+**MAC canonical string**（11 个 `\n`，无结尾换行，在 AEAD AAD 基础上追加 `ciphertext` 与 `tag`）：
+
+```
+v1\n{direction}\n{tenant_id}\n{http_path}\n{keyVersion}\n{dataAlg}\n{macAlg_or_empty}\n{timestamp}\n{nonce}\n{iv}\n{ciphertext}\n{tag}
+```
+
+- `direction`：请求侧固定为 `"c2g"`，响应侧固定为 `"g2c"`；
+- `tenant_id`：租户 UUID（小写带连字符，即 token 中 `tenant_info.tenant_id`）；
+- `http_path`：本次 HTTP 请求的 path（含 query，如有），即 `/api/v1/gateway`；
+- `macAlg_or_empty`：未配置 `macAlg` 时为空串 `""`；
 - `iv` / `ciphertext` / `tag` / `nonce` 均使用信封中的**编码后字符串**原样拼接；
-- `signature = hex(HMAC_{mac_alg}(MAC 密钥, canonical))`。
+- `signature = hex(HMAC_{mac_alg}(mac_subkey, canonical))`。
 
-网关处理顺序：时间窗（超出 → 403 `E4030`）→ nonce 去重（Redis `SET NX`，重复 → 409 `E4090`）→ 取密钥版本 → MAC 校验（不符 → 403 `E4030 Invalid encrypted request signature`）→ 解密（失败 → 400 `E4000`）→ 解析 `GatewayRequest`。
+网关处理顺序：时间窗（超出 → 403 `E4030`）→ 取密钥版本 → MAC 校验（不符 → 403 `E4030 Invalid encrypted request signature`）与解密（失败 → 400 `E4000`）→ nonce 去重（Redis `SET NX`，验签解密通过后才消费 nonce，重复 → 409 `E4090`）→ 解析 `GatewayRequest`。
 
-**响应（仅 `full`）**：凡经上游处理的响应（含上游返回的非 2xx）都以同样格式封装：使用 `current_key_version`、新的 timestamp/nonce/iv、相同 AAD 与 `http_path`；HTTP 状态码保持上游状态。租户应校验 MAC 后解密。
+**响应（仅 `full`）**：凡经上游处理的响应（含上游返回的非 2xx）都以 `direction = "g2c"` 封装：使用 `current_key_version`、新的 timestamp/nonce/iv、`g2c` 派生子密钥与相同 `http_path`；HTTP 状态码保持上游状态。租户应按 `"g2c"` 校验 MAC 并解密。
 网关自身在鉴权、绑定、信封校验、限流等阶段产生的错误**不加密**，按 §6 的明文错误体返回——客户端应先看 HTTP 状态与 body 是否为信封再处理。
 
-实现：`mazbri-libs/mazbri-core/src/crypto/transport.rs`（`canonical_signature_payload`、`seal_envelope`、`open_envelope`、`iv_len_for`、`data_key_len`、`validate_transport_algorithms`）；`mazbri-bin/mazbri-gateway/src/crypto.rs`（`decrypt_request_value`、`encrypt_response_bytes`、`validate_timestamp`、`check_nonce`）。
+实现：`mazbri-libs/mazbri-core/src/crypto/transport.rs`（`EnvelopeDirection`、`derive_transport_enc_key`、`derive_transport_mac_key`、`canonical_envelope_aad`、`canonical_signature_payload`、`seal_envelope`、`open_envelope`、`iv_len_for`、`data_key_len`、`validate_transport_algorithms`）；`mazbri-bin/mazbri-gateway/src/crypto.rs`（`decrypt_request_value_with_precheck`、`encrypt_response_bytes`、`validate_timestamp`、`check_nonce`）。
 
 ### 3.4 数据算法参数
 
@@ -335,6 +348,7 @@ profile `signature_version` 决定允许的协议档，`X-Mazbri-Signature-Input
 | `E4040` | 404 | 产品/路由不存在 |
 | `E4090` | 409 | 信封 nonce 重复；同 fingerprint 请求仍在处理 |
 | `E4130` | 413 | 请求体超限 |
+| `E4221` | 422 | 幂等载荷冲突：同一 `fingerprint` 提交了不同的业务请求体 |
 | `E4290` | 429 | 限流，带 `Retry-After`（租户 QPS 超限另带 `RateLimit-Policy` / `RateLimit`，§2.2） |
 | `E5000` | 500 | 内部错误 |
 | `E5020` | 502 | 上游不可用 |
@@ -353,7 +367,7 @@ profile `signature_version` 决定允许的协议档，`X-Mazbri-Signature-Input
 |---|---|
 | `common` | `tenant_id`（AAD）、`http_path=/api/v1/gateway`、`key_version=v1`、`timestamp=1767225600`（2026-01-01 08:00:00 Asia/Shanghai，真实请求必须用当前时间） |
 | `keys` | 传输密钥 `tenant_secret_key_b64`（字节 0x00..0x1f）、HMAC 绑定密钥 `hmac_binding_key_b64`（0x80..0x9f）、`asymmetric.*` 测试密钥对（RSA-2048、ECDSA P-256/P-384、Ed25519、SM2，PKCS#8 / SPKI PEM） |
-| `transport[]`（17 条） | 全部数据算法（含 4 条 legacy）：`data_key_hex`、`mac_key_hex`、`iv_hex`、`aad_utf8`、`plaintext_utf8` → 期望 `iv_b64`、`ciphertext_b64`、`tag_b64`、`mac_canonical_string`、`signature_hex`、完整 `envelope_json`（全部可逐字节复现） |
+| `transport[]`（17 条） | 全部数据算法（含 4 条 legacy，`direction="c2g"`）：`data_key_hex`、`mac_key_hex`（均由 `tenant_secret_key_b64` 经 HKDF-SHA256 派生）、`iv_hex`、`aad_utf8`、`plaintext_utf8` → 期望 `iv_b64`、`ciphertext_b64`、`tag_b64`、`mac_canonical_string`、`signature_hex`、完整 `envelope_json`（全部可逐字节复现） |
 | `binding[]`（9 条） | hmac-sha256（明文 body / 信封 body）、hmac-sm3、rsa sha256 / sha512、ecdsa p256 / p384、ed25519、sm2：期望 `canonical_string`、`signature_b64`、完整 `headers`；`deterministic=false` 的条目只验签 |
 | `callback` | payload、secret、timestamp → 期望 `payload_compact`、`signed_message`、两个 header |
 
@@ -391,15 +405,23 @@ import base64, hashlib, hmac, json, os, time
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
-# —— 传输信封：aes-256-gcm + hmac-sha256 ——
+def derive_subkey(master32: bytes, tenant_id: str, key_version: str, direction: str, purpose: str, length: int) -> bytes:
+    info = f"mazbri-transport-v1|{tenant_id}|{direction}|{purpose}".encode()
+    return HKDF(algorithm=hashes.SHA256(), length=length, salt=key_version.encode(), info=info).derive(master32)
+
+# —— 传输信封：aes-256-gcm + hmac-sha256（请求方向 c2g）——
 def seal(tenant_id: str, key32: bytes, key_version: str, plaintext: bytes, http_path="/api/v1/gateway") -> str:
     iv, nonce, ts = os.urandom(12), base64.urlsafe_b64encode(os.urandom(16)).rstrip(b"=").decode(), int(time.time())
-    out = AESGCM(key32[:32]).encrypt(iv, plaintext, tenant_id.encode())          # AAD = tenant_id
-    ct, tag = base64.b64encode(out[:-16]).decode(), base64.b64encode(out[-16:]).decode()
     ivb = base64.b64encode(iv).decode()
-    canon = "\n".join([tenant_id, http_path, key_version, str(ts), nonce, ivb, ct, tag])
-    sig = hmac.new(key32, canon.encode(), hashlib.sha256).hexdigest()           # MAC 密钥 = 完整 32 字节
+    enc_key = derive_subkey(key32, tenant_id, key_version, "c2g", "enc", 32)
+    mac_key = derive_subkey(key32, tenant_id, key_version, "c2g", "mac", 32)
+    aad = "\n".join(["v1", "c2g", tenant_id, http_path, key_version, "aes-256-gcm", "hmac-sha256", str(ts), nonce, ivb])
+    out = AESGCM(enc_key).encrypt(iv, plaintext, aad.encode())
+    ct, tag = base64.b64encode(out[:-16]).decode(), base64.b64encode(out[-16:]).decode()
+    canon = f"{aad}\n{ct}\n{tag}"
+    sig = hmac.new(mac_key, canon.encode(), hashlib.sha256).hexdigest()
     return json.dumps({"encrypted": True, "keyVersion": key_version, "dataAlg": "aes-256-gcm",
                        "macAlg": "hmac-sha256", "timestamp": ts, "nonce": nonce, "iv": ivb,
                        "ciphertext": ct, "tag": tag, "signature": sig}, separators=(",", ":"))

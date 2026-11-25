@@ -1,4 +1,13 @@
 import type { ISODateString, DecimalString, ListPagination } from "./common";
+import type { CreateTenantRequest as GeneratedCreateTenantRequest } from "./generated/tenant";
+import type { ListParams as GeneratedListParams } from "./generated/test_common";
+
+type NullableToOptional<T> = {
+  [K in keyof T as null extends T[K] ? never : K]: T[K];
+} & {
+  [K in keyof T as null extends T[K] ? K : never]?: Exclude<T[K], null> | null;
+};
+
 export interface Tenant {
   /** tenants.id：加密 AAD 用的租户 UUID */
   uuid: string;
@@ -22,21 +31,11 @@ export interface TenantListResponse {
     total_pages: number;
   };
 }
-export interface TenantListQuery {
-  page?: number;
-  page_size?: number;
-  q?: string;
-  filters?: string;
-}
-export interface CreateTenantRequest {
-  tenant_code: string;
-  tenant_id: string;
-  name: string;
-  contact_person?: string;
-  contact_phone?: string;
-  contact_email?: string;
-  token_expiration_secs?: number;
-}
+export type TenantListQuery = Partial<
+  Omit<NullableToOptional<GeneratedListParams>, "status">
+>;
+export type CreateTenantRequest =
+  NullableToOptional<GeneratedCreateTenantRequest>;
 export interface UpdateTenantRequest {
   name?: string;
   contact_person?: string;

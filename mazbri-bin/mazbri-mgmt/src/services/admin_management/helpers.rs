@@ -16,6 +16,13 @@ pub(super) fn hash_password(password: &str) -> Result<String, String> {
         .map_err(|error| format!("Failed to hash password: {error}"))?;
     Ok(hash.to_string())
 }
+pub(super) async fn hash_password_async(password: &str) -> Result<String, String> {
+    let owned = password.to_string();
+    mazbri_core::panic_policy::spawn_blocking_recoverable(move || hash_password(&owned))
+        .await
+        .map_err(|error| format!("Blocking password hash join failed: {error}"))?
+        .map_err(|error| format!("Blocking password hash panicked: {error}"))?
+}
 pub(super) fn validate_manage_admins(claims: &AdminClaims) -> Result<(), ApiError> {
     if can_manage_admins(claims) {
         Ok(())
@@ -83,6 +90,7 @@ mod tests {
             token_type: None,
             sid: uuid::Uuid::nil().to_string(),
             sxp: None,
+            auth_epoch: 0,
         }
     }
 

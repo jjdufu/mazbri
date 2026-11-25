@@ -1,7 +1,6 @@
 mod calculator;
 mod error;
 mod metrics;
-mod middleware;
 mod pipeline_health;
 mod queue;
 mod reconcile;
@@ -13,21 +12,26 @@ mod usage_outbox_worker;
 mod worker;
 pub use calculator::{BillingCalculator, CalculationResult, RateConfig};
 pub use error::{BillingError, BillingResult as Result};
+use mazbri_auth as _;
 use mazbri_core::CoreError;
 pub use metrics::{DeductionRecorder, register_billing_metrics};
-pub use middleware::{BillingMiddlewareState, balance_check_middleware, usage_middleware};
 pub use pipeline_health::{PipelineHealthConfig, PipelineHealthJob};
 pub use queue::{ChargeEnqueue, ChargeQueue};
-pub use reconcile::{ReconcileConfig, ReconcileJob};
+pub use reconcile::{ReconcileConfig, ReconcileJob, validate_clickhouse_table_ident};
 pub use repository::{
     AccountBalanceRow, BillingRepository, DeductAndRecordResult, PgBillingRepository,
 };
 pub use service::{
-    AccountBalance, AddFundsResult, BillInfo, BillLineItem, BillingService, BillingServiceConfig,
-    UsageBreakdownItem, UsageOutboxEvent, UsageRecord, UsageSummaryInfo,
+    AccountBalance, BillInfo, BillLineItem, BillingMiddlewareState, BillingService,
+    BillingServiceConfig, UsageBreakdownItem, UsageOutboxEvent, UsageRecord, UsageSummaryInfo,
 };
-pub use types::{ChargeQueueItem, ChargeStatus, QueueConfig};
-pub use usage_events::{UsageEventConsumer, UsageEventProducer, UsageEventProducerHandles, UsageEventsConfig};
+pub use types::{
+    AdjustmentDirection, ChargeQueueItem, ChargeStatus, FencedChargeItem, IntoAdjustmentDirection,
+    QueueConfig, RecordUsageOutcome,
+};
+pub use usage_events::{
+    UsageEventConsumer, UsageEventProducer, UsageEventProducerHandles, UsageEventsConfig,
+};
 pub use usage_outbox_worker::UsageOutboxWorker;
 pub use worker::ChargeWorker;
 impl From<BillingError> for CoreError {

@@ -381,7 +381,7 @@ import CommonDrawerHeader from "@/components/common/drawer-header/index.vue";
 import SurfaceCardHeader from "@/components/common/surface-card-header/index.vue";
 import TableExportDropdown from "@/components/table/TableExportDropdown.vue";
 import StageBreakdown from "./StageBreakdown.vue";
-import { downloadBinary, createTarArchive, gzipBytes } from "@/utils/archive";
+import { downloadBinary, packageTarArchive } from "@/utils/archive";
 import AdaptiveDrawer from "@/components/common/AdaptiveDrawer.vue";
 import { useOpsRole } from "@/composables/ops/useOpsRole";
 import { useListQuery } from "@/composables/useListQuery";
@@ -394,6 +394,7 @@ import {
   fetchUpstreamCallLogs,
 } from "@/api/call-monitor";
 import { runWithLoading } from "@/composables/useAsyncState";
+import { useLatestRequest } from "@/composables/useLatestRequest";
 import { logger } from "@/utils/sys";
 import { EMPTY_PLACEHOLDER } from "@/utils/format";
 import { formatUrlDisplay, sanitizeSensitiveValue } from "@/utils/sensitive";
@@ -450,7 +451,6 @@ const props = withDefaults(
 );
 
 const { isAdmin } = useOpsRole();
-const loading = ref(false);
 const tableData = ref<CallMonitorItem[]>([]);
 const detailVisible = ref(false);
 const currentDetail = ref<CallMonitorItem | null>(null);
@@ -891,51 +891,54 @@ const applyResponseMeta = (response: CallMonitorResponse) => {
   lastUniverseSize.value = response.universe_size || CALL_MONITOR_UNIVERSE_SIZE;
 };
 
+const logLoader = useLatestRequest(async (ctx, requestedPage: number) => {
+  const response = await fetchLogs(buildQuery(requestedPage), ctx.signal);
+  if (!ctx.isLatest()) return;
+  const rows = response.data || [];
+  const total = response.total || 0;
+  const totalPages =
+    response.total_pages || resolveSafePageCount(total, pagination.page_size);
+  const safePage = clampPageToSafeRange(
+    requestedPage,
+    total,
+    pagination.page_size,
+    totalPages,
+  );
+
+  if (rows.length === 0 && total > 0 && safePage !== requestedPage) {
+    pagination.page = safePage;
+    applyResponseMeta(response);
+    const retry = await fetchLogs(buildQuery(safePage), ctx.signal);
+    if (!ctx.isLatest()) return;
+    tableData.value = retry.data || [];
+    applyResponseMeta(retry);
+    return;
+  }
+
+  tableData.value = rows;
+  applyResponseMeta(response);
+  if (safePage !== requestedPage) {
+    pagination.page = safePage;
+  }
+  if (
+    !autoOpenedSeedDetail.value &&
+    rows.length === 1 &&
+    Boolean(requestIdFromFilters(props.seedFilters))
+  ) {
+    autoOpenedSeedDetail.value = true;
+    showDetail(rows[0]!);
+  }
+});
+const { loading } = logLoader;
+
 const loadData = async (opts?: { silent?: boolean }) => {
   const requestedPage = pagination.page;
   emit("queryChange", buildHistogramQuery());
-  const run = async () => {
-    const response = await fetchLogs(buildQuery());
-    const rows = response.data || [];
-    const total = response.total || 0;
-    const totalPages =
-      response.total_pages || resolveSafePageCount(total, pagination.page_size);
-    const safePage = clampPageToSafeRange(
-      requestedPage,
-      total,
-      pagination.page_size,
-      totalPages,
-    );
-
-    if (rows.length === 0 && total > 0 && safePage !== requestedPage) {
-      pagination.page = safePage;
-      applyResponseMeta(response);
-      const retry = await fetchLogs(buildQuery(safePage));
-      tableData.value = retry.data || [];
-      applyResponseMeta(retry);
-      return;
-    }
-
-    tableData.value = rows;
-    applyResponseMeta(response);
-    if (safePage !== requestedPage) {
-      pagination.page = safePage;
-    }
-    if (
-      !autoOpenedSeedDetail.value &&
-      rows.length === 1 &&
-      Boolean(requestIdFromFilters(props.seedFilters))
-    ) {
-      autoOpenedSeedDetail.value = true;
-      showDetail(rows[0]!);
-    }
-  };
-
   try {
     if (opts?.silent) {
-      await run();
+      await logLoader.runSilent(requestedPage);
     } else {
-      await runWithLoading(loading, run);
+      await logLoader.run(requestedPage);
     }
   } catch (error) {
     logger.error("Failed to load call monitor logs:", error);
@@ -996,10 +999,13 @@ const buildHistogramQuery = (): CallHistogramQuery => {
   delete params.page_size;
   return params;
 };
-const fetchLogs = (query: CallMonitorQuery): Promise<CallMonitorResponse> =>
+const fetchLogs = (
+  query: CallMonitorQuery,
+  signal?: AbortSignal,
+): Promise<CallMonitorResponse> =>
   props.mode === "upstream"
-    ? fetchUpstreamCallLogs(query)
-    : fetchCustomerCallLogs(query);
+    ? fetchUpstreamCallLogs(query, signal)
+    : fetchCustomerCallLogs(query, signal);
 const resetSearch = () => {
   q.value = "";
   filters.value = [];
@@ -1075,8 +1081,8 @@ const exportLogsArchive = async (
         `${JSON.stringify(buildDetailPayload(row.detail), null, 2)}\n`,
       ),
     }));
-    const archive = await gzipBytes(createTarArchive(files));
-    downloadBinary(buildLogArchiveName(scope), archive, "application/gzip");
+    const packaged = await packageTarArchive(files, buildLogArchiveName(scope));
+    downloadBinary(packaged.filename, packaged.data, packaged.mimeType);
   } catch (error) {
     logger.error("Failed to export call monitor archive:", error);
     ElMessage.error($t("operations.monitoring.messages.exportFailed"));
