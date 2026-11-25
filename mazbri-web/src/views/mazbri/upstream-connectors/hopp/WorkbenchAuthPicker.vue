@@ -59,6 +59,7 @@
       :env="env"
       :seed-json="seedJson"
       :append-to="appendTo"
+      :required-cred-keys="requiredCredKeys"
     />
   </div>
 </template>
@@ -89,6 +90,7 @@ const props = withDefaults(
     seedJson?: string;
     appendTo?: HTMLElement | string;
     running?: boolean;
+    requiredCredKeys?: string[];
   }>(),
   {
     adapter: "",
@@ -97,6 +99,7 @@ const props = withDefaults(
     seedJson: "",
     appendTo: undefined,
     running: false,
+    requiredCredKeys: () => [],
   },
 );
 

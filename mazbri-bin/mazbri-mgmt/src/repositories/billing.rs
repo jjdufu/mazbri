@@ -105,16 +105,17 @@ fn push_bill_search_clause(
     let pat = pattern.to_string();
     builder.push(" AND (b.id::text ILIKE ");
     builder.push_bind(pat.clone());
-    builder.push(" OR COALESCE(b.tenant_id::text, '') ILIKE ");
+    builder.push(" ESCAPE '\\' OR COALESCE(b.tenant_id::text, '') ILIKE ");
     builder.push_bind(pat.clone());
-    builder.push(" OR b.party_name ILIKE ");
+    builder.push(" ESCAPE '\\' OR b.party_name ILIKE ");
     builder.push_bind(pat.clone());
-    builder.push(" OR b.party_code ILIKE ");
+    builder.push(" ESCAPE '\\' OR b.party_code ILIKE ");
     builder.push_bind(pat.clone());
-    builder.push(" OR b.bill_kind ILIKE ");
+    builder.push(" ESCAPE '\\' OR b.bill_kind ILIKE ");
     builder.push_bind(pat.clone());
-    builder.push(" OR b.status ILIKE ");
+    builder.push(" ESCAPE '\\' OR b.status ILIKE ");
     builder.push_bind(pat);
+    builder.push(" ESCAPE '\\'");
     if !matched_tenant_ids.is_empty() {
         builder.push(" OR b.tenant_id = ANY(");
         builder.push_bind(matched_tenant_ids.to_vec());
@@ -317,7 +318,9 @@ pub async fn list_bill_items(
          FROM usage_records
          WHERE tenant_id = $1
            AND recorded_at >= $2
-           AND recorded_at <= $3
+           AND recorded_at < $3
+           AND charge_status = 'charged'
+           AND billable_amount > 0
          GROUP BY api_endpoint
          ORDER BY total DESC, api_endpoint ASC",
     )
@@ -618,20 +621,22 @@ pub async fn unbilled_usage_amount(pool: &PgPool) -> Result<Decimal, sqlx::Error
     sqlx::query_scalar(
         "SELECT COALESCE(SUM(ur.billable_amount), 0)::numeric
          FROM usage_records ur
-         WHERE NOT EXISTS (
-             SELECT 1 FROM bills b
-             WHERE b.tenant_id = ur.tenant_id
-               AND b.bill_kind = 'customer'
-               AND b.status <> 'cancelled'
-               AND ur.recorded_at >= b.billing_period_start
-               AND ur.recorded_at <= b.billing_period_end
-         )",
+         WHERE ur.charge_status = 'charged'
+           AND ur.billable_amount > 0
+           AND NOT EXISTS (
+               SELECT 1 FROM bills b
+               WHERE b.tenant_id = ur.tenant_id
+                 AND b.bill_kind = 'customer'
+                 AND b.status <> 'cancelled'
+                 AND ur.recorded_at >= b.billing_period_start
+                 AND ur.recorded_at < b.billing_period_end
+           )",
     )
     .fetch_one(pool)
     .await
 }
 
-/// Sum of billable amounts in `usage_records` for a day window.
+/// Sum of charged billable amounts in `usage_records` for a half-open `[day_start, day_end)` window.
 ///
 /// # Errors
 ///
@@ -641,18 +646,40 @@ pub async fn sum_usage_billable_amount(
     day_start: DateTime<Utc>,
     day_end: DateTime<Utc>,
 ) -> Result<Decimal, sqlx::Error> {
+    sum_usage_billable_amount_scoped(pool, day_start, day_end, None, None).await
+}
+
+/// Scoped sum of charged billable amounts in `usage_records` for `[day_start, day_end)`.
+///
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+pub async fn sum_usage_billable_amount_scoped(
+    pool: &PgPool,
+    day_start: DateTime<Utc>,
+    day_end: DateTime<Utc>,
+    tenant_id: Option<uuid::Uuid>,
+    product_id: Option<&str>,
+) -> Result<Decimal, sqlx::Error> {
     sqlx::query_scalar(
         "SELECT COALESCE(SUM(billable_amount), 0)::numeric
          FROM usage_records
-         WHERE recorded_at >= $1 AND recorded_at <= $2",
+         WHERE recorded_at >= $1
+           AND recorded_at < $2
+           AND charge_status = 'charged'
+           AND billable_amount > 0
+           AND ($3::uuid IS NULL OR tenant_id = $3)
+           AND ($4::text IS NULL OR product_id = $4)",
     )
     .bind(day_start)
     .bind(day_end)
+    .bind(tenant_id)
+    .bind(product_id)
     .fetch_one(pool)
     .await
 }
 
-/// Sum of `bill_items.total_amount` for bills whose period covers the day.
+/// Sum of `bill_items.total` for active customer bills overlapping `[day_start, day_end)`.
 ///
 /// # Errors
 ///
@@ -662,15 +689,33 @@ pub async fn sum_bill_items_total_for_day(
     day_start: DateTime<Utc>,
     day_end: DateTime<Utc>,
 ) -> Result<Decimal, sqlx::Error> {
+    sum_bill_items_total_for_day_scoped(pool, day_start, day_end, None).await
+}
+
+/// Scoped sum of `bill_items.total` for active customer bills overlapping `[day_start, day_end)`.
+///
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+pub async fn sum_bill_items_total_for_day_scoped(
+    pool: &PgPool,
+    day_start: DateTime<Utc>,
+    day_end: DateTime<Utc>,
+    tenant_id: Option<uuid::Uuid>,
+) -> Result<Decimal, sqlx::Error> {
     sqlx::query_scalar(
         "SELECT COALESCE(SUM(bi.total), 0)::numeric
          FROM bill_items bi
          INNER JOIN bills b ON b.id = bi.bill_id
-         WHERE b.billing_period_start <= $2
-           AND b.billing_period_end >= $1",
+         WHERE b.bill_kind = 'customer'
+           AND b.status <> 'cancelled'
+           AND b.billing_period_start < $2
+           AND b.billing_period_end > $1
+           AND ($3::uuid IS NULL OR b.tenant_id = $3)",
     )
     .bind(day_start)
     .bind(day_end)
+    .bind(tenant_id)
     .fetch_one(pool)
     .await
 }
@@ -793,21 +838,20 @@ fn push_recon_scope(
         builder.push_bind(scope_id.to_string());
     }
     if let Some(search) = params.search {
-        let needle = search.to_string();
-        let pat = format!("%{needle}%");
+        let pat = mazbri_core::config::contains_ilike_pattern(search);
         builder.push(" AND (id::text ILIKE ");
         builder.push_bind(pat.clone());
-        builder.push(" OR reconciliation_date::text ILIKE ");
+        builder.push(" ESCAPE '\\' OR reconciliation_date::text ILIKE ");
         builder.push_bind(pat.clone());
-        builder.push(" OR status ILIKE ");
+        builder.push(" ESCAPE '\\' OR status ILIKE ");
         builder.push_bind(pat.clone());
-        builder.push(" OR scope_type ILIKE ");
+        builder.push(" ESCAPE '\\' OR scope_type ILIKE ");
         builder.push_bind(pat.clone());
-        builder.push(" OR COALESCE(scope_id, '') ILIKE ");
+        builder.push(" ESCAPE '\\' OR COALESCE(scope_id, '') ILIKE ");
         builder.push_bind(pat.clone());
-        builder.push(" OR COALESCE(resolution_note, '') ILIKE ");
+        builder.push(" ESCAPE '\\' OR COALESCE(resolution_note, '') ILIKE ");
         builder.push_bind(pat);
-        builder.push(")");
+        builder.push(" ESCAPE '\\')");
     }
     crate::list_query::apply_pg_filters(builder, params.filters)
 }

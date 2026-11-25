@@ -31,9 +31,14 @@ export function fetchCertificateList(params?: {
   });
 }
 
-export function fetchCertificateDetail(id: string) {
+export function resetCaCertificateCache(): void {
+  cachedCaCertPromise = null;
+}
+
+export function fetchCertificateDetail(id: string, signal?: AbortSignal) {
   return request.get<PublicCertificateDetailResponse>({
     url: `${BASE_PATH}/${id}`,
+    signal,
   });
 }
 
@@ -58,9 +63,13 @@ export function fetchCaCertificate(force = false): Promise<CaCertificateResponse
   return cachedCaCertPromise;
 }
 
-export function fetchCertificateFullWithPrivateKey(id: string) {
+export function fetchCertificateFullWithPrivateKey(
+  id: string,
+  signal?: AbortSignal,
+) {
   return request.get<FullCertificateResponse>({
     url: `${BASE_PATH}/${id}/full`,
+    signal,
   });
 }
 
@@ -102,8 +111,9 @@ export function updateAutoRenewal(id: string, config: AutoRenewalConfig) {
   });
 }
 
-export function getAutoRenewalConfig(id: string) {
+export function getAutoRenewalConfig(id: string, signal?: AbortSignal) {
   return request.get<AutoRenewalConfigResponse>({
     url: `${BASE_PATH}/${id}/auto-renewal`,
+    signal,
   });
 }

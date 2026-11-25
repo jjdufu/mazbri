@@ -2,10 +2,9 @@ use crate::error::BillingError;
 use crate::metrics::{ChargeFailureReason, record_charge_failure, record_charge_lag};
 use crate::queue::ChargeQueue;
 use crate::service::BillingService;
-use crate::types::{ChargeQueueItem, QueueConfig};
+use crate::types::{ChargeQueueItem, FencedChargeItem, QueueConfig};
 use futures::stream::{self, StreamExt};
 use mazbri_core::num::SaturatingFrom;
-use rust_decimal::Decimal;
 use sqlx::PgPool;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -216,7 +215,6 @@ async fn process_batch(
     let batch_len = items.len();
     let started = Instant::now();
 
-    // Group by tenant: one balance UPDATE per tenant group (kills single-tenant row-lock stampede).
     let mut by_tenant: HashMap<Uuid, Vec<ChargeQueueItem>> = HashMap::new();
     for item in items {
         by_tenant.entry(item.tenant_id).or_default().push(item);
@@ -283,9 +281,14 @@ async fn process_tenant_group(
         return (0, 0);
     }
     let account_id = group[0].account_id;
-    let items: Vec<(Uuid, i64, Decimal)> = group
+    let items: Vec<FencedChargeItem> = group
         .iter()
-        .map(|i| (i.id, i.usage_record_id, i.amount))
+        .map(|i| FencedChargeItem {
+            queue_id: i.id,
+            lease_seq: i.lease_seq,
+            usage_record_id: i.usage_record_id,
+            amount: i.amount,
+        })
         .collect();
     let item_count = items.len();
 
@@ -294,30 +297,32 @@ async fn process_tenant_group(
         .await
     {
         Ok(result) => {
-            for item in &group {
-                record_charge_lag(item.created_at);
+            if result.charged_items > 0 {
+                for item in &group {
+                    record_charge_lag(item.created_at);
+                }
             }
             debug!(
                 %tenant_id,
                 items = item_count,
+                charged = result.charged_items,
                 balance_after = %result.balance_after,
                 "tenant charge batch completed"
             );
-            (item_count, 0)
+            (result.charged_items, 0)
         }
         Err(error) => {
-            // Insufficient total or transient batch failure: fall back to per-item so partial
-            // progress is still possible and individual failures are marked correctly.
             warn!(
                 %tenant_id,
                 items = item_count,
                 error = %error,
-                "tenant charge batch failed; falling back to per-item charges"
+                "tenant charge batch failed; falling back to per-item fenced charges"
             );
             let mut success = 0usize;
             let mut failed = 0usize;
             for item in group {
                 let item_id = item.id;
+                let lease_seq = item.lease_seq;
                 match billing_service
                     .deduct_and_record(
                         item.tenant_id,
@@ -325,21 +330,27 @@ async fn process_tenant_group(
                         item.account_id,
                         item.usage_record_id,
                         item.id,
+                        lease_seq,
                     )
                     .await
                 {
-                    Ok(_) => {
-                        success += 1;
-                        record_charge_lag(item.created_at);
+                    Ok(res) => {
+                        if res.charged_items > 0 {
+                            success += 1;
+                            record_charge_lag(item.created_at);
+                        }
                     }
                     Err(e) => {
                         failed += 1;
                         record_charge_failure(ChargeFailureReason::classify(&e));
                         let error_msg = e.to_string();
-                        warn!(item_id = %item_id, error = %error_msg, "charge failed");
-                        if let Err(mark_err) = queue.mark_failed(item_id, &error_msg).await {
+                        warn!(item_id = %item_id, lease_seq, error = %error_msg, "charge failed");
+                        if let Err(mark_err) =
+                            queue.mark_failed(item_id, lease_seq, &error_msg).await
+                        {
                             error!(
                                 item_id = %item_id,
+                                lease_seq,
                                 error = %mark_err,
                                 "failed to mark charge queue item failed"
                             );

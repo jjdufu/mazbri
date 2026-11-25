@@ -1,4 +1,5 @@
-use crate::auth::{AuthService, AuthState};
+use crate::auth::service::AuthServiceInit;
+use crate::auth::{AuthService, AuthState, TenantStatusAndWhitelistCache};
 use crate::balance_cache::{BalanceCacheConfig, BalancePrecheckCache, SharedBalancePrecheckCache};
 use crate::cbpro_client::CBProClient;
 use crate::cbpro_ext_client::CBProExtClient;
@@ -6,7 +7,8 @@ use crate::config::GatewayConfig;
 use crate::gateway::disconnect::client_disconnect_middleware;
 use crate::gateway::metrics::{GATEWAY_OVERLOAD_REJECT_TOTAL, GATEWAY_PANIC_TOTAL};
 use crate::gateway::response::ProxyError;
-use crate::gateway::{ProxyState, metrics_handler, unified_gateway_handler};
+use crate::gateway::response_cache::TenantCachePolicyLookup;
+use crate::gateway::{ProxyState, unified_gateway_handler};
 use crate::health::{health_check, ready_check};
 use crate::http2_upstream_client::UpstreamHttp2ClientPool;
 use crate::service_health_cache::ServiceHealthState;
@@ -22,6 +24,7 @@ use mazbri_admin::AdminState;
 use mazbri_billing::{BillingMiddlewareState, BillingService, BillingServiceConfig, ChargeQueue};
 use mazbri_cache::RedisPermissionCache;
 use mazbri_callback::CallbackWorker;
+use mazbri_core::TrustedProxyIpExtractor;
 use mazbri_product::{ProductConfig, ProductService};
 use mazbri_service::{error_handler_middleware, metrics_middleware, request_id_middleware};
 use sqlx::PgPool;
@@ -41,6 +44,8 @@ pub struct AppState {
     pub proxy_state: ProxyState,
     pub auth_state: AuthState,
     pub auth_service: Arc<RwLock<AuthService>>,
+    pub tenant_security: TenantStatusAndWhitelistCache,
+    pub ip_extractor: Arc<TrustedProxyIpExtractor>,
     pub billing_state: Option<BillingMiddlewareState>,
     /// 余额预检 L1+L2 缓存（可选）
     pub balance_cache: Option<SharedBalancePrecheckCache>,
@@ -60,6 +65,7 @@ pub struct RouterInit<'a> {
     pub db: Arc<PgPool>,
     pub tls_ca_cert: String,
     pub client_cert: mazbri_tls::ManagedCertificate,
+    pub cert_handle: mazbri_tls::ManagedCertHandle,
     pub tls_config: &'a mazbri_tls::TlsConfig,
     pub jwt_secret: String,
     pub admin_state: Option<Arc<AdminState>>,
@@ -69,17 +75,7 @@ pub struct RouterInit<'a> {
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn create_router(init: RouterInit<'_>) -> anyhow::Result<Router> {
-    let RouterInit {
-        service_name,
-        config,
-        db,
-        tls_ca_cert,
-        client_cert,
-        tls_config,
-        jwt_secret,
-        admin_state,
-        service_health_cache,
-    } = init;
+    let config = init.config.clone();
     let cors_layer = build_cors_layer(&config.cors);
     let max_connections = config.server.max_connections.max(1) as usize;
     let concurrency_limit = Arc::new(Semaphore::new(max_connections));
@@ -100,25 +96,54 @@ pub async fn create_router(init: RouterInit<'_>) -> anyhow::Result<Router> {
         ))
         .layer(cors_layer)
         .layer(compression_layer);
+    let app_state = build_app_state(init).await?;
+    let public_routes = build_public_routes();
+    let protected_routes = build_protected_routes(&app_state, &config);
+    let router = Router::new()
+        .merge(public_routes)
+        .merge(protected_routes)
+        .layer(base_middleware);
+    Ok(isolate_request_panics(router).with_state(app_state))
+}
+
+async fn build_app_state(init: RouterInit<'_>) -> anyhow::Result<AppState> {
+    let RouterInit {
+        service_name,
+        config,
+        db,
+        tls_ca_cert,
+        client_cert,
+        cert_handle,
+        tls_config,
+        jwt_secret,
+        admin_state,
+        service_health_cache,
+    } = init;
+    let ip_extractor = Arc::new(
+        TrustedProxyIpExtractor::parse(&config.server.trusted_proxies)
+            .map_err(|err| anyhow::anyhow!("Invalid server.trusted_proxies: {err}"))?,
+    );
     let redis = mazbri_core::redis::RedisClient::connect_with_config(&config.redis)
         .await
         .map_err(|error| anyhow::anyhow!("Failed to connect to Redis: {error}"))?;
-    let product_service = init_product_service(&db, &redis, config.cache_database.as_ref()).await;
+    let (product_service, cache_policy_lookup) =
+        init_product_service(&db, &redis, config.cache_database.as_ref()).await;
     let (tarpc_pool, upstream_http2_pool) =
-        init_client_pools(&config, &tls_ca_cert, &client_cert, tls_config)?;
+        init_client_pools(&config, &tls_ca_cert, &client_cert, &cert_handle, tls_config)?;
     let route_engine =
         load_routes_and_warmup(&db, &tarpc_pool, &upstream_http2_pool, &config).await?;
     let route_engine = Arc::new(arc_swap::ArcSwap::new(Arc::new(route_engine)));
     let proxy_state = ProxyState::new(crate::gateway::ProxyStateInit {
         service_name,
         product_service,
+        cache_policy_lookup,
         tarpc_pool: tarpc_pool.clone(),
         upstream_http2_pool: upstream_http2_pool.clone(),
         circuit_breaker_config: config.circuit_breaker.clone(),
         ratelimit_endpoint: config.services.ratelimit.clone(),
         channel_rate_limit: config.channel_rate_limit.clone(),
-        cbpro_client: init_cbpro_client(&config, &tls_ca_cert, &client_cert, tls_config),
-        cbpro_ext_client: init_cbpro_ext_client(&config, &tls_ca_cert, &client_cert, tls_config),
+        cbpro_client: init_cbpro_client(&config, &cert_handle, tls_config),
+        cbpro_ext_client: init_cbpro_ext_client(&config, &cert_handle, tls_config),
         route_engine: route_engine.clone(),
         db: db.clone(),
         redis: redis.clone(),
@@ -134,21 +159,24 @@ pub async fn create_router(init: RouterInit<'_>) -> anyhow::Result<Router> {
             config.services.ratelimit.clone(),
         );
     }
-    let route_reload_status = spawn_background_workers(
+    spawn_background_workers(
         &config,
         &db,
         &route_engine,
         admin_state.as_ref(),
         &proxy_state,
     );
-    let (auth_state, auth_service) = init_auth(&config, &db, jwt_secret, tarpc_pool).await;
+    let (auth_state, auth_service, tenant_security) =
+        init_auth(&config, &db, jwt_secret, tarpc_pool).await;
     let billing_state = create_billing_state(&config, &db).await;
     let balance_cache = build_balance_cache(&config, &redis);
     let usage_event_producer = build_usage_event_producer(&config, billing_state.as_ref()).await;
-    let app_state = AppState {
+    Ok(AppState {
         proxy_state,
         auth_state,
         auth_service,
+        tenant_security,
+        ip_extractor,
         billing_state,
         balance_cache,
         balance_check_timeout_ms: config.billing.balance_check.timeout_ms.max(50),
@@ -157,14 +185,7 @@ pub async fn create_router(init: RouterInit<'_>) -> anyhow::Result<Router> {
         admin_state,
         request_binding: config.request_binding.clone(),
         usage_event_producer,
-    };
-    let public_routes = build_public_routes(route_reload_status);
-    let protected_routes = build_protected_routes(&app_state, &config);
-    let router = Router::new()
-        .merge(public_routes)
-        .merge(protected_routes)
-        .layer(base_middleware);
-    Ok(isolate_request_panics(router).with_state(app_state))
+    })
 }
 /// 请求级 panic 隔离（最外层）：`CatchPanicLayer` 把 panic 转成 500 JSON，
 /// 其内侧紧邻的标记层把整条处理链声明为可恢复范围，使进程级 panic 策略放行 unwind。
@@ -183,7 +204,7 @@ async fn init_product_service(
     db: &PgPool,
     redis: &mazbri_core::redis::RedisClient,
     cache_database: Option<&mazbri_core::DatabaseConfig>,
-) -> Arc<ProductService> {
+) -> (Arc<ProductService>, Arc<TenantCachePolicyLookup>) {
     let product_config = ProductConfig::default();
     let permission_cache = Arc::new(RedisPermissionCache::new(
         redis.clone(),
@@ -207,6 +228,7 @@ async fn init_product_service(
         tracing::info!("No cache_database configured; product snapshot cache_enabled stays false");
         None
     };
+    let cache_policy_lookup = Arc::new(TenantCachePolicyLookup::new(cache_db.clone()));
     let product_service = Arc::new(ProductService::new(
         db.clone(),
         product_config,
@@ -214,31 +236,32 @@ async fn init_product_service(
         cache_db,
     ));
     if let Err(error) = product_service.warm_tenant_product_detail_cache().await {
-        tracing::warn!(error = % error, "Product tenant detail cache warmup failed");
+        tracing::warn!(error = %error, "Product tenant detail cache warmup failed");
     }
-    product_service
+    (product_service, cache_policy_lookup)
 }
 
 fn init_client_pools(
     config: &GatewayConfig,
     tls_ca_cert: &str,
     client_cert: &mazbri_tls::ManagedCertificate,
+    cert_handle: &mazbri_tls::ManagedCertHandle,
     tls_config: &mazbri_tls::TlsConfig,
 ) -> anyhow::Result<(TarpcClientPool, UpstreamHttp2ClientPool)> {
-    let tarpc_pool = TarpcClientPool::new_with_timeouts(
+    let tarpc_pool = TarpcClientPool::new_with_cert_handle(
         tls_ca_cert,
-        client_cert,
+        cert_handle,
         tls_config,
         &config.tarpc,
         config.services.auth.timeout_ms,
         30_000,
     )
     .map_err(|e| anyhow::anyhow!("Failed to create TarpcClientPool: {e}"))?;
-    // 后台清理任务随进程存活，句柄无需持有（drop 即 detach）。
     drop(tarpc_pool.spawn_cleanup_task());
     tracing::info!("TarpcClientPool background cleanup task started");
     let upstream_http2_pool =
         UpstreamHttp2ClientPool::new(client_cert, config.tarpc.client_ttl_secs)
+            .with_cert_handle(cert_handle.clone())
             .with_channels_per_endpoint(config.tarpc.upstream_h2_channels);
     drop(upstream_http2_pool.spawn_cleanup_task());
     tracing::info!("UpstreamHttp2ClientPool background cleanup task started");
@@ -247,10 +270,14 @@ fn init_client_pools(
 
 async fn init_auth(
     config: &GatewayConfig,
-    db: &PgPool,
+    db: &Arc<PgPool>,
     jwt_secret: String,
     tarpc_pool: TarpcClientPool,
-) -> (AuthState, Arc<RwLock<AuthService>>) {
+) -> (
+    AuthState,
+    Arc<RwLock<AuthService>>,
+    TenantStatusAndWhitelistCache,
+) {
     let extra_jwt_keys = crate::crypto::load_platform_hs256_jwt_keys(db)
         .await
         .unwrap_or_else(|error| {
@@ -259,42 +286,40 @@ async fn init_auth(
         });
     let jwt_keyring = crate::auth::JwtHs256Keyring::new(config.auth.jwt_kid.clone(), jwt_secret)
         .with_extra_keys(extra_jwt_keys);
-    let service = AuthService::new(
-        jwt_keyring.clone(),
-        config.auth.token_expiration_secs,
+    let tenant_security = TenantStatusAndWhitelistCache::new(Arc::clone(db));
+    let service = AuthService::new(AuthServiceInit {
+        keyring: jwt_keyring.clone(),
+        token_expiration_secs: config.auth.token_expiration_secs,
+        token_rate_limit_qps: config.auth.token_rate_limit_qps,
+        token_rate_limit_burst: config.auth.token_rate_limit_burst,
         tarpc_pool,
-        config.services.auth.clone(),
-        db.clone(),
-    );
+        auth_endpoint: config.services.auth.clone(),
+        db: Arc::clone(db),
+        tenant_security: tenant_security.clone(),
+    });
     service.spawn_api_key_cache_watch(
-        db.clone(),
+        (**db).clone(),
         config.database.clone(),
         config.config_watch.clone(),
     );
     tracing::info!(
         interval_secs = config.config_watch.interval_secs,
         listen_notify = config.config_watch.listen_notify,
-        "API key token cache config watch started"
+        "API key & IP whitelist config watches started"
     );
     let auth_service = Arc::new(RwLock::new(service));
     let auth_state = AuthState::new(jwt_keyring);
-    (auth_state, auth_service)
+    (auth_state, auth_service, tenant_security)
 }
 
-fn build_public_routes(
-    route_reload_status: Arc<crate::route_reload::RouteReloadStatus>,
-) -> Router<AppState> {
+fn build_public_routes<S>() -> Router<S>
+where
+    S: Clone + Send + Sync + 'static,
+    AppState: axum::extract::FromRef<S>,
+{
     Router::new()
         .route("/health", get(health_check))
         .route("/ready", get(ready_check))
-        .route("/metrics", get(metrics_handler))
-        .route(
-            "/admin/routes/status",
-            get(move || {
-                let status = route_reload_status.clone();
-                async move { axum::Json(status.snapshot()) }
-            }),
-        )
         .route("/auth/token", post(crate::auth::service::token_handler))
         .route("/openapi.yaml", get(crate::openapi::openapi_yaml))
 }
@@ -344,9 +369,6 @@ async fn load_routes_and_warmup(
             "Loaded gateway route rules from database"
         );
     }
-    // Only microservice suppliers are dialled directly by the gateway (mTLS gRPC on
-    // `supplier_upstream_url`). Transparent suppliers are reached through bypass,
-    // which is warmed separately; warming their raw IP/HTTP URL would fail mTLS.
     let direct_upstreams = route_engine.unique_service_urls_where(|channel| {
         matches!(
             channel.prepared,
@@ -368,21 +390,20 @@ async fn load_routes_and_warmup(
 
 fn init_cbpro_client(
     config: &GatewayConfig,
-    tls_ca_cert: &str,
-    client_cert: &mazbri_tls::ManagedCertificate,
+    cert_handle: &mazbri_tls::ManagedCertHandle,
     tls_config: &mazbri_tls::TlsConfig,
 ) -> Option<CBProClient> {
     let endpoint = config.services.cbpro.as_ref()?;
-    CBProClient::new(
+    CBProClient::new_dynamic(
         endpoint.clone(),
-        tls_ca_cert,
-        client_cert,
+        cert_handle,
         tls_config,
         config.tarpc.client_ttl_secs,
     )
     .inspect_err(|error| {
         tracing::warn!(
-            error = % error, url = % endpoint.url(),
+            error = %error,
+            url = %endpoint.url(),
             "Failed to initialize CBPro client; fallback support disabled"
         );
     })
@@ -391,21 +412,20 @@ fn init_cbpro_client(
 
 fn init_cbpro_ext_client(
     config: &GatewayConfig,
-    tls_ca_cert: &str,
-    client_cert: &mazbri_tls::ManagedCertificate,
+    cert_handle: &mazbri_tls::ManagedCertHandle,
     tls_config: &mazbri_tls::TlsConfig,
 ) -> Option<CBProExtClient> {
     let endpoint = config.services.cbpro_ext.as_ref()?;
-    CBProExtClient::new(
+    CBProExtClient::new_dynamic(
         endpoint.clone(),
-        tls_ca_cert,
-        client_cert,
+        cert_handle,
         tls_config,
         config.tarpc.client_ttl_secs,
     )
     .inspect_err(|error| {
         tracing::warn!(
-            error = % error, url = % endpoint.url(),
+            error = %error,
+            url = %endpoint.url(),
             "Failed to initialize CBPro-Ext client; runtime decision support disabled"
         );
     })
@@ -457,7 +477,7 @@ fn spawn_background_workers(
     route_engine: &Arc<arc_swap::ArcSwap<crate::route_source::GatewayRouteEngine>>,
     admin_state: Option<&Arc<AdminState>>,
     proxy_state: &ProxyState,
-) -> Arc<crate::route_reload::RouteReloadStatus> {
+) {
     if let Some(client) = proxy_state.cbpro_client.clone() {
         crate::warmup::spawn_cbpro_warmup(client);
     }
@@ -484,7 +504,7 @@ fn spawn_background_workers(
     );
     if let Some(admin) = admin_state {
         admin.set_routes_status_provider({
-            let status = route_reload_status.clone();
+            let status = route_reload_status;
             move || {
                 serde_json::to_value(status.snapshot())
                     .unwrap_or_else(|_| serde_json::json!({ "error": "serialize_failed" }))
@@ -497,6 +517,7 @@ fn spawn_background_workers(
         "Route hot-reload background task started"
     );
     let product_service_for_watch = proxy_state.product_service.clone();
+    let cache_policy_for_watch = proxy_state.cache_policy_lookup.clone();
     let circuit_breakers_for_watch = proxy_state.circuit_breakers.clone();
     mazbri_core::config_watch::spawn_config_watch(
         db.clone(),
@@ -506,9 +527,11 @@ fn spawn_background_workers(
         "gateway-product-detail",
         move || {
             let product_service = product_service_for_watch.clone();
+            let cache_policy = cache_policy_for_watch.clone();
             let circuit_breakers = circuit_breakers_for_watch.clone();
             async move {
                 product_service.clear_cache();
+                cache_policy.invalidate_all();
                 circuit_breakers.invalidate_all();
                 if let Err(error) = product_service.warm_tenant_product_detail_cache().await {
                     tracing::warn!(
@@ -519,12 +542,28 @@ fn spawn_background_workers(
             }
         },
     );
+    let product_service_for_cache_l1 = proxy_state.product_service.clone();
+    let cache_policy_for_cache_l1 = proxy_state.cache_policy_lookup.clone();
+    mazbri_core::config_watch::spawn_config_watch(
+        db.clone(),
+        config.database.clone(),
+        config.config_watch.clone(),
+        mazbri_core::config_watch::CACHE_L1_VERSION_KEY,
+        "gateway-cache-l1",
+        move || {
+            let product_service = product_service_for_cache_l1.clone();
+            let cache_policy = cache_policy_for_cache_l1.clone();
+            async move {
+                product_service.clear_cache();
+                cache_policy.invalidate_all();
+            }
+        },
+    );
     tracing::info!(
         interval_secs = config.config_watch.interval_secs,
         listen_notify = config.config_watch.listen_notify,
-        "Product detail config watch started"
+        "Product detail and cache L1 config watches started"
     );
-    route_reload_status
 }
 
 fn build_balance_cache(
@@ -580,7 +619,8 @@ fn build_protected_routes(app_state: &AppState, config: &GatewayConfig) -> Route
         }
         proxy_route = proxy_route.route_layer(ratelimit_middleware);
         proxy_route = proxy_route.route_layer(auth_middleware);
-        proxy_route = proxy_route.route_layer(axum::middleware::from_fn(
+        proxy_route = proxy_route.route_layer(axum::middleware::from_fn_with_state(
+            app_state.clone(),
             crate::gateway::rejection_log::rejection_access_log_middleware,
         ));
         let router = Router::new().route("/api/v1/gateway", proxy_route);
@@ -601,7 +641,8 @@ fn build_protected_routes(app_state: &AppState, config: &GatewayConfig) -> Route
                 app_state.clone(),
                 crate::auth::jwt_auth_middleware,
             ))
-            .route_layer(axum::middleware::from_fn(
+            .route_layer(axum::middleware::from_fn_with_state(
+                app_state.clone(),
                 crate::gateway::rejection_log::rejection_access_log_middleware,
             ))
     }
@@ -664,7 +705,6 @@ fn build_cors_layer(config: &crate::config::CorsConfig) -> CorsLayer {
         header::HeaderName::from_static("x-mazbri-signature-input"),
         header::HeaderName::from_static("x-mazbri-key-id"),
     ];
-    // 浏览器端可读的响应头：请求 ID 与链路上下文（协议 §2.1）、限流配额（协议 §2.2）。
     let exposed = [
         header::HeaderName::from_static("x-request-id"),
         header::HeaderName::from_static("traceparent"),
@@ -673,8 +713,6 @@ fn build_cors_layer(config: &crate::config::CorsConfig) -> CorsLayer {
         header::HeaderName::from_static("ratelimit"),
     ];
 
-    // Wildcard is allowed when credentials are off (enforced in CorsConfig::validate).
-    // Never use CorsLayer::permissive() (it is overly open).
     if config.has_wildcard() {
         tracing::info!("CORS wildcard origin enabled; credentials disabled.");
         return CorsLayer::new()
@@ -701,7 +739,6 @@ fn build_cors_layer(config: &crate::config::CorsConfig) -> CorsLayer {
         );
     }
     if origins.is_empty() {
-        // Safe default: no browser cross-origin access (typical for server-to-server tenants).
         tracing::info!("CORS: no allowed_origins configured; cross-origin browser access denied");
         return CorsLayer::new();
     }
@@ -721,10 +758,6 @@ fn build_cors_layer(config: &crate::config::CorsConfig) -> CorsLayer {
     }
     cors
 }
-/// 启动常驻后台任务；任务不应返回，返回时记录告警。
-///
-/// panic 不在这里捕获：进程级 panic 策略（`mazbri_core::panic_policy`）把后台任务的
-/// panic 视为致命并终止进程，避免关键循环在 `panic = "unwind"` 下悄悄停止。
 fn spawn_supervised<F>(name: &'static str, fut: F)
 where
     F: Future<Output = ()> + Send + 'static,
@@ -738,7 +771,6 @@ where
     });
 }
 
-/// Reject over-capacity with 503 JSON + Retry-After (never silent RST).
 async fn concurrency_limit_middleware(
     axum::extract::State(limit): axum::extract::State<Arc<Semaphore>>,
     req: Request<Body>,
@@ -764,13 +796,8 @@ async fn concurrency_limit_middleware(
     response
 }
 
-/// Convert empty / non-JSON 4xx·5xx bodies into gateway JSON envelope.
-///
-/// Covers `RequestBodyLimit` 413, hyper/timeout 空 body 500/504 等，避免客户端
-/// 只看到 status 却解析不出 error 字段（G-16 收尾）。
 async fn normalize_limit_errors_middleware(req: Request<Body>, next: Next) -> Response {
     let response = next.run(req).await;
-    // 本层在 request_id_middleware 外侧：请求 ID 取内层已回写的响应头，替换响应时原样带回关联头。
     let request_id = response
         .headers()
         .get("x-request-id")
@@ -791,7 +818,6 @@ async fn normalize_limit_errors_middleware(req: Request<Body>, next: Next) -> Re
     if !status.is_client_error() && !status.is_server_error() {
         return response;
     }
-    // 已有 JSON 错误体则放行
     let content_type = response
         .headers()
         .get(axum::http::header::CONTENT_TYPE)
@@ -811,14 +837,12 @@ async fn normalize_limit_errors_middleware(req: Request<Body>, next: Next) -> Re
         Ok(b) => b,
         Err(_) => axum::body::Bytes::new(),
     };
-    // 非空且看起来是 JSON → 原样回写
     if !bytes.is_empty() {
         let looks_json = bytes.first() == Some(&b'{') || bytes.first() == Some(&b'[');
         if looks_json || content_type.contains("application/json") {
             return Response::from_parts(parts, Body::from(bytes));
         }
     }
-    // 空 body 或非 JSON 错误 → 统一 envelope
     let (code, message) = crate::gateway::response::status_error_code(status);
     tracing::warn!(
         target: "gateway.stage",
@@ -835,7 +859,6 @@ async fn normalize_limit_errors_middleware(req: Request<Body>, next: Next) -> Re
     replaced
 }
 
-/// 替换错误响应时带回内层已写的关联头（`x-request-id`、`traceparent`）。
 fn carry_trace_headers(from: &axum::http::HeaderMap, to: &mut axum::http::HeaderMap) {
     for name in ["x-request-id", "traceparent"] {
         if let Some(value) = from.get(name) {
@@ -861,9 +884,6 @@ fn handle_panic(err: Box<dyn std::any::Any + Send + 'static>) -> Response {
     ProxyError::InternalError("Internal Server Error".to_string()).into_response()
 }
 
-/// Connects the L1 usage-event producer when `billing.usage_events.sink = "redpanda"`.
-/// A connect failure is logged and the gateway keeps the outbox path (never fails startup).
-/// Background produce failures are drained into the existing outbox / deferred path.
 async fn build_usage_event_producer(
     config: &GatewayConfig,
     billing_state: Option<&BillingMiddlewareState>,

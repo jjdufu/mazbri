@@ -81,6 +81,15 @@ impl Category {
             .into_iter()
             .find(|category| category.as_str() == value)
     }
+
+    /// 分类窗口最大时长上限：`admin` 与 `platform` 收敛至不超过 300 秒。
+    #[must_use]
+    pub fn max_ttl_secs(self, configured_ttl_secs: u64) -> u64 {
+        match self {
+            Self::Admin | Self::Platform => configured_ttl_secs.min(300),
+            Self::Certificate | Self::Mfa | Self::Key | Self::Finance => configured_ttl_secs,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -111,6 +120,7 @@ impl StepUpMethod {
 pub struct StepUpWindow {
     pub uid: String,
     pub epoch: i64,
+    pub issued_at: i64,
     pub opened_at: i64,
     pub until: i64,
     pub method: StepUpMethod,
@@ -120,6 +130,8 @@ pub struct StepUpWindow {
 struct StepUpRecord {
     uid: String,
     epoch: i64,
+    #[serde(default)]
+    issued_at: Option<i64>,
     opened_at: i64,
     until: i64,
     method: String,
@@ -139,6 +151,17 @@ pub fn effective_ttl(step_up_ttl_secs: u64, sxp: i64, now: i64) -> Option<u64> {
     }
     let remaining = u64::try_from(sxp - now).unwrap_or(u64::MAX);
     Some(step_up_ttl_secs.min(remaining).max(1))
+}
+
+/// 按分类上限与会话绝对到期共同收敛窗口 TTL。
+#[must_use]
+pub fn effective_category_ttl(
+    category: Category,
+    step_up_ttl_secs: u64,
+    sxp: i64,
+    now: i64,
+) -> Option<u64> {
+    effective_ttl(category.max_ttl_secs(step_up_ttl_secs), sxp, now)
 }
 
 fn require_sid(sid: &str) -> Result<(), String> {
@@ -179,6 +202,7 @@ fn encode_window(window: &StepUpWindow) -> Result<Vec<u8>, String> {
     let record = StepUpRecord {
         uid: window.uid.clone(),
         epoch: window.epoch,
+        issued_at: Some(window.issued_at),
         opened_at: window.opened_at,
         until: window.until,
         method: window.method.as_str().to_string(),
@@ -194,6 +218,7 @@ fn decode_window(bytes: &[u8]) -> Result<StepUpWindow, String> {
     Ok(StepUpWindow {
         uid: record.uid,
         epoch: record.epoch,
+        issued_at: record.issued_at.unwrap_or(record.opened_at),
         opened_at: record.opened_at,
         until: record.until,
         method,
@@ -459,6 +484,18 @@ mod tests {
         assert_eq!(effective_ttl(900, 2_000, 400), Some(900));
         assert_eq!(effective_ttl(900, 400, 400), None);
         assert_eq!(effective_ttl(900, 399, 400), None);
+        assert_eq!(
+            effective_category_ttl(Category::Admin, 900, 2_000, 400),
+            Some(300)
+        );
+        assert_eq!(
+            effective_category_ttl(Category::Platform, 900, 2_000, 400),
+            Some(300)
+        );
+        assert_eq!(
+            effective_category_ttl(Category::Certificate, 900, 2_000, 400),
+            Some(900)
+        );
     }
 
     #[test]
@@ -466,6 +503,7 @@ mod tests {
         let window = StepUpWindow {
             uid: "user".to_string(),
             epoch: 3,
+            issued_at: 10,
             opened_at: 10,
             until: 20,
             method: StepUpMethod::Totp,
@@ -530,6 +568,7 @@ mod tests {
         let certificate = StepUpWindow {
             uid: "user".to_string(),
             epoch: 1,
+            issued_at: 10,
             opened_at: 10,
             until: 100,
             method: StepUpMethod::Totp,
@@ -537,6 +576,7 @@ mod tests {
         let admin = StepUpWindow {
             uid: "user".to_string(),
             epoch: 2,
+            issued_at: 10,
             opened_at: 10,
             until: 80,
             method: StepUpMethod::BackupCode,

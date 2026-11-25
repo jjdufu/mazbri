@@ -2,7 +2,7 @@ use super::AppState;
 use crate::audit::{AuditAction, AuditResourceType, create_audit_log, extract_client_ip};
 use crate::handlers::mfa_guard::require_category;
 use crate::middleware::auth::{AdminClaims, is_business_admin};
-use crate::middleware::route_access::ALL_ROLES;
+use crate::middleware::role_projection::mask_webhook_url;
 use crate::response::ApiResponse;
 use crate::services::billing as svc;
 use crate::services::mfa::Category;
@@ -78,6 +78,13 @@ pub async fn list_bills(
     Extension(claims): Extension<AdminClaims>,
     Query(query): Query<BillListQuery>,
 ) -> Result<axum::response::Response, svc::BillingError> {
+    if !is_business_admin(&claims) {
+        return Ok(ApiResponse::err(
+            axum::http::StatusCode::FORBIDDEN,
+            "Only super administrators or administrators can list bills",
+        )
+        .into_response());
+    }
     debug!("Listing bills (by {})", claims.sub);
     let result = svc::list_bills(
         &state.db,
@@ -102,6 +109,13 @@ pub async fn get_bill(
     Extension(claims): Extension<AdminClaims>,
     Path(id): Path<Uuid>,
 ) -> Result<axum::response::Response, svc::BillingError> {
+    if !is_business_admin(&claims) {
+        return Ok(ApiResponse::err(
+            axum::http::StatusCode::FORBIDDEN,
+            "Only super administrators or administrators can view bills",
+        )
+        .into_response());
+    }
     debug!("Fetching bill {} (by {})", id, claims.sub);
     let result = svc::get_bill(&state.db, &state.billing_db, id).await?;
     Ok(ApiResponse::ok(result).into_response())
@@ -202,6 +216,13 @@ pub async fn list_accounts(
     Extension(claims): Extension<AdminClaims>,
     Query(query): Query<AccountListQuery>,
 ) -> Result<axum::response::Response, svc::BillingError> {
+    if !is_business_admin(&claims) {
+        return Ok(ApiResponse::err(
+            axum::http::StatusCode::FORBIDDEN,
+            "Only super administrators or administrators can list billing accounts",
+        )
+        .into_response());
+    }
     debug!("Listing accounts (by {})", claims.sub);
     let result = svc::list_accounts(
         &state.billing_db,
@@ -260,6 +281,8 @@ pub async fn create_adjustment(
             error!("Adjustment failed: {}", e);
             svc::BillingError::Database
         })?;
+    crate::services::billing::invalidate_tenant_balance_cache(&state.redis, payload.tenant_id)
+        .await;
     state.audit.log(create_audit_log(
         operator_id,
         AuditAction::AccountAdjustment,
@@ -558,11 +581,10 @@ pub async fn list_reconciliation_discrepancies(
     Extension(claims): Extension<AdminClaims>,
     Query(query): Query<ReconciliationDiscrepancyListQuery>,
 ) -> Result<axum::response::Response, svc::BillingError> {
-    // Admin/Finance full access; Viewer read-only list.
-    if !ALL_ROLES.contains(&claims.role.as_str()) {
+    if !is_business_admin(&claims) {
         return Ok(ApiResponse::err(
             axum::http::StatusCode::FORBIDDEN,
-            "Only known admin roles can list reconciliation discrepancies",
+            "Only super administrators or administrators can list reconciliation discrepancies",
         )
         .into_response());
     }
@@ -697,14 +719,15 @@ pub async fn get_reconciliation_settings(
     State(state): State<AppState>,
     Extension(claims): Extension<AdminClaims>,
 ) -> Result<axum::response::Response, svc::BillingError> {
-    if !ALL_ROLES.contains(&claims.role.as_str()) {
+    if !is_business_admin(&claims) {
         return Ok(ApiResponse::err(
             axum::http::StatusCode::FORBIDDEN,
-            "Only known admin roles can view reconciliation settings",
+            "Only super administrators or administrators can view reconciliation settings",
         )
         .into_response());
     }
-    let settings = state.billing_reconciliation_settings.get().await;
+    let mut settings = state.billing_reconciliation_settings.get().await;
+    settings.alert.webhook_url = mask_webhook_url(&settings.alert.webhook_url);
     Ok(ApiResponse::ok(settings).into_response())
 }
 
@@ -726,11 +749,12 @@ pub async fn update_reconciliation_settings(
         .into_response());
     }
 
-    let settings = state
+    let mut settings = state
         .billing_reconciliation_settings
         .save(payload)
         .await
         .map_err(svc::BillingError::Validation)?;
+    settings.alert.webhook_url = mask_webhook_url(&settings.alert.webhook_url);
 
     if let Ok(operator_id) = uuid::Uuid::parse_str(&claims.user_id) {
         let client_ip = extract_client_ip(&headers, Some(addr));
@@ -817,10 +841,10 @@ pub async fn list_bill_adjustments(
     Extension(claims): Extension<AdminClaims>,
     Path(id): Path<Uuid>,
 ) -> Result<axum::response::Response, svc::BillingError> {
-    if !ALL_ROLES.contains(&claims.role.as_str()) {
+    if !is_business_admin(&claims) {
         return Ok(ApiResponse::err(
             axum::http::StatusCode::FORBIDDEN,
-            "Only known admin roles can list bill adjustments",
+            "Only super administrators or administrators can list bill adjustments",
         )
         .into_response());
     }
@@ -848,10 +872,10 @@ pub async fn list_global_bill_adjustments(
     Extension(claims): Extension<AdminClaims>,
     Query(query): Query<GlobalBillAdjustmentListQuery>,
 ) -> Result<axum::response::Response, svc::BillingError> {
-    if !ALL_ROLES.contains(&claims.role.as_str()) {
+    if !is_business_admin(&claims) {
         return Ok(ApiResponse::err(
             axum::http::StatusCode::FORBIDDEN,
-            "Only known admin roles can list bill adjustments",
+            "Only super administrators or administrators can list bill adjustments",
         )
         .into_response());
     }

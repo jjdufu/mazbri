@@ -9,9 +9,10 @@ pub use components::{
     ComponentGroup, ComponentHealth, ComponentReason, ComponentStatus, MIDDLEWARE_CATALOG,
 };
 pub use metrics::{
-    MetricCatalogItem, MetricDataPoint, MetricOverview, MetricQueryParams, MetricSeries,
-    MetricSeriesData, OVERVIEW_MAX_SECS, OVERVIEW_MIN_SECS, OverviewWindow, REALTIME_LOOKBACK_SECS,
-    RealtimeStatus, ServiceHealthRow, ServiceMetricTarget, TrafficKpis, default_service_targets,
+    MAX_TIMESERIES_POINTS, MetricCatalogItem, MetricDataPoint, MetricOverview, MetricQueryParams,
+    MetricSeries, MetricSeriesData, OVERVIEW_MAX_SECS, OVERVIEW_MIN_SECS, OverviewWindow,
+    REALTIME_LOOKBACK_SECS, RealtimeStatus, ServiceHealthRow, ServiceMetricTarget, TrafficKpis,
+    default_service_targets, resolve_timeseries_step,
 };
 pub use sanitization::{
     SanitizationError, sanitize_identifier_value, sanitize_like_value, sanitize_uuid_value,

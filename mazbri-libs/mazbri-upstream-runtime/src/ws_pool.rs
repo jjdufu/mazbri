@@ -1,45 +1,32 @@
-//! WebSocket unary 连接池：按上游键复用，全局/每键信号量硬限流。
-//!
-//! # 池键
-//! `(base_url, ws_path, auth_fingerprint)`。
-//! `auth_fingerprint` 来自握手用的稳定 headers/query（AppliedAuth + spec.request），
-//! **不含** per-request 的 `X-Request-Id`（关联 id 只走帧内 `id`）。
-//! 鉴权轮换 → 指纹变 → 新键；旧键空闲连接按 `idle_ttl` 回收。
-//!
-//! # 超限
-//! `try_acquire` 失败立即返回错误，**禁止**无限排队，**禁止**池满回退短连。
-//!
-//! # 空闲回收
-//! 归还时若空闲数已达 `max_idle_per_key` 则丢弃；借出时丢弃超过 `idle_ttl` 的连接。
-//!
-//! # 借出前存活检查
-//! `liveness_check_on_checkout` 开启时，复用空闲连接前非阻塞地读一次：对端已发 Close、
-//! 已断开或空闲期出现业务帧的连接直接丢弃（计入 `stale_discards`），继续取下一条；
-//! 积压的 Ping 会回 Pong。检查只消费已到达的数据，不等待。
-//!
-//! # Binary 帧
-//! 适配器层对 binary 严格失败（见 `ws_unary`）；本池不解析帧载荷。
+//! WebSocket unary 连接池：按上游键复用，全局/每键信号量硬限流，取消安全默认熔断脏连。
 
 use std::collections::{HashMap, VecDeque};
 use std::hash::{Hash, Hasher};
+use std::io::Cursor;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
-
-use futures_util::{FutureExt, SinkExt, StreamExt};
 use std::time::{Duration, Instant};
 
+use futures_util::{FutureExt, SinkExt, StreamExt};
+use mazbri_core::UpstreamTlsSpec;
 use sha2::{Digest, Sha256};
 use tokio::net::TcpStream;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::http::{HeaderName, HeaderValue};
-use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
+use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
+use tokio_tungstenite::{Connector, MaybeTlsStream, WebSocketStream};
 
 use crate::ssrf::SsrfChecker;
 use crate::types::ExecuteError;
 
 pub type WsStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
+
+/// Maximum inbound WebSocket frame / message size (16 MiB).
+pub const MAX_WS_MESSAGE_BYTES: usize = 16 * 1024 * 1024;
+const MAX_CACHED_WS_TLS_CONFIGS: usize = 128;
+const DEFAULT_EVICTION_SWEEP_INTERVAL: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Clone)]
 pub struct WsPoolConfig {
@@ -50,7 +37,7 @@ pub struct WsPoolConfig {
     pub max_concurrent_per_key: u32,
     /// 每键最多保留的空闲连接数。
     pub max_idle_per_key: u32,
-    /// 空闲超过此时长的连接在借出时丢弃。
+    /// 空闲超过此时长的连接在借出和后台巡检时丢弃。
     pub idle_ttl: Duration,
     /// 借出空闲连接前做非阻塞存活检查。
     pub liveness_check_on_checkout: bool,
@@ -121,14 +108,80 @@ struct KeySlot {
     sem: Arc<Semaphore>,
 }
 
+#[derive(Debug)]
+struct InsecureSkipServerCertVerifier {
+    supported: rustls::crypto::WebPkiSupportedAlgorithms,
+}
+
+impl InsecureSkipServerCertVerifier {
+    fn new() -> Self {
+        Self {
+            supported: rustls::crypto::aws_lc_rs::default_provider()
+                .signature_verification_algorithms,
+        }
+    }
+}
+
+impl rustls::client::danger::ServerCertVerifier for InsecureSkipServerCertVerifier {
+    fn verify_server_cert(
+        &self,
+        _end_entity: &rustls::pki_types::CertificateDer<'_>,
+        _intermediates: &[rustls::pki_types::CertificateDer<'_>],
+        _server_name: &rustls::pki_types::ServerName<'_>,
+        _ocsp_response: &[u8],
+        _now: rustls::pki_types::UnixTime,
+    ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
+        Ok(rustls::client::danger::ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        cert: &rustls::pki_types::CertificateDer<'_>,
+        dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        rustls::crypto::verify_tls12_signature(message, cert, dss, &self.supported)
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &rustls::pki_types::CertificateDer<'_>,
+        dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        rustls::crypto::verify_tls13_signature(message, cert, dss, &self.supported)
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
+        self.supported.supported_schemes()
+    }
+}
+
 struct WsPoolInner {
     cfg: WsPoolConfig,
     keys: Mutex<HashMap<PoolKey, KeySlot>>,
+    tls_configs: Mutex<HashMap<[u8; 32], Arc<rustls::ClientConfig>>>,
     global_sem: Arc<Semaphore>,
     handshakes: AtomicUsize,
     reuses: AtomicUsize,
     rejects: AtomicUsize,
     stale_discards: AtomicUsize,
+}
+
+impl WsPoolInner {
+    fn evict_expired_idle(&self) {
+        let Ok(mut map) = self.keys.lock() else {
+            return;
+        };
+        let ttl = self.cfg.idle_ttl;
+        let max_per_key = self.cfg.max_concurrent_per_key.max(1) as usize;
+        let now = Instant::now();
+        map.retain(|_, slot| {
+            slot.idle
+                .retain(|conn| now.duration_since(conn.last_used) <= ttl);
+            !slot.idle.is_empty() || slot.sem.available_permits() < max_per_key
+        });
+    }
 }
 
 /// 进程内共享的 `ws_unary` 池（bypass 与 mgmt 试跑同实现）。
@@ -141,17 +194,36 @@ impl WsPool {
     #[must_use]
     pub fn new(cfg: WsPoolConfig) -> Self {
         let global = cfg.max_concurrent.max(1) as usize;
-        Self {
-            inner: Arc::new(WsPoolInner {
-                global_sem: Arc::new(Semaphore::new(global)),
-                cfg,
-                keys: Mutex::new(HashMap::new()),
-                handshakes: AtomicUsize::new(0),
-                reuses: AtomicUsize::new(0),
-                rejects: AtomicUsize::new(0),
-                stale_discards: AtomicUsize::new(0),
-            }),
+        let sweep_interval = cfg
+            .idle_ttl
+            .min(DEFAULT_EVICTION_SWEEP_INTERVAL)
+            .max(Duration::from_millis(50));
+        let inner = Arc::new(WsPoolInner {
+            global_sem: Arc::new(Semaphore::new(global)),
+            cfg,
+            keys: Mutex::new(HashMap::new()),
+            tls_configs: Mutex::new(HashMap::new()),
+            handshakes: AtomicUsize::new(0),
+            reuses: AtomicUsize::new(0),
+            rejects: AtomicUsize::new(0),
+            stale_discards: AtomicUsize::new(0),
+        });
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            let weak = Arc::downgrade(&inner);
+            handle.spawn(async move {
+                let mut ticker = tokio::time::interval(sweep_interval);
+                ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+                ticker.tick().await;
+                loop {
+                    ticker.tick().await;
+                    let Some(strong) = weak.upgrade() else {
+                        break;
+                    };
+                    strong.evict_expired_idle();
+                }
+            });
         }
+        Self { inner }
     }
 
     #[must_use]
@@ -180,6 +252,12 @@ impl WsPool {
         self.inner.stale_discards.load(Ordering::SeqCst)
     }
 
+    /// Active key slots currently tracked in the pool (for diagnostics/tests).
+    #[must_use]
+    pub fn active_key_slots(&self) -> usize {
+        self.inner.keys.lock().map_or(0, |m| m.len())
+    }
+
     /// 借出一条连接：优先空闲复用（按配置先做存活检查），否则新建握手。超限立即失败。
     ///
     /// # Errors
@@ -191,6 +269,23 @@ impl WsPool {
         ws_url: &str,
         handshake_headers: &[(String, String)],
         ssrf: &SsrfChecker,
+    ) -> Result<WsConnGuard, ExecuteError> {
+        self.checkout_with_tls(key, ws_url, handshake_headers, ssrf, None)
+            .await
+    }
+
+    /// 同 [`Self::checkout`]，但按 [`UpstreamTlsSpec`] 注入自定义 CA / 客户端 mTLS 证书。
+    ///
+    /// # Errors
+    ///
+    /// 同 [`Self::checkout`]。
+    pub async fn checkout_with_tls(
+        &self,
+        key: PoolKey,
+        ws_url: &str,
+        handshake_headers: &[(String, String)],
+        ssrf: &SsrfChecker,
+        tls: Option<&UpstreamTlsSpec>,
     ) -> Result<WsConnGuard, ExecuteError> {
         let permits = self.acquire_permits(&key)?;
         let mut discarded = 0usize;
@@ -207,7 +302,7 @@ impl WsPool {
             guard.discarded = discarded;
             return Ok(guard);
         }
-        let stream = self.connect(ws_url, handshake_headers, ssrf).await?;
+        let stream = self.connect(ws_url, handshake_headers, ssrf, tls).await?;
         self.inner.handshakes.fetch_add(1, Ordering::SeqCst);
         let mut guard = self.guard(key, stream, permits, false);
         guard.discarded = discarded;
@@ -226,8 +321,25 @@ impl WsPool {
         handshake_headers: &[(String, String)],
         ssrf: &SsrfChecker,
     ) -> Result<WsConnGuard, ExecuteError> {
+        self.checkout_fresh_with_tls(key, ws_url, handshake_headers, ssrf, None)
+            .await
+    }
+
+    /// 同 [`Self::checkout_fresh`]，支持 [`UpstreamTlsSpec`]。
+    ///
+    /// # Errors
+    ///
+    /// 同 [`Self::checkout`]。
+    pub async fn checkout_fresh_with_tls(
+        &self,
+        key: PoolKey,
+        ws_url: &str,
+        handshake_headers: &[(String, String)],
+        ssrf: &SsrfChecker,
+        tls: Option<&UpstreamTlsSpec>,
+    ) -> Result<WsConnGuard, ExecuteError> {
         let permits = self.acquire_permits(&key)?;
-        let stream = self.connect(ws_url, handshake_headers, ssrf).await?;
+        let stream = self.connect(ws_url, handshake_headers, ssrf, tls).await?;
         self.inner.handshakes.fetch_add(1, Ordering::SeqCst);
         Ok(self.guard(key, stream, permits, false))
     }
@@ -270,6 +382,8 @@ impl WsPool {
         Ok(Permits { global, per_key })
     }
 
+    /// `broken` defaults to `true` so any mid-flight timeout/cancellation/panic destroys
+    /// the socket on Drop unless the caller explicitly calls [`WsConnGuard::mark_clean`].
     fn guard(&self, key: PoolKey, stream: WsStream, permits: Permits, reused: bool) -> WsConnGuard {
         WsConnGuard {
             stream: Some(stream),
@@ -277,7 +391,7 @@ impl WsPool {
             key,
             _global: permits.global,
             _key: permits.per_key,
-            broken: false,
+            broken: true,
             reused,
             discarded: 0,
         }
@@ -303,11 +417,50 @@ impl WsPool {
         Ok(None)
     }
 
+    fn resolve_tls_connector(
+        &self,
+        scheme: &str,
+        tls: Option<&UpstreamTlsSpec>,
+    ) -> Result<Option<Connector>, ExecuteError> {
+        if scheme != "wss" {
+            return Ok(None);
+        }
+        let Some(spec) = tls.filter(|t| !t.is_empty()) else {
+            return Ok(None);
+        };
+        let fp = spec.fingerprint_bytes();
+        if let Ok(guard) = self.inner.tls_configs.lock()
+            && let Some(cached) = guard.get(&fp)
+        {
+            return Ok(Some(Connector::Rustls(Arc::clone(cached))));
+        }
+
+        let provider = Arc::new(rustls::crypto::aws_lc_rs::default_provider());
+        let versions_builder = rustls::ClientConfig::builder_with_provider(provider)
+            .with_safe_default_protocol_versions()
+            .map_err(|e| ExecuteError::SpecInvalid(format!("ws rustls versions: {e}")))?;
+
+        let client_auth = parse_ws_client_auth(spec)?;
+        let Some(built_cfg) = build_ws_rustls_config(spec, versions_builder, client_auth)? else {
+            return Ok(None);
+        };
+
+        let arc_cfg = Arc::new(built_cfg);
+        if let Ok(mut guard) = self.inner.tls_configs.lock() {
+            if guard.len() >= MAX_CACHED_WS_TLS_CONFIGS {
+                guard.clear();
+            }
+            guard.insert(fp, Arc::clone(&arc_cfg));
+        }
+        Ok(Some(Connector::Rustls(arc_cfg)))
+    }
+
     async fn connect(
         &self,
         ws_url: &str,
         handshake_headers: &[(String, String)],
         ssrf: &SsrfChecker,
+        tls: Option<&UpstreamTlsSpec>,
     ) -> Result<WsStream, ExecuteError> {
         let parsed = url::Url::parse(ws_url)
             .map_err(|e| ExecuteError::AdapterFailed(format!("ws url: {e}")))?;
@@ -327,6 +480,10 @@ impl WsPool {
             .resolve_checked_socket_addrs(host, port)
             .await
             .map_err(ExecuteError::SsrfBlocked)?;
+        let connector = self.resolve_tls_connector(scheme, tls)?;
+        let ws_cfg = WebSocketConfig::default()
+            .max_message_size(Some(MAX_WS_MESSAGE_BYTES))
+            .max_frame_size(Some(MAX_WS_MESSAGE_BYTES));
 
         let mut req = ws_url
             .into_client_request()
@@ -344,9 +501,14 @@ impl WsPool {
                 .await
                 .map_err(|e| ExecuteError::UpstreamTransport(format!("ws connect: {e}")))?;
             let _ = tcp.set_nodelay(true);
-            let (ws, _resp) = tokio_tungstenite::client_async_tls_with_config(req, tcp, None, None)
-                .await
-                .map_err(|e| ExecuteError::UpstreamTransport(format!("ws connect: {e}")))?;
+            let (ws, _resp) = tokio_tungstenite::client_async_tls_with_config(
+                req,
+                tcp,
+                Some(ws_cfg),
+                connector,
+            )
+            .await
+            .map_err(|e| ExecuteError::UpstreamTransport(format!("ws connect: {e}")))?;
             Ok(ws)
         };
         tokio::time::timeout(self.inner.cfg.handshake_timeout, handshake)
@@ -372,6 +534,97 @@ impl WsPool {
             last_used: Instant::now(),
         });
     }
+}
+
+type WsClientAuthPair = (
+    Vec<rustls::pki_types::CertificateDer<'static>>,
+    rustls::pki_types::PrivateKeyDer<'static>,
+);
+
+fn parse_ws_client_auth(spec: &UpstreamTlsSpec) -> Result<Option<WsClientAuthPair>, ExecuteError> {
+    let cert_pem = spec
+        .client_cert
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let key_pem = spec
+        .client_key
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let Some((c_pem, k_pem)) = cert_pem.zip(key_pem) else {
+        return Ok(None);
+    };
+    let mut c_reader = Cursor::new(c_pem.as_bytes());
+    let chain: Vec<rustls::pki_types::CertificateDer<'static>> =
+        rustls_pemfile::certs(&mut c_reader)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| ExecuteError::SpecInvalid(format!("invalid ws client_cert PEM: {e}")))?;
+    if chain.is_empty() {
+        return Err(ExecuteError::SpecInvalid(
+            "ws client_cert PEM contains no certificates".into(),
+        ));
+    }
+    let mut k_reader = Cursor::new(k_pem.as_bytes());
+    let key = rustls_pemfile::private_key(&mut k_reader)
+        .map_err(|e| ExecuteError::SpecInvalid(format!("invalid ws client_key PEM: {e}")))?
+        .ok_or_else(|| {
+            ExecuteError::SpecInvalid("ws client_key PEM contains no private key".into())
+        })?;
+    Ok(Some((chain, key)))
+}
+
+fn build_ws_rustls_config(
+    spec: &UpstreamTlsSpec,
+    versions_builder: rustls::ConfigBuilder<rustls::ClientConfig, rustls::WantsVerifier>,
+    client_auth: Option<WsClientAuthPair>,
+) -> Result<Option<rustls::ClientConfig>, ExecuteError> {
+    if spec.insecure_skip_verify {
+        let verifier = Arc::new(InsecureSkipServerCertVerifier::new());
+        let dangerous = versions_builder
+            .dangerous()
+            .with_custom_certificate_verifier(verifier);
+        let cfg = if let Some((chain, key)) = client_auth {
+            dangerous
+                .with_client_auth_cert(chain, key)
+                .map_err(|e| ExecuteError::SpecInvalid(format!("ws client mTLS auth: {e}")))?
+        } else {
+            dangerous.with_no_client_auth()
+        };
+        return Ok(Some(cfg));
+    }
+    let Some(ca_pem) = spec
+        .ca_cert
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    else {
+        return Ok(None);
+    };
+    let mut reader = Cursor::new(ca_pem.as_bytes());
+    let certs = rustls_pemfile::certs(&mut reader)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| ExecuteError::SpecInvalid(format!("invalid ws ca_cert PEM: {e}")))?;
+    if certs.is_empty() {
+        return Err(ExecuteError::SpecInvalid(
+            "ws ca_cert PEM contains no certificates".into(),
+        ));
+    }
+    let mut root_store = rustls::RootCertStore::empty();
+    for cert in certs {
+        root_store
+            .add(cert)
+            .map_err(|e| ExecuteError::SpecInvalid(format!("invalid ws CA cert: {e}")))?;
+    }
+    let with_roots = versions_builder.with_root_certificates(root_store);
+    let cfg = if let Some((chain, key)) = client_auth {
+        with_roots
+            .with_client_auth_cert(chain, key)
+            .map_err(|e| ExecuteError::SpecInvalid(format!("ws client mTLS auth: {e}")))?
+    } else {
+        with_roots.with_no_client_auth()
+    };
+    Ok(Some(cfg))
 }
 
 struct Permits {
@@ -401,7 +654,7 @@ async fn probe_alive(ws: &mut WsStream) -> Liveness {
     }
 }
 
-/// 借出的连接；Drop 时归还或丢弃，并释放信号量。
+/// 借出的连接；默认 `broken: true`，仅完整收到匹配回复并调用 [`Self::mark_clean`] 后归还池。
 pub struct WsConnGuard {
     stream: Option<WsStream>,
     pool: Arc<WsPoolInner>,
@@ -421,6 +674,11 @@ impl WsConnGuard {
         self.stream
             .as_mut()
             .ok_or_else(|| ExecuteError::AdapterFailed("ws connection missing".into()))
+    }
+
+    /// 标记连接已完成干净的请求-响应闭环，Drop 时允许归还空闲池。
+    pub fn mark_clean(&mut self) {
+        self.broken = false;
     }
 
     /// 标记坏连：Drop 时不归还池。

@@ -150,11 +150,41 @@ pub async fn get_upstream_billing_summary(
     State(state): State<AppState>,
     Query(req): Query<UpstreamSummaryQuery>,
 ) -> Response {
+    let Some(start_time) = parse_time_string(&req.start_time) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(HandlerError {
+                error: "invalid_start_time".to_string(),
+                message: "start_time 格式无效".to_string(),
+            }),
+        )
+            .into_response();
+    };
+    let Some(end_time) = parse_time_string(&req.end_time) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(HandlerError {
+                error: "invalid_end_time".to_string(),
+                message: "end_time 格式无效".to_string(),
+            }),
+        )
+            .into_response();
+    };
+    if start_time >= end_time {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(HandlerError {
+                error: "invalid_time_range".to_string(),
+                message: "start_time 必须小于 end_time".to_string(),
+            }),
+        )
+            .into_response();
+    }
     let client = &state.clickhouse_client;
     match client
-        .fetch_upstream_usage_summary(
-            &req.start_time,
-            &req.end_time,
+        .fetch_upstream_usage_summary_window(
+            start_time,
+            end_time,
             req.supplier_code.as_deref(),
             req.channel_code.as_deref(),
             req.supplier_id.as_deref(),

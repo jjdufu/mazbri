@@ -168,6 +168,20 @@ pub async fn error_handler_middleware(req: Request, next: Next) -> Response {
     response
 }
 
+pub fn apply_http_resilience_layers<S>(router: axum::Router<S>) -> axum::Router<S>
+where
+    S: Clone + Send + Sync + 'static,
+{
+    router
+        .layer(axum::middleware::from_fn(
+            mazbri_core::panic_policy::recoverable_request_middleware,
+        ))
+        .layer(tower_http::catch_panic::CatchPanicLayer::custom(
+            mazbri_core::panic_policy::handle_http_panic,
+        ))
+        .layer(axum::middleware::from_fn(request_id_middleware))
+}
+
 #[cfg(test)]
 mod probe_log_tests {
     use super::*;
@@ -301,5 +315,62 @@ mod request_id_middleware_tests {
         )
         .await;
         assert!(header(&response, "traceparent").ends_with("-00"));
+    }
+
+    #[tokio::test]
+    async fn apply_http_resilience_layers_marks_recovered_and_returns_500_json_with_request_id() {
+        use super::apply_http_resilience_layers;
+        use mazbri_core::panic_policy::PanicDisposition;
+        use std::sync::{Arc, Mutex};
+
+        async fn boom(slot: Arc<Mutex<Option<PanicDisposition>>>) -> StatusCode {
+            tokio::task::yield_now().await;
+            *slot.lock().expect("lock") = Some(PanicDisposition::current());
+            panic!("boom");
+        }
+
+        let observed_disposition: Arc<Mutex<Option<PanicDisposition>>> =
+            Arc::new(Mutex::new(None));
+        let slot = Arc::clone(&observed_disposition);
+        let router = apply_http_resilience_layers(
+            Router::new()
+                .route("/boom", get(move || boom(Arc::clone(&slot))))
+                .route("/healthy", get(|| async { StatusCode::OK })),
+        );
+
+        let response = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/boom")
+                    .header("x-request-id", "req-panic-check-1")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(header(&response, "x-request-id"), "req-panic-check-1");
+        assert_eq!(
+            *observed_disposition.lock().expect("lock"),
+            Some(PanicDisposition::Recovered),
+            "handler panic must run inside Recoverable scope"
+        );
+        let payload: serde_json::Value =
+            serde_json::from_str(&body_text(response).await).expect("valid json 500");
+        assert_eq!(payload["request_id"], "req-panic-check-1");
+        assert_eq!(payload["error"], "INTERNAL_ERROR");
+
+        // Subsequent normal request on the same router continues to succeed.
+        let ok_resp = router
+            .oneshot(
+                Request::builder()
+                    .uri("/healthy")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(ok_resp.status(), StatusCode::OK);
     }
 }

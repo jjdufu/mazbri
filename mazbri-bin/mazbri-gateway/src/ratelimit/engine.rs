@@ -11,9 +11,9 @@ use super::token_bucket::TokenBucket;
 use super::usage_buffer::{UsageDeltaBuffer, UsageDeltaRecord};
 use crate::config::ServiceEndpoint;
 use crate::tarpc_client::TarpcClientPool;
-use dashmap::DashMap;
 use mazbri_core::num::SaturatingFrom;
 use mazbri_rpc::ratelimit::UsageDelta;
+use moka::sync::Cache;
 use parking_lot::Mutex;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -22,6 +22,8 @@ use uuid::Uuid;
 
 /// Burst window for bandwidth token bucket (seconds of traffic allowed as burst).
 const BANDWIDTH_BURST_SECS: u64 = 1;
+const BUCKET_CACHE_MAX_CAPACITY: u64 = 200_000;
+const BUCKET_IDLE_TTL_SECS: u64 = 600;
 
 /// Per-check constants shared by every decision path.
 #[derive(Debug, Clone, Copy)]
@@ -212,7 +214,7 @@ impl BucketCell {
 pub struct LocalRateLimitEngine {
     gateway_id: Arc<str>,
     snapshots: Arc<TenantPolicySnapshotStore>,
-    buckets: Arc<DashMap<String, Arc<Mutex<BucketCell>>>>,
+    buckets: Cache<String, Arc<Mutex<BucketCell>>>,
     usage_buffer: UsageDeltaBuffer,
     commands: ControlCommandStore,
     bucket_idle_ttl: Duration,
@@ -235,13 +237,18 @@ impl LocalRateLimitEngine {
             api_limits: std::collections::HashMap::default(),
             fetched_at: Instant::now(),
         };
+        let bucket_idle_ttl = Duration::from_secs(BUCKET_IDLE_TTL_SECS);
+        let buckets = Cache::builder()
+            .max_capacity(BUCKET_CACHE_MAX_CAPACITY)
+            .time_to_idle(bucket_idle_ttl)
+            .build();
         Self {
             gateway_id: Arc::from(gateway_id.into()),
             snapshots: Arc::new(TenantPolicySnapshotStore::new(default_snapshot)),
-            buckets: Arc::new(DashMap::new()),
+            buckets,
             usage_buffer: UsageDeltaBuffer::new(100_000),
             commands: ControlCommandStore::new(),
-            bucket_idle_ttl: Duration::from_secs(600),
+            bucket_idle_ttl,
         }
     }
 
@@ -270,9 +277,7 @@ impl LocalRateLimitEngine {
         now: Instant,
     ) -> Arc<Mutex<BucketCell>> {
         self.buckets
-            .entry(key)
-            .or_insert_with(|| Arc::new(Mutex::new(BucketCell::new(*spec, now))))
-            .clone()
+            .get_with(key, || Arc::new(Mutex::new(BucketCell::new(*spec, now))))
     }
 
     fn check_bucket_amount(
@@ -478,8 +483,10 @@ impl LocalRateLimitEngine {
                     .with_quota(quota));
             }
         };
-        // Skip api dimension when no matching override — avoids api_qps noise at plan QPS.
-        if let Some(rule) = snapshot.api_rule(input.product_id.as_deref(), &input.api_endpoint) {
+        // Skip api dimension when encrypted envelope hides product_id or when no matching override.
+        if input.product_id.is_some()
+            && let Some(rule) = snapshot.api_rule(input.product_id.as_deref(), &input.api_endpoint)
+        {
             let api_qps = Self::scaled(rule.effective_qps(tenant_qps), multiplier);
             let api_burst = Self::scaled(rule.effective_burst(tenant_burst), multiplier);
             let api_key = Self::bucket_key(
@@ -563,8 +570,11 @@ impl LocalRateLimitEngine {
         })
     }
 
+    /// Stage-1 outer admission check: evaluates control commands, `tenant_qps`, `client_ip_qps`,
+    /// ingress `bandwidth`, and (when `input.product_id.is_some()`, i.e. plaintext requests)
+    /// `api_limits`, recording `allowed_count = 1`.
     #[must_use]
-    pub fn check(&self, input: &LocalRateLimitInput) -> LocalRateLimitDecision {
+    pub fn check_outer_admission(&self, input: &LocalRateLimitInput) -> LocalRateLimitDecision {
         let snapshot = self.snapshots.get(input.tenant_id);
         let meta = DecisionMeta {
             policy_version: snapshot.version,
@@ -608,6 +618,85 @@ impl LocalRateLimitEngine {
             prepaid_request_bytes,
             bandwidth_enabled: snapshot.bandwidth_enabled(),
             quota: Some(quota),
+        }
+    }
+
+    #[cfg(test)]
+    #[must_use]
+    pub fn check(&self, input: &LocalRateLimitInput) -> LocalRateLimitDecision {
+        self.check_outer_admission(input)
+    }
+
+    /// Stage-2 post-decrypt check exclusively for encrypted requests: evaluates ONLY `api_limits`
+    /// sub-rules using the decrypted `(product_id, api_endpoint)` without touching `tenant_qps`,
+    /// `client_ip_qps`, `bandwidth`, or double-counting `allowed_count`.
+    /// Returns `Some(Deny)` when the sub-rule denies, or `None` when allowed.
+    #[must_use]
+    pub fn check_api_limit_only(
+        &self,
+        input: &LocalRateLimitInput,
+    ) -> Option<LocalRateLimitDecision> {
+        let snapshot = self.snapshots.get(input.tenant_id);
+        if !snapshot.enabled || Self::observe_only(&snapshot) {
+            return None;
+        }
+        let rule = snapshot.api_rule(input.product_id.as_deref(), &input.api_endpoint)?;
+        let started_at = Instant::now();
+        let degraded = snapshot.tenant_id.is_nil() || snapshot.is_stale();
+        let multiplier = self
+            .commands
+            .quota_multiplier(input.tenant_id)
+            .max(0.1)
+            .clamp(0.1, 10.0);
+        let tenant_qps = Self::scaled(snapshot.tenant_qps, multiplier);
+        let tenant_burst = Self::scaled(snapshot.tenant_burst, multiplier);
+        let api_qps = Self::scaled(rule.effective_qps(tenant_qps), multiplier);
+        let api_burst = Self::scaled(rule.effective_burst(tenant_burst), multiplier);
+        let api_key = Self::bucket_key(
+            "api",
+            input.tenant_id,
+            &format!(
+                "{}:{}",
+                input.product_id.as_deref().unwrap_or("default"),
+                input.api_endpoint
+            ),
+        );
+        match self.check_bucket(
+            api_key,
+            Self::build_spec(api_burst, api_qps),
+            Instant::now(),
+        ) {
+            Ok(_) => None,
+            Err(retry_after_ms) => {
+                let snapshot_age_ms = snapshot.age_ms();
+                // Do not increment allowed_count (already counted in Stage 1); record only the api_qps denial.
+                self.usage_buffer.record(UsageDelta {
+                    gateway_id: self.gateway_id.to_string(),
+                    tenant_id: input.tenant_id.to_string(),
+                    policy_version: snapshot.version,
+                    product_id: input.product_id.clone().unwrap_or_default(),
+                    api_endpoint: input.api_endpoint.clone(),
+                    client_ip: Some(input.client_ip.clone()),
+                    window_start_unix: chrono::Utc::now().timestamp(),
+                    window_secs: 1,
+                    allowed_count: 0,
+                    denied_count: 1,
+                    bytes_in: 0,
+                    bytes_out: 0,
+                    snapshot_age_ms: i64::saturating_from(snapshot_age_ms),
+                    degraded,
+                    degrade_reason: Some("api_qps".to_string()),
+                });
+                Self::record_decision("deny", degraded, "api_qps", started_at);
+                Some(LocalRateLimitDecision::Deny {
+                    policy_version: snapshot.version,
+                    retry_after_ms,
+                    reason: "api_qps".to_string(),
+                    snapshot_age_ms,
+                    degraded,
+                    quota: None,
+                })
+            }
         }
     }
 
@@ -708,21 +797,22 @@ impl LocalRateLimitEngine {
 
     #[must_use]
     pub fn prune_buckets(&self) -> usize {
+        self.buckets.run_pending_tasks();
         let now = Instant::now();
         let keys = self
             .buckets
             .iter()
-            .filter_map(|entry| {
-                let guard = entry.value().lock();
+            .filter_map(|(key, cell)| {
+                let guard = cell.lock();
                 if now.duration_since(guard.last_seen) > self.bucket_idle_ttl {
-                    Some(entry.key().clone())
+                    Some((*key).clone())
                 } else {
                     None
                 }
             })
             .collect::<Vec<_>>();
         for key in &keys {
-            self.buckets.remove(key);
+            self.buckets.invalidate(key);
         }
         keys.len()
     }
@@ -1012,4 +1102,73 @@ mod tests {
         );
     }
 
+    #[test]
+    fn encrypted_two_stage_check_does_not_double_deduct_tenant_qps() {
+        let eng = engine();
+        let tenant = Uuid::new_v4();
+        let mut snap = snapshot_plan(tenant, 10, 10);
+        snap.api_limits.insert(
+            "api:/v1/secret".into(),
+            ApiLimitRule {
+                qps: Some(5),
+                burst: Some(5),
+            },
+        );
+        eng.replace_snapshots_for_test(vec![snap]);
+
+        let outer = LocalRateLimitInput {
+            tenant_id: tenant,
+            product_id: None,
+            api_endpoint: "/api/v1/gateway".into(),
+            client_ip: "10.0.0.8".into(),
+            request_bytes: 256,
+        };
+        let inner = LocalRateLimitInput {
+            tenant_id: tenant,
+            product_id: Some("prod".into()),
+            api_endpoint: "/v1/secret".into(),
+            client_ip: "10.0.0.8".into(),
+            request_bytes: 256,
+        };
+
+        // First 5 encrypted requests pass both Stage 1 (tenant burst=10) and Stage 2 (api burst=5).
+        for idx in 1..=5 {
+            match eng.check_outer_admission(&outer) {
+                LocalRateLimitDecision::Allow { quota, .. } => {
+                    assert_eq!(quota.map(|q| q.remaining), Some(10 - idx));
+                }
+                LocalRateLimitDecision::Deny { reason, .. } => {
+                    panic!("request {idx} unexpectedly denied in stage 1: {reason}");
+                }
+            }
+            assert!(
+                eng.check_api_limit_only(&inner).is_none(),
+                "request {idx} must pass stage 2 api_limits"
+            );
+        }
+
+        // 6th encrypted request passes Stage 1 (remaining tenant tokens = 4, proving zero double deduction!)
+        // and is accurately rejected in Stage 2 with reason == "api_qps".
+        match eng.check_outer_admission(&outer) {
+            LocalRateLimitDecision::Allow { quota, .. } => {
+                assert_eq!(quota.map(|q| q.remaining), Some(4));
+            }
+            LocalRateLimitDecision::Deny { reason, .. } => {
+                panic!("6th request must not exhaust tenant_qps=10: {reason}");
+            }
+        }
+        match eng.check_api_limit_only(&inner) {
+            Some(LocalRateLimitDecision::Deny { reason, .. }) => {
+                assert_eq!(reason, "api_qps");
+            }
+            other => panic!("expected stage 2 api_qps denial on 6th request, got {other:?}"),
+        }
+
+        let drained = eng.flush_usage_buffer();
+        let total_allowed: i64 = drained.iter().map(|r| r.delta.allowed_count).sum();
+        assert_eq!(
+            total_allowed, 6,
+            "stage 2 must never double-count allowed_count"
+        );
+    }
 }

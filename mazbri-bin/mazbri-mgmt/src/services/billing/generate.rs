@@ -1,5 +1,24 @@
 use super::{BillingError, DateTime, Decimal, PgPool, Row, Serialize, Utc, error, repo};
 
+const CUSTOMER_BILL_SNAPSHOT_USAGE_SQL: &str = "SELECT
+    api_endpoint,
+    COUNT(*) as quantity,
+    COALESCE(SUM(billable_units), 0)::BIGINT as total_units,
+    COALESCE(MIN(unit_price), 0) as unit_price,
+    COALESCE(SUM(billable_amount), 0) as total
+ FROM usage_records
+ WHERE tenant_id = $1
+   AND recorded_at >= $2
+   AND recorded_at < $3
+   AND charge_status = 'charged'
+   AND billable_amount > 0
+ GROUP BY api_endpoint
+ ORDER BY total DESC, api_endpoint ASC";
+
+/// Atomically generates (or updates active non-cancelled) customer bill header AND snapshots
+/// `bill_items` in a single PostgreSQL transaction using `charge_status = 'charged' AND billable_amount > 0`
+/// over the half-open window `[period_start, period_end)`.
+///
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
@@ -29,6 +48,15 @@ pub async fn generate_bill(
             }
         })
 }
+
+/// Idempotent single-transaction snapshot helper for customer `bill_items`.
+///
+/// [`generate_bill`] already writes `bills` and `bill_items` atomically in one transaction;
+/// when `bill_items` are already present (or `total_calls == 0`), this helper preserves that
+/// exact atomic snapshot. If invoked standalone on a bill row without items, it snapshots
+/// `usage_records` inside a single transaction using `charge_status = 'charged' AND billable_amount > 0`
+/// and half-open `[period_start, period_end)`.
+///
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
@@ -39,29 +67,11 @@ pub async fn snapshot_customer_bill_items(
     period_start: DateTime<Utc>,
     period_end: DateTime<Utc>,
 ) -> Result<(), BillingError> {
-    let rows = sqlx::query(
-        "SELECT
-            api_endpoint,
-            COUNT(*) as quantity,
-            COALESCE(SUM(billable_units), 0)::BIGINT as total_units,
-            COALESCE(MIN(unit_price), 0) as unit_price,
-            COALESCE(SUM(billable_amount), 0) as total
-         FROM usage_records
-         WHERE tenant_id = $1
-           AND recorded_at >= $2
-           AND recorded_at <= $3
-         GROUP BY api_endpoint
-         ORDER BY total DESC, api_endpoint ASC",
-    )
-    .bind(tenant_id)
-    .bind(period_start)
-    .bind(period_end)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| {
-        error!("Database error listing customer bill items: {}", e);
-        BillingError::Database
-    })?;
+    if period_start >= period_end {
+        return Err(BillingError::Validation(
+            "Billing period start must be before end".to_string(),
+        ));
+    }
     let mut tx = pool.begin().await.map_err(|e| {
         error!(
             "Database error starting customer bill snapshot transaction: {}",
@@ -69,12 +79,47 @@ pub async fn snapshot_customer_bill_items(
         );
         BillingError::Database
     })?;
-    sqlx::query("DELETE FROM bill_items WHERE bill_id = $1")
-        .bind(bill_id)
-        .execute(&mut *tx)
+
+    let bill_meta = sqlx::query(
+        "SELECT total_calls FROM bills WHERE id = $1 AND tenant_id = $2 FOR UPDATE",
+    )
+    .bind(bill_id)
+    .bind(tenant_id)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|e| {
+        error!("Database error locking bill for snapshot {}: {}", bill_id, e);
+        BillingError::Database
+    })?;
+    let Some(bill_meta) = bill_meta else {
+        return Err(BillingError::BillNotFound(bill_id));
+    };
+    let total_calls: i64 = bill_meta.get("total_calls");
+    let has_items: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM bill_items WHERE bill_id = $1)")
+            .bind(bill_id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| {
+                error!("Database error checking existing bill items: {}", e);
+                BillingError::Database
+            })?;
+    if has_items || total_calls == 0 {
+        tx.commit().await.map_err(|e| {
+            error!("Database error committing snapshot check: {}", e);
+            BillingError::Database
+        })?;
+        return Ok(());
+    }
+
+    let rows = sqlx::query(CUSTOMER_BILL_SNAPSHOT_USAGE_SQL)
+        .bind(tenant_id)
+        .bind(period_start)
+        .bind(period_end)
+        .fetch_all(&mut *tx)
         .await
         .map_err(|e| {
-            error!("Database error clearing customer bill items: {}", e);
+            error!("Database error listing customer bill items: {}", e);
             BillingError::Database
         })?;
     for (index, row) in rows.into_iter().enumerate() {
@@ -91,7 +136,7 @@ pub async fn snapshot_customer_bill_items(
         .bind(row.get::<i64, _>("total_units"))
         .bind(row.get::<Decimal, _>("unit_price"))
         .bind(row.get::<Decimal, _>("total"))
-        .bind(serde_json::json!({ "source" : "customer_usage" }))
+        .bind(serde_json::json!({ "source": "customer_usage" }))
         .execute(&mut *tx)
         .await
         .map_err(|e| {
@@ -105,6 +150,7 @@ pub async fn snapshot_customer_bill_items(
     })?;
     Ok(())
 }
+
 #[derive(Debug, Clone, Default)]
 pub(super) struct UpstreamBillItemDraft {
     pub(crate) supplier_code: String,
@@ -155,4 +201,18 @@ pub struct BillingAdjustmentListResponse {
     pub page: u32,
     pub page_size: u32,
     pub total_pages: u64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CUSTOMER_BILL_SNAPSHOT_USAGE_SQL;
+
+    #[test]
+    fn snapshot_sql_uses_charged_predicate_and_half_open_window() {
+        assert!(CUSTOMER_BILL_SNAPSHOT_USAGE_SQL.contains("charge_status = 'charged'"));
+        assert!(CUSTOMER_BILL_SNAPSHOT_USAGE_SQL.contains("billable_amount > 0"));
+        assert!(CUSTOMER_BILL_SNAPSHOT_USAGE_SQL.contains("recorded_at >= $2"));
+        assert!(CUSTOMER_BILL_SNAPSHOT_USAGE_SQL.contains("recorded_at < $3"));
+        assert!(!CUSTOMER_BILL_SNAPSHOT_USAGE_SQL.contains("recorded_at <="));
+    }
 }

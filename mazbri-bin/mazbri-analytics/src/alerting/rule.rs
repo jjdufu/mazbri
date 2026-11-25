@@ -138,6 +138,8 @@ pub struct ResolvedEvent {
     pub value: f64,
     pub started_at: DateTime<Utc>,
     pub resolved_at: DateTime<Utc>,
+    pub silenced: bool,
+    pub inhibited: bool,
 }
 
 /// 规则 + 样本标签的稳定指纹（FNV-1a 64 位，十六进制），用于事件去重。

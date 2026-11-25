@@ -2,9 +2,11 @@ use crate::num::SaturatingFrom;
 use crate::redis::config::RedisConfig;
 use crate::redis::error::{RedisError, Result};
 use crate::redis::keys::{
-    fallback_key, gateway_binding_nonce_key, idempotency_key, nonce_key, permission_key,
-    rate_limit_key,
+    billing_balance_invalidation_channel, billing_balance_key, cache_l1_invalidation_channel,
+    fallback_key, gateway_binding_nonce_key, nonce_key, permission_key, rate_limit_key,
+    tenant_idempotency_key,
 };
+use futures::StreamExt;
 use redis::AsyncCommands;
 use redis::aio::{ConnectionManager, ConnectionManagerConfig};
 use redis::cluster::{ClusterClient, ClusterClientBuilder};
@@ -87,10 +89,38 @@ fn manager_config(connect_timeout: Duration, command_timeout: Duration) -> Conne
 fn redis_metric_op(op: &'static str) -> &'static str {
     match op {
         "GET" | "MGET" | "EXISTS" | "TTL" | "PTTL" | "MEMORY USAGE" | "DBSIZE" | "SCAN" => "get",
-        "SET EX" | "SET NX EX" | "DEL" => "set",
+        "SET EX" | "SET NX EX" | "DEL" | "PUBLISH" => "set",
         "PING" => "ping",
         "MEMORY USAGES" => "pipeline",
         _ => "execute",
+    }
+}
+
+pub(crate) fn build_redis_url_from_config(config: &RedisConfig) -> anyhow::Result<String> {
+    if !config.url.trim().is_empty() {
+        return Ok(config.url.clone());
+    }
+    let Some(ref host) = config.host else {
+        anyhow::bail!("Redis configuration must specify either 'url' or 'host'");
+    };
+    let port = config.port.unwrap_or(6379);
+    let db = config.db.unwrap_or(0);
+    let scheme = if config.is_cluster {
+        if config.use_tls {
+            "rediss+cluster"
+        } else {
+            "redis+cluster"
+        }
+    } else if config.use_tls {
+        "rediss"
+    } else {
+        "redis"
+    };
+    if let Some(ref password) = config.password {
+        let encoded_pw = urlencoding::encode(password);
+        Ok(format!("{scheme}://:{encoded_pw}@{host}:{port}/{db}"))
+    } else {
+        Ok(format!("{scheme}://{host}:{port}/{db}"))
     }
 }
 
@@ -132,29 +162,7 @@ impl RedisClient {
     pub async fn connect_with_config(config: &RedisConfig) -> anyhow::Result<Self> {
         let connect_timeout = Duration::from_millis(config.connect_timeout_ms.max(1));
         let command_timeout = Duration::from_millis(config.command_timeout_ms.max(1));
-
-        let url_str = if !config.url.trim().is_empty() {
-            config.url.clone()
-        } else if let Some(ref host) = config.host {
-            let port = config.port.unwrap_or(6379);
-            let db = config.db.unwrap_or(0);
-            let scheme = if config.is_cluster {
-                if config.use_tls {
-                    "rediss+cluster"
-                } else {
-                    "redis+cluster"
-                }
-            } else {
-                if config.use_tls { "rediss" } else { "redis" }
-            };
-            if let Some(ref password) = config.password {
-                format!("{scheme}://:{password}@{host}:{port}/{db}")
-            } else {
-                format!("{scheme}://{host}:{port}/{db}")
-            }
-        } else {
-            anyhow::bail!("Redis configuration must specify either 'url' or 'host'");
-        };
+        let url_str = build_redis_url_from_config(config)?;
 
         let is_cluster =
             url_str.starts_with("redis+cluster://") || url_str.starts_with("rediss+cluster://");
@@ -195,12 +203,55 @@ impl RedisClient {
             }
         };
 
+        let inner = Arc::new(inner);
+        Self::spawn_keepalive(&inner, command_timeout);
+
         Ok(Self {
-            inner: Arc::new(inner),
+            inner,
             key_prefix: Arc::from(config.key_prefix.as_str()),
             connect_timeout,
             command_timeout,
         })
+    }
+
+    fn spawn_keepalive(inner: &Arc<InnerClient>, command_timeout: Duration) {
+        const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(30);
+        if matches!(&**inner, InnerClient::Standalone { managers, .. } if managers.is_empty()) {
+            return;
+        }
+        let weak = Arc::downgrade(inner);
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(KEEPALIVE_INTERVAL);
+            ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            // Skip immediate tick right after initial connect.
+            ticker.tick().await;
+            loop {
+                ticker.tick().await;
+                let Some(inner) = weak.upgrade() else {
+                    break;
+                };
+                match &*inner {
+                    InnerClient::Standalone { managers, .. } => {
+                        for manager in managers.iter() {
+                            let mut conn = manager.clone();
+                            let _ = timeout(
+                                command_timeout,
+                                redis::cmd("PING").query_async::<String>(&mut conn),
+                            )
+                            .await;
+                        }
+                    }
+                    InnerClient::Cluster { connection, .. } => {
+                        let mut conn = connection.clone();
+                        let _ = timeout(
+                            command_timeout,
+                            redis::cmd("PING").query_async::<String>(&mut conn),
+                        )
+                        .await;
+                    }
+                }
+            }
+        });
     }
 
     #[must_use]
@@ -208,7 +259,7 @@ impl RedisClient {
         &self.key_prefix
     }
 
-    fn connection(&self) -> InnerConnection {
+    fn connection(&self) -> Result<InnerConnection> {
         match &*self.inner {
             InnerClient::Standalone {
                 managers,
@@ -216,11 +267,19 @@ impl RedisClient {
                 ..
             } => {
                 let len = managers.len();
-                debug_assert!(len > 0);
+                if len == 0 {
+                    return Err(RedisError::InvalidInput(
+                        "redis client has no active connections".to_string(),
+                    ));
+                }
                 let index = next_manager_index.fetch_add(1, Ordering::Relaxed) % len;
-                InnerConnection::Standalone(Box::new(managers[index].clone()))
+                Ok(InnerConnection::Standalone(Box::new(
+                    managers[index].clone(),
+                )))
             }
-            InnerClient::Cluster { connection, .. } => InnerConnection::Cluster(connection.clone()),
+            InnerClient::Cluster { connection, .. } => {
+                Ok(InnerConnection::Cluster(connection.clone()))
+            }
         }
     }
 
@@ -333,8 +392,37 @@ impl RedisClient {
     }
 
     #[must_use]
-    pub fn idempotency_key(&self, fingerprint: &str) -> String {
-        idempotency_key(&self.key_prefix, fingerprint)
+    pub fn tenant_idempotency_key(
+        &self,
+        tenant_id: Uuid,
+        product_id: &str,
+        method: &str,
+        path: &str,
+        fingerprint: &str,
+    ) -> String {
+        tenant_idempotency_key(
+            &self.key_prefix,
+            tenant_id,
+            product_id,
+            method,
+            path,
+            fingerprint,
+        )
+    }
+
+    #[must_use]
+    pub fn billing_balance_key(&self, tenant_id: Uuid) -> String {
+        billing_balance_key(&self.key_prefix, tenant_id)
+    }
+
+    #[must_use]
+    pub fn billing_balance_invalidation_channel(&self) -> String {
+        billing_balance_invalidation_channel(&self.key_prefix)
+    }
+
+    #[must_use]
+    pub fn cache_l1_invalidation_channel(&self) -> String {
+        cache_l1_invalidation_channel(&self.key_prefix)
     }
 
     #[must_use]
@@ -342,34 +430,18 @@ impl RedisClient {
         rate_limit_key(&self.key_prefix, parts)
     }
 
-    async fn run<T, F, Fut>(&self, op: &'static str, mut f: F) -> Result<T>
+    async fn execute_timed<T, Fut>(op: &'static str, command_timeout: Duration, fut: Fut) -> Result<T>
     where
-        F: FnMut(InnerConnection) -> Fut,
         Fut: Future<Output = redis::RedisResult<T>>,
     {
-        async fn execute<T, Fut>(op: &'static str, command_timeout: Duration, fut: Fut) -> Result<T>
-        where
-            Fut: Future<Output = redis::RedisResult<T>>,
-        {
-            timeout(command_timeout, fut)
-                .await
-                .map_err(|_| RedisError::Timeout(op))?
-                .map_err(RedisError::from)
-        }
+        timeout(command_timeout, fut)
+            .await
+            .map_err(|_| RedisError::Timeout(op))?
+            .map_err(RedisError::from)
+    }
 
+    fn record_command_telemetry<T>(op: &'static str, started: Instant, result: &Result<T>) {
         let metric_op = redis_metric_op(op);
-        let started = Instant::now();
-        let first = execute(op, self.command_timeout, f(self.connection())).await;
-        let result = match first {
-            Ok(value) => Ok(value),
-            Err(RedisError::Connection(error)) if Self::should_retry_connection(&error) => {
-                match self.fresh_connection().await {
-                    Ok(fresh) => execute(op, self.command_timeout, f(fresh)).await,
-                    Err(error) => Err(error),
-                }
-            }
-            Err(error) => Err(error),
-        };
         crate::metrics::observe_dep("redis", metric_op, started, result.is_ok());
         let span = crate::trace_spans::CompletedSpan::new(
             format!("redis.{}", op.to_ascii_lowercase().replace(' ', "_")),
@@ -378,10 +450,50 @@ impl RedisClient {
         .client()
         .attr("db.system", "redis")
         .attr("db.operation", op);
-        match &result {
-            Ok(_) => span.record_under_current(),
-            Err(error) => span.error(error.to_string()).record_under_current(),
+        match result {
+            Ok(_) => {
+                let _ = span.record_under_current();
+            }
+            Err(error) => {
+                let _ = span.error(error.to_string()).record_under_current();
+            }
+        }
+    }
+
+    /// Read-only / naturally idempotent command execution: retries once on broken connection.
+    async fn run_idempotent<T, F, Fut>(&self, op: &'static str, mut f: F) -> Result<T>
+    where
+        F: FnMut(InnerConnection) -> Fut,
+        Fut: Future<Output = redis::RedisResult<T>>,
+    {
+        let started = Instant::now();
+        let conn = self.connection()?;
+        let first = Self::execute_timed(op, self.command_timeout, f(conn)).await;
+        let result = match first {
+            Ok(value) => Ok(value),
+            Err(RedisError::Connection(error)) if Self::should_retry_connection(&error) => {
+                match self.fresh_connection().await {
+                    Ok(fresh) => Self::execute_timed(op, self.command_timeout, f(fresh)).await,
+                    Err(error) => Err(error),
+                }
+            }
+            Err(error) => Err(error),
         };
+        Self::record_command_telemetry(op, started, &result);
+        result
+    }
+
+    /// Stateful / non-idempotent command execution (`SET NX EX`, `EVAL`, `PUBLISH`, etc.):
+    /// never auto-retries after sending on wire so non-idempotent commands cannot execute twice.
+    async fn run_once<T, F, Fut>(&self, op: &'static str, f: F) -> Result<T>
+    where
+        F: FnOnce(InnerConnection) -> Fut,
+        Fut: Future<Output = redis::RedisResult<T>>,
+    {
+        let started = Instant::now();
+        let conn = self.connection()?;
+        let result = Self::execute_timed(op, self.command_timeout, f(conn)).await;
+        Self::record_command_telemetry(op, started, &result);
         result
     }
 
@@ -389,7 +501,7 @@ impl RedisClient {
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn ping(&self) -> Result<()> {
-        self.run("PING", |mut conn| async move {
+        self.run_idempotent("PING", |mut conn| async move {
             let _: String = redis::cmd("PING").query_async(&mut conn).await?;
             Ok(())
         })
@@ -400,7 +512,7 @@ impl RedisClient {
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn get_bytes(&self, key: &str) -> Result<Option<Vec<u8>>> {
-        self.run("GET", |mut conn| async move { conn.get(key).await })
+        self.run_idempotent("GET", |mut conn| async move { conn.get(key).await })
             .await
     }
 
@@ -408,8 +520,9 @@ impl RedisClient {
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn set_ex_bytes(&self, key: &str, value: &[u8], ttl_secs: usize) -> Result<()> {
-        self.run("SET EX", |mut conn| async move {
-            let _: () = conn.set_ex(key, value, ttl_secs as u64).await?;
+        let ttl_u64 = ttl_secs as u64;
+        self.run_idempotent("SET EX", |mut conn| async move {
+            let _: () = conn.set_ex(key, value, ttl_u64).await?;
             Ok(())
         })
         .await
@@ -419,7 +532,7 @@ impl RedisClient {
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn set_nx_ex(&self, key: &str, value: &[u8], ttl_secs: usize) -> Result<bool> {
-        self.run("SET NX EX", |mut conn| async move {
+        self.run_once("SET NX EX", |mut conn| async move {
             let result: Option<String> = redis::cmd("SET")
                 .arg(key)
                 .arg(value)
@@ -442,7 +555,7 @@ impl RedisClient {
         key2: &str,
         ttl_secs: usize,
     ) -> Result<(bool, bool)> {
-        self.run("SET NX EX", |mut conn| async move {
+        self.run_once("SET NX EX", |mut conn| async move {
             let mut pipe = redis::pipe();
             pipe.cmd("SET")
                 .arg(key1)
@@ -466,7 +579,7 @@ impl RedisClient {
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn del(&self, key: &str) -> Result<u64> {
-        self.run("DEL", |mut conn| async move { conn.del(key).await })
+        self.run_idempotent("DEL", |mut conn| async move { conn.del(key).await })
             .await
     }
 
@@ -474,7 +587,7 @@ impl RedisClient {
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn exists(&self, key: &str) -> Result<bool> {
-        self.run("EXISTS", |mut conn| async move { conn.exists(key).await })
+        self.run_idempotent("EXISTS", |mut conn| async move { conn.exists(key).await })
             .await
     }
 
@@ -482,7 +595,7 @@ impl RedisClient {
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn mget_bytes(&self, keys: &[String]) -> Result<Vec<Option<Vec<u8>>>> {
-        self.run("MGET", |mut conn| async move {
+        self.run_idempotent("MGET", |mut conn| async move {
             redis::cmd("MGET").arg(keys).query_async(&mut conn).await
         })
         .await
@@ -492,7 +605,32 @@ impl RedisClient {
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn eval_i64(&self, script: &str, keys: &[String], args: &[String]) -> Result<i64> {
-        self.run("EVAL", |mut conn| async move {
+        self.run_once("EVAL", |mut conn| async move {
+            let mut command = redis::cmd("EVAL");
+            command.arg(script).arg(keys.len());
+            for key in keys {
+                command.arg(key);
+            }
+            for arg in args {
+                command.arg(arg);
+            }
+            command.query_async(&mut conn).await
+        })
+        .await
+    }
+
+    /// Evaluates a Lua script that returns either an integer (`Some(i64)`) or `nil`/`false` (`None`).
+    ///
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+    pub async fn eval_opt_i64(
+        &self,
+        script: &str,
+        keys: &[String],
+        args: &[String],
+    ) -> Result<Option<i64>> {
+        self.run_once("EVAL", |mut conn| async move {
             let mut command = redis::cmd("EVAL");
             command.arg(script).arg(keys.len());
             for key in keys {
@@ -510,7 +648,7 @@ impl RedisClient {
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn eval_bool(&self, script: &str, keys: &[String], args: &[String]) -> Result<bool> {
-        self.run("EVAL", |mut conn| async move {
+        self.run_once("EVAL", |mut conn| async move {
             let mut command = redis::cmd("EVAL");
             command.arg(script).arg(keys.len());
             for key in keys {
@@ -524,11 +662,110 @@ impl RedisClient {
         .await
     }
 
+    /// Publishes a UTF-8 message to a Redis Pub/Sub channel.
+    ///
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+    pub async fn publish(&self, channel: &str, payload: &str) -> Result<u64> {
+        self.run_once("PUBLISH", |mut conn| async move {
+            redis::cmd("PUBLISH")
+                .arg(channel)
+                .arg(payload)
+                .query_async(&mut conn)
+                .await
+        })
+        .await
+    }
+
+    /// Spawns a resilient background Redis Pub/Sub listener for `channel`.
+    /// For unconnected test clients (`managers.is_empty()`), returns immediately without connecting.
+    pub fn spawn_pubsub_listener<F>(
+        &self,
+        channel: String,
+        label: &'static str,
+        on_message: F,
+    ) -> Option<tokio::task::JoinHandle<()>>
+    where
+        F: Fn(String) + Send + Sync + 'static,
+    {
+        let client = match &*self.inner {
+            InnerClient::Standalone {
+                client, managers, ..
+            } => {
+                if managers.is_empty() {
+                    return None;
+                }
+                Arc::clone(client)
+            }
+            InnerClient::Cluster { .. } => {
+                tracing::info!(
+                    label,
+                    channel = %channel,
+                    "Redis cluster mode active; relying on short L1 TTL without standalone pubsub"
+                );
+                return None;
+            }
+        };
+        let connect_timeout = self.connect_timeout;
+        Some(tokio::spawn(async move {
+            let mut backoff_secs = 1u64;
+            loop {
+                let pubsub_res = timeout(connect_timeout, client.get_async_pubsub()).await;
+                let mut pubsub = match pubsub_res {
+                    Ok(Ok(ps)) => ps,
+                    Ok(Err(error)) => {
+                        tracing::warn!(
+                            label,
+                            channel = %channel,
+                            error = %error,
+                            "Redis pubsub connect failed; retrying"
+                        );
+                        tokio::time::sleep(Duration::from_secs(backoff_secs)).await;
+                        backoff_secs = (backoff_secs * 2).min(30);
+                        continue;
+                    }
+                    Err(_) => {
+                        tracing::warn!(
+                            label,
+                            channel = %channel,
+                            "Redis pubsub connect timed out; retrying"
+                        );
+                        tokio::time::sleep(Duration::from_secs(backoff_secs)).await;
+                        backoff_secs = (backoff_secs * 2).min(30);
+                        continue;
+                    }
+                };
+                if let Err(error) = pubsub.subscribe(&channel).await {
+                    tracing::warn!(
+                        label,
+                        channel = %channel,
+                        error = %error,
+                        "Redis pubsub subscribe failed; retrying"
+                    );
+                    tokio::time::sleep(Duration::from_secs(backoff_secs)).await;
+                    backoff_secs = (backoff_secs * 2).min(30);
+                    continue;
+                }
+                tracing::info!(label, channel = %channel, "Subscribed to Redis invalidation channel");
+                backoff_secs = 1;
+                let mut stream = pubsub.on_message();
+                while let Some(msg) = stream.next().await {
+                    if let Ok(payload) = msg.get_payload::<String>() {
+                        on_message(payload);
+                    }
+                }
+                tracing::warn!(label, channel = %channel, "Redis pubsub stream ended; reconnecting");
+                tokio::time::sleep(Duration::from_secs(backoff_secs)).await;
+            }
+        }))
+    }
+
     /// # Errors
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn ttl(&self, key: &str) -> Result<i64> {
-        self.run("TTL", |mut conn| async move { conn.ttl(key).await })
+        self.run_idempotent("TTL", |mut conn| async move { conn.ttl(key).await })
             .await
     }
 
@@ -536,7 +773,7 @@ impl RedisClient {
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn pttl(&self, key: &str) -> Result<i64> {
-        self.run("PTTL", |mut conn| async move { conn.pttl(key).await })
+        self.run_idempotent("PTTL", |mut conn| async move { conn.pttl(key).await })
             .await
     }
 
@@ -544,7 +781,7 @@ impl RedisClient {
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn scan_match(&self, pattern: &str) -> Result<Vec<String>> {
-        self.run("SCAN", |mut conn| async move {
+        self.run_idempotent("SCAN", |mut conn| async move {
             let mut cursor: u64 = 0;
             let mut keys = Vec::new();
             loop {
@@ -571,7 +808,7 @@ impl RedisClient {
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn memory_usage(&self, key: &str) -> Result<u64> {
-        self.run("MEMORY USAGE", |mut conn| async move {
+        self.run_idempotent("MEMORY USAGE", |mut conn| async move {
             redis::cmd("MEMORY")
                 .arg("USAGE")
                 .arg(key)
@@ -585,7 +822,7 @@ impl RedisClient {
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn dbsize(&self) -> Result<u64> {
-        self.run("DBSIZE", |mut conn| async move {
+        self.run_idempotent("DBSIZE", |mut conn| async move {
             redis::cmd("DBSIZE").query_async(&mut conn).await
         })
         .await
@@ -598,7 +835,7 @@ impl RedisClient {
         if keys.is_empty() {
             return Ok(0);
         }
-        self.run("DEL", |mut conn| async move {
+        self.run_idempotent("DEL", |mut conn| async move {
             redis::cmd("DEL").arg(keys).query_async(&mut conn).await
         })
         .await
@@ -611,7 +848,7 @@ impl RedisClient {
         if keys.is_empty() {
             return Ok(Vec::new());
         }
-        self.run("MEMORY USAGES", |mut conn| async move {
+        self.run_idempotent("MEMORY USAGES", |mut conn| async move {
             let mut pipe = redis::pipe();
             for key in keys {
                 pipe.cmd("MEMORY").arg("USAGE").arg(key);
@@ -624,7 +861,8 @@ impl RedisClient {
 
 #[cfg(test)]
 mod tests {
-    use super::manager_config;
+    use super::{RedisClient, build_redis_url_from_config, manager_config};
+    use crate::redis::config::RedisConfig;
     use std::time::Duration;
 
     #[test]
@@ -635,5 +873,32 @@ mod tests {
             Some(Duration::from_millis(1500))
         );
         assert_eq!(config.response_timeout(), Some(Duration::from_millis(2000)));
+    }
+
+    #[test]
+    fn password_with_special_chars_is_percent_encoded_into_valid_redis_url() {
+        let cfg = RedisConfig {
+            url: String::new(),
+            host: Some("redis.internal".to_string()),
+            port: Some(6379),
+            db: Some(2),
+            password: Some("p@ss:w/rd?#1%".to_string()),
+            ..RedisConfig::default()
+        };
+        let url = build_redis_url_from_config(&cfg).expect("build url");
+        assert!(url.contains("p%40ss%3Aw%2Frd%3F%231%25@redis.internal:6379/2"));
+        redis::Client::open(url.as_str()).expect("redis::Client::open must accept encoded password");
+    }
+
+    #[tokio::test]
+    async fn unconnected_client_returns_error_instead_of_panicking_on_empty_pool() {
+        let client = RedisClient::unconnected("redis://127.0.0.1:6379").expect("unconnected");
+        let err = client.get_bytes("k").await.expect_err("must return Err");
+        assert!(err.to_string().contains("no active connections"));
+        let err_nx = client
+            .set_nx_ex("k", b"1", 10)
+            .await
+            .expect_err("must return Err");
+        assert!(err_nx.to_string().contains("no active connections"));
     }
 }

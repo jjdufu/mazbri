@@ -5,7 +5,7 @@ use tokio::sync::RwLock;
 use tokio::time::{Duration, interval};
 use tracing::warn;
 const HEALTH_SCRAPE_INTERVAL_SECS: u64 = 15;
-const HEALTH_SCRAPE_TIMEOUT_SECS: u64 = 5;
+const HEALTH_SCRAPE_TIMEOUT_SECS: u64 = 2;
 const HEALTH_SCRAPE_BATCH_SIZE: usize = 8;
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum ServiceHealthState {
@@ -54,10 +54,7 @@ impl ServiceHealthCache {
         let cache = self.inner.clone();
         tokio::spawn(async move {
             let mut tick = interval(Duration::from_secs(HEALTH_SCRAPE_INTERVAL_SECS));
-            let client = reqwest::Client::builder()
-                .timeout(Duration::from_secs(HEALTH_SCRAPE_TIMEOUT_SECS))
-                .build()
-                .unwrap_or_else(|_| reqwest::Client::new());
+            let client = build_health_scrape_client();
             let mut cursor = 0usize;
             let mut known: HashSet<String> = HashSet::new();
             let nodes_url = format!("{}/nodes", cert_service_url.trim_end_matches('/'));
@@ -190,6 +187,16 @@ async fn scrape_service_health(client: &reqwest::Client, url: &str) -> anyhow::R
     Ok(resp.status().is_success())
 }
 
+fn build_health_scrape_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(HEALTH_SCRAPE_TIMEOUT_SECS))
+        .connect_timeout(Duration::from_secs(HEALTH_SCRAPE_TIMEOUT_SECS))
+        .redirect(reqwest::redirect::Policy::none())
+        .no_proxy()
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -267,7 +274,7 @@ mod tests {
 
     #[tokio::test]
     async fn scrape_admin_health_ok_and_unavailable() -> anyhow::Result<()> {
-        let client = reqwest::Client::new();
+        let client = build_health_scrape_client();
         let ok = serve(Router::new().route("/health", get(|| async { "OK" }))).await?;
         assert!(scrape_service_health(&client, &ok).await?);
         let bad = serve(Router::new().route(
@@ -276,6 +283,19 @@ mod tests {
         ))
         .await?;
         assert!(!scrape_service_health(&client, &bad).await?);
+        let redirect_target = ok.clone();
+        let redirected = serve(Router::new().route(
+            "/health",
+            get(move || {
+                let target = redirect_target.clone();
+                async move { axum::response::Redirect::temporary(&target) }
+            }),
+        ))
+        .await?;
+        assert!(
+            !scrape_service_health(&client, &redirected).await?,
+            "health scraper must not follow HTTP redirects"
+        );
         Ok(())
     }
 }

@@ -1,10 +1,12 @@
 mod config;
 mod server;
 mod tarpc_service;
+
 use crate::config::CacheServiceConfig;
 use anyhow::Result;
 use mazbri_core::create_pool;
 use mazbri_service::{init_service_runtime, run_toml_config_service};
+
 #[tokio::main]
 async fn main() -> Result<()> {
     mazbri_core::metrics::init_service_metrics("mazbri-cache");
@@ -19,6 +21,13 @@ async fn main() -> Result<()> {
         }
         let db = create_pool(&runtime.ctx.config.database, None).await?;
         tracing::info!("Connected to database");
+        let platform_watch = if let Some(ref platform_cfg) = runtime.ctx.config.platform_database {
+            let pool = create_pool(platform_cfg, None).await?;
+            tracing::info!("Connected to platform database for cache_l1_version watch");
+            Some((pool, platform_cfg.clone(), runtime.ctx.config.config_watch.clone()))
+        } else {
+            None
+        };
         let admin_state = runtime.start_admin(&runtime.ctx.config.admin, Some(db.clone()))?;
         let cache_config = mazbri_cache::CacheConfig {
             default_ttl: runtime.ctx.config.cache.default_ttl,
@@ -35,6 +44,7 @@ async fn main() -> Result<()> {
         let server_future = server::serve(
             addr,
             db,
+            platform_watch,
             cache_config,
             redis,
             Some(runtime.ctx.tls_acceptor.clone()),

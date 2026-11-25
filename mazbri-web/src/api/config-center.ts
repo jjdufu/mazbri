@@ -14,15 +14,20 @@ import type {
 } from "@/types/api/config-center";
 import { API_BASE_PATH, API_PATHS } from "@/config/api";
 const BASE_PATH = `${API_BASE_PATH}${API_PATHS.CONFIG_CENTER}`;
-export function fetchConfigList(params: ConfigListQuery) {
+export function fetchConfigList(
+  params: ConfigListQuery,
+  signal?: AbortSignal,
+) {
   return request.get<ConfigListResponse>({
     url: `${BASE_PATH}/configs`,
     params,
+    signal,
   });
 }
-export function fetchConfig(serviceName: string) {
+export function fetchConfig(serviceName: string, signal?: AbortSignal) {
   return request.get<ConfigEntry>({
     url: `${BASE_PATH}/configs/${serviceName}`,
+    signal,
   });
 }
 export function createConfig(data: CreateConfigRequest) {
@@ -48,10 +53,14 @@ export function deleteConfig(serviceName: string) {
     showSuccessMessage: true,
   });
 }
-export function fetchConfigHistory(params: HistoryListQuery) {
+export function fetchConfigHistory(
+  params: HistoryListQuery,
+  signal?: AbortSignal,
+) {
   return request.get<HistoryListResponse>({
     url: `${BASE_PATH}/configs/${params.service_name}/history`,
     params: { page: params.page, page_size: params.page_size },
+    signal,
   });
 }
 export function rollbackConfig(data: RollbackRequest) {
@@ -60,9 +69,10 @@ export function rollbackConfig(data: RollbackRequest) {
     showSuccessMessage: true,
   });
 }
-export function fetchServiceList() {
+export function fetchServiceList(signal?: AbortSignal) {
   return request.get<ServiceListResponse>({
     url: `${BASE_PATH}/services`,
+    signal,
   });
 }
 export function exportConfigs(params: ExportQuery) {

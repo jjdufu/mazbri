@@ -213,6 +213,7 @@ async fn build_supplier_config(
         .config
         .clone()
         .unwrap_or_else(|| serde_json::json!({}));
+    crate::services::upstream_connector::reject_client_enc_in_supplier_config(&config_raw)?;
     if let Some(obj) = config_raw.as_object_mut()
         && let Some(ref t) = supplier.upstream_type
     {
@@ -719,6 +720,7 @@ pub async fn validate_config_payload(
     config: &serde_json::Value,
     upstream_url: &str,
 ) -> Result<serde_json::Value, ApiError> {
+    crate::services::upstream_connector::reject_client_enc_in_supplier_config(config)?;
     let mut cfg = SupplierConfig::parse_and_validate(config)
         .map_err(|e| ApiError::validation(format!("UPSTREAM_CONFIG_INVALID: {e}")))?;
     cfg = cfg.normalize_disabled_sections();
@@ -728,6 +730,18 @@ pub async fn validate_config_payload(
         ssrf::validate_public_http_url(checker, upstream_url)
             .await
             .map_err(|e| ApiError::validation(format!("UPSTREAM_SSRF_BLOCKED: {e}")))?;
+        if let Some(ref auth) = cfg.auth_flow
+            && auth.enabled
+            && !auth.token_url.trim().is_empty()
+        {
+            ssrf::validate_public_http_url(checker, &auth.token_url)
+                .await
+                .map_err(|e| {
+                    ApiError::validation(format!(
+                        "UPSTREAM_SSRF_BLOCKED (auth_flow.token_url): {e}"
+                    ))
+                })?;
+        }
     }
     // dry-run/validate 不落库：返回脱敏预览用明文结构；不在此加密以免误导
     cfg.to_json_value()

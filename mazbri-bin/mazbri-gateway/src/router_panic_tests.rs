@@ -103,3 +103,18 @@ fn release_profile_unwinds_so_catch_panic_is_effective() {
     assert!(release.contains("panic = \"unwind\""), "{release}");
     assert!(!release.contains("panic = \"abort\""));
 }
+
+#[test]
+fn public_routes_do_not_expose_legacy_metrics_or_admin_routes_status() {
+    let source = include_str!("router.rs");
+    let fn_start = source.find("fn build_public_routes").unwrap();
+    let fn_body = &source[fn_start..fn_start + source[fn_start..].find("\n}\n").unwrap()];
+    assert!(
+        !fn_body.contains("\"/metrics\""),
+        ":8888 public router must not mount /metrics"
+    );
+    assert!(
+        !fn_body.contains("\"/admin/routes/status\""),
+        ":8888 public router must not mount /admin/routes/status"
+    );
+}

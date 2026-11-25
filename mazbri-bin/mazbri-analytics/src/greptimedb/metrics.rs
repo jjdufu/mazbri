@@ -187,9 +187,40 @@ pub struct MetricQueryParams {
     pub end: i64,
     /// 步长（秒）；缺省按范围自适应
     #[serde(default)]
-    pub step: Option<u64>,
+    pub step: Option<i64>,
     #[serde(default)]
     pub service: Option<String>,
+}
+
+/// 单次时序查询允许的最大采样区间数 `(end - start) / step <= 1500`。
+pub const MAX_TIMESERIES_POINTS: u64 = 1_500;
+
+/// 校验并解析时序步长：`end <= start`、`step <= 0` 或采样点数超 1500 时返回错误。
+///
+/// # Errors
+///
+/// 时间窗或步长越界时返回描述字符串（由 Handler 映射为 HTTP `400`）。
+pub fn resolve_timeseries_step(
+    start: i64,
+    end: i64,
+    step: Option<i64>,
+) -> std::result::Result<u64, String> {
+    if start >= end {
+        return Err("start 必须小于 end".to_string());
+    }
+    let range_secs = u64::try_from(end - start).map_err(|_| "时间窗跨度无效".to_string())?;
+    let resolved = match step {
+        Some(raw) if raw <= 0 => return Err("step 必须大于 0".to_string()),
+        Some(raw) => u64::try_from(raw).map_err(|_| "step 必须大于 0".to_string())?,
+        None => auto_step(range_secs),
+    };
+    let points = range_secs.div_ceil(resolved);
+    if points > MAX_TIMESERIES_POINTS {
+        return Err(format!(
+            "采样点数过多（{points} > {MAX_TIMESERIES_POINTS}），请增大 step 或缩小查询时间窗"
+        ));
+    }
+    Ok(resolved)
 }
 #[derive(Debug, Clone, Serialize)]
 pub struct MetricDataPoint {
@@ -431,7 +462,10 @@ impl GreptimeDBClient {
             self.query_billing_pipeline_overview(REALTIME_LOOKBACK_SECS),
             self.prometheus_instant_value_at("sum(active_connections)", None),
             self.prometheus_instant_value_at("sum(active_proxy_connections)", None),
-            self.prometheus_instant_value_at("count(circuit_breaker_state > 0)", None),
+            self.prometheus_instant_value_at(
+                "count(max by (channel_code, name) (circuit_breaker_state) == 2)",
+                None
+            ),
             self.prometheus_instant_value_at("min(cert_min_expiry_days)", None),
         )
     }
@@ -650,11 +684,8 @@ impl GreptimeDBClient {
                 .ok_or_else(|| {
                     AnalyticsError::Config(format!("Unsupported metric: {}", params.metric))
                 })?;
-            let range_secs = u64::try_from(params.end - params.start)
-                .ok()
-                .filter(|r| *r > 0)
-                .ok_or_else(|| AnalyticsError::Config("start 必须小于 end".to_string()))?;
-            let step = params.step.unwrap_or_else(|| auto_step(range_secs)).max(1);
+            let step = resolve_timeseries_step(params.start, params.end, params.step)
+                .map_err(AnalyticsError::Config)?;
             let query = build_metric_query(
                 metric.key,
                 params.service.as_deref(),
@@ -1679,7 +1710,7 @@ fn metric_catalog_traffic() -> Vec<MetricCatalogItem> {
 const UPSTREAM_BILLING_CATALOG: &[(&str, &str, &str, &str)] = &[
     (
         "breaker_state",
-        "产品熔断状态（0 关 / 1 半开 / 2 开）",
+        "通道熔断状态（0 关 / 1 半开 / 2 开）",
         "state",
         "step",
     ),
@@ -1976,7 +2007,7 @@ fn build_metric_query(
 /// 上游、熔断与计费链路指标（步骤 07 页面 3.2 / 6.1）。
 fn upstream_billing_query(metric: &str, window: u64) -> Option<String> {
     Some(match metric {
-        "breaker_state" => "max by (name) (circuit_breaker_state)".to_string(),
+        "breaker_state" => "max by (channel_code, name) (circuit_breaker_state)".to_string(),
         "cbpro_state" => "max(cbpro_current_state)".to_string(),
         "cbpro_transitions" => {
             format!("sum by (to_state) (increase(cbpro_state_transitions_total[{window}s]))")
@@ -2150,11 +2181,22 @@ mod tests {
     fn upstream_billing_metrics_split_by_labels() -> Result<()> {
         let t = default_service_targets();
         let q = build_metric_query("breaker_state", None, &t, 60)?;
-        assert_eq!(q, "max by (name) (circuit_breaker_state)");
+        assert_eq!(q, "max by (channel_code, name) (circuit_breaker_state)");
         let q = build_metric_query("upstream_attempts", None, &t, 60)?;
         assert!(q.contains("by (mode, result)") && q.contains("[60s]"));
         assert!(build_metric_query("no_such_metric", None, &t, 60).is_err());
         Ok(())
+    }
+
+    #[test]
+    fn timeseries_step_guardrail_enforces_positive_and_1500_points() {
+        assert_eq!(resolve_timeseries_step(0, 1_500, Some(1)), Ok(1));
+        assert!(resolve_timeseries_step(0, 1_501, Some(1)).is_err());
+        assert!(resolve_timeseries_step(0, 86_400, Some(1)).is_err());
+        assert!(resolve_timeseries_step(0, 300, Some(0)).is_err());
+        assert!(resolve_timeseries_step(0, 300, Some(-10)).is_err());
+        assert!(resolve_timeseries_step(300, 300, Some(15)).is_err());
+        assert_eq!(resolve_timeseries_step(0, 3_600, None), Ok(15));
     }
 
     #[test]

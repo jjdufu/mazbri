@@ -14,6 +14,7 @@ use crate::greptimedb::{
     RequestLogAggregation, RequestLogAggregationParams, RequestLogEntry, RequestLogQueryParams,
     RequestLogQueryResult,
 };
+use crate::list_query::BoundCond;
 use std::collections::HashMap;
 
 const MAX_RAW_FALLBACK_QUERIES: usize = 4;
@@ -58,14 +59,11 @@ impl ClickHouseClient {
         params: &RequestLogQueryParams,
     ) -> Result<RequestLogQueryResult> {
         let (count_sql, data_sql) = if let Some(universe_limit) = params.latest_universe_limit {
-            // Latest-N: event-target scope → top N by time → then apply search/filters.
+            // Latest-N: event-target scope → top N by time → then apply search/filters (without time bounds).
             let scope_conds =
                 crate::clickhouse::queries::build_request_log_scope_conditions(params);
-            let mut filter_conds =
-                crate::clickhouse::queries::build_request_log_filter_conditions(params)?;
-            // Time bounds must not appear inside latest-universe mode.
-            filter_conds
-                .retain(|c| !c.starts_with("timestamp >= ") && !c.starts_with("timestamp <= "));
+            let filter_conds =
+                crate::clickhouse::queries::build_request_log_filter_conditions(params, false)?;
             let universe_where = build_where_clause(&scope_conds);
             let outer_where = build_where_clause(&filter_conds);
             (
@@ -91,7 +89,9 @@ impl ClickHouseClient {
             )
         };
         let total = self.execute_count_query_inner(&count_sql).await?;
-        let rows = self.execute_query::<RequestLogRow>(&data_sql).await?;
+        let rows = self
+            .execute_bound_query::<RequestLogRow>(&data_sql.sql, &data_sql.binds)
+            .await?;
         let logs: Vec<RequestLogEntry> = rows.into_iter().map(Into::into).collect();
         tracing::debug!("Queried {} request logs (total: {})", logs.len(), total);
         Ok(RequestLogQueryResult { logs, total })
@@ -108,12 +108,15 @@ impl ClickHouseClient {
         bucket_seconds: u32,
     ) -> Result<Vec<CallHistogramRow>> {
         let conditions = build_request_log_conditions(params)?;
-        let sql = crate::clickhouse::queries::build_request_logs_histogram_sql(
+        let bound = crate::clickhouse::queries::build_request_logs_histogram_sql(
             &build_where_clause(&conditions),
             bucket_seconds,
         );
-        self.with_query_timeout("request_logs_histogram", self.execute_query(&sql))
-            .await
+        self.with_query_timeout(
+            "request_logs_histogram",
+            self.execute_bound_query(&bound.sql, &bound.binds),
+        )
+        .await
     }
 
     /// 指定请求的阶段耗时；`request_ids` 为空时直接返回空。
@@ -125,11 +128,11 @@ impl ClickHouseClient {
         if request_ids.is_empty() {
             return Ok(Vec::new());
         }
-        let sql = crate::clickhouse::queries::build_request_stages_sql(request_ids)?;
+        let bound = crate::clickhouse::queries::build_request_stages_sql(request_ids)?;
         let rows = self
             .with_query_timeout(
                 "request_stage_logs",
-                self.execute_query::<StageLogRow>(&sql),
+                self.execute_bound_query::<StageLogRow>(&bound.sql, &bound.binds),
             )
             .await?;
         Ok(rows.into_iter().map(Into::into).collect())
@@ -153,9 +156,6 @@ impl ClickHouseClient {
         &self,
         params: &RequestLogAggregationParams,
     ) -> Result<RequestLogAggregation> {
-        // Always aggregate from the deduplicated detail table (request_logs FINAL). The former
-        // per-minute stats MV counted every at-least-once redelivery and had no `service`
-        // dimension (gateway + bypass rows of one request were both counted).
         self.aggregate_request_logs_from_raw(params).await
     }
 
@@ -164,7 +164,7 @@ impl ClickHouseClient {
         params: &RequestLogAggregationParams,
     ) -> Result<RequestLogAggregation> {
         let conditions = build_aggregation_conditions(params)?;
-        let where_clause = format!(" WHERE {}", conditions.join(" AND "));
+        let where_clause = build_where_clause(&conditions);
         let raw_query_plan = RawRequestAggregationPlan::from_params(params);
         debug_assert!(raw_query_plan.query_budget() <= MAX_RAW_FALLBACK_QUERIES);
         tracing::info!(
@@ -175,7 +175,9 @@ impl ClickHouseClient {
             "Executing request aggregation on request_logs FINAL"
         );
         let summary_sql = build_aggregation_summary_sql(&where_clause);
-        let summary_results = self.execute_query::<SummaryRow>(&summary_sql).await?;
+        let summary_results = self
+            .execute_bound_query::<SummaryRow>(&summary_sql.sql, &summary_sql.binds)
+            .await?;
         let summary = summary_results.into_iter().next().unwrap_or_default();
 
         if summary.total == 0 {
@@ -212,7 +214,9 @@ impl ClickHouseClient {
                 .expect("time breakdown requires group_by_time");
             let time_expr = get_time_bucket_expression(group_by);
             let time_sql = build_aggregation_by_time_sql(&time_expr, &where_clause);
-            let time_rows = self.execute_query::<TimeBucketRow>(&time_sql).await?;
+            let time_rows = self
+                .execute_bound_query::<TimeBucketRow>(&time_sql.sql, &time_sql.binds)
+                .await?;
             time_rows
                 .into_iter()
                 .map(TimeBucketRow::into_time_bucket)
@@ -239,8 +243,10 @@ impl ClickHouseClient {
         ))
     }
 
-    async fn query_grouped_counts(&self, sql: &str) -> Result<HashMap<String, u64>> {
-        let results = self.execute_query::<GroupedCountRow>(sql).await?;
+    async fn query_grouped_counts(&self, bound: &BoundCond) -> Result<HashMap<String, u64>> {
+        let results = self
+            .execute_bound_query::<GroupedCountRow>(&bound.sql, &bound.binds)
+            .await?;
         let mut result = HashMap::new();
         for row in results {
             result.insert(row.key, row.cnt);

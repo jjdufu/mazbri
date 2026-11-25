@@ -277,6 +277,7 @@ impl TestRouterState {
             token_type: Some("access".to_string()),
             sid: uuid::Uuid::new_v4().to_string(),
             sxp: Some(now + 3600),
+            auth_epoch: 0,
         }
     }
 
@@ -1011,7 +1012,7 @@ async fn zip_06_golden_archive_imports_and_export_uses_standard_deflate() {
         state.ctx(),
         &state.claims(),
         None,
-        &crate::handlers::config_center::ExportParams {},
+        &crate::handlers::config_center::ExportParams::default(),
         "req-1",
         "trace-1",
     )

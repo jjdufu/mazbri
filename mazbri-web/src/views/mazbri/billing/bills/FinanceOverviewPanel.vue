@@ -169,6 +169,7 @@ import {
   type FinanceRanks,
 } from "@/api/billing-ops";
 import type { ColumnOption } from "@/types/component";
+import { useLatestRequest } from "@/composables/useLatestRequest";
 import { getStatusLabel } from "@/utils/display-labels";
 import { formatDays, formatMoney } from "@/utils/format";
 
@@ -191,7 +192,6 @@ const tabActionsEl = inject<Ref<HTMLElement | null> | null>(
 const { t } = useI18n();
 const days = ref(30);
 const refreshInterval = ref(60);
-const loading = ref(false);
 const overview = ref<FinanceOverview | null>(null);
 const ranks = ref<FinanceRanks | null>(null);
 const balances = ref<BalanceRow[]>([]);
@@ -383,21 +383,24 @@ const balanceColumns = computed<ColumnOption<BalanceRow>[]>(() => [
   },
 ]);
 
+const financeLoader = useLatestRequest(async (ctx, targetDays: number) => {
+  const [ov, rk, bal] = await Promise.all([
+    fetchFinanceOverview(targetDays, ctx.signal),
+    fetchFinanceRanks(targetDays, 10, ctx.signal),
+    fetchFinanceBalances(50, ctx.signal),
+  ]);
+  if (!ctx.isLatest()) return;
+  overview.value = ov;
+  ranks.value = rk;
+  balances.value = bal ?? [];
+});
+const { loading } = financeLoader;
+
 async function reload() {
-  loading.value = true;
   try {
-    const [ov, rk, bal] = await Promise.all([
-      fetchFinanceOverview(days.value),
-      fetchFinanceRanks(days.value, 10),
-      fetchFinanceBalances(50),
-    ]);
-    overview.value = ov;
-    ranks.value = rk;
-    balances.value = bal ?? [];
+    await financeLoader.run(days.value);
   } catch {
     ElMessage.error(t("ops.finance.loadFailed"));
-  } finally {
-    loading.value = false;
   }
 }
 

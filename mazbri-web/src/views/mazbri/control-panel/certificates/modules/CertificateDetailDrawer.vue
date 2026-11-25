@@ -409,6 +409,7 @@ import CommonDrawerHeader from "@/components/common/drawer-header/index.vue";
 import CommonInlineHint from "@/components/common/inline-hint/index.vue";
 import CopyableText from "@/components/common/copyable-text/index.vue";
 import { runWithLoading } from "@/composables/useAsyncState";
+import { useLatestRequest } from "@/composables/useLatestRequest";
 import { getStatusLabel, getStatusType } from "@/utils/display-labels";
 import {
   EMPTY_PLACEHOLDER,
@@ -442,9 +443,7 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
-const loading = ref(false);
 const loadingCa = ref(false);
-const unlockingKey = ref(false);
 const downloadingBundle = ref(false);
 const renewing = ref(false);
 const revoking = ref(false);
@@ -520,11 +519,57 @@ const expiryToneClass = computed(() => {
   return "";
 });
 
+const publicLoader = useLatestRequest(async (ctx, requestedId: string) => {
+  const [detail, autoRenew] = await Promise.all([
+    fetchCertificateDetail(requestedId, ctx.signal),
+    getAutoRenewalConfig(requestedId, ctx.signal).catch(() => null),
+  ]);
+  if (!ctx.isLatest() || !visible.value || props.certId !== requestedId) {
+    return;
+  }
+  cert.value = detail;
+  if (autoRenew) {
+    autoRenewForm.enabled = autoRenew.enabled;
+    autoRenewForm.threshold_days = autoRenew.threshold_days;
+    autoRenewForm.validity_days = autoRenew.validity_days;
+    nextRenewalAt.value = autoRenew.next_renewal_at;
+  } else {
+    autoRenewForm.enabled = false;
+    autoRenewForm.threshold_days = 30;
+    autoRenewForm.validity_days = 365;
+    nextRenewalAt.value = null;
+  }
+});
+const { loading } = publicLoader;
+
+const unlockRunner = useLatestRequest(async (ctx, requestedId: string) => {
+  const full = await fetchCertificateFullWithPrivateKey(
+    requestedId,
+    ctx.signal,
+  );
+  if (
+    !ctx.isLatest() ||
+    !visible.value ||
+    props.certId !== requestedId ||
+    cert.value?.id !== requestedId
+  ) {
+    return;
+  }
+  keyPem.value = full.key_pem;
+  if (full.ca_cert_pem && !caPem.value) {
+    caPem.value = full.ca_cert_pem;
+  }
+});
+const { loading: unlockingKey } = unlockRunner;
+
 function clearUnlockedPrivateKey(): void {
+  unlockRunner.cancel();
   keyPem.value = "";
 }
 
 function resetDrawerState(): void {
+  publicLoader.cancel();
+  unlockRunner.cancel();
   cert.value = null;
   caPem.value = "";
   keyPem.value = "";
@@ -538,27 +583,11 @@ function resetDrawerState(): void {
 async function loadPublicDrawerData(id: string): Promise<void> {
   clearUnlockedPrivateKey();
   if (props.authorizationDisabled) {
+    publicLoader.cancel();
     cert.value = null;
     return;
   }
-  await runWithLoading(loading, async () => {
-    const [detail, autoRenew] = await Promise.all([
-      fetchCertificateDetail(id),
-      getAutoRenewalConfig(id).catch(() => null),
-    ]);
-    cert.value = detail;
-    if (autoRenew) {
-      autoRenewForm.enabled = autoRenew.enabled;
-      autoRenewForm.threshold_days = autoRenew.threshold_days;
-      autoRenewForm.validity_days = autoRenew.validity_days;
-      nextRenewalAt.value = autoRenew.next_renewal_at;
-    } else {
-      autoRenewForm.enabled = false;
-      autoRenewForm.threshold_days = 30;
-      autoRenewForm.validity_days = 365;
-      nextRenewalAt.value = null;
-    }
-  }).catch((error) => {
+  await publicLoader.run(id).catch((error) => {
     logger.error("Failed to load public certificate detail:", error);
   });
 }
@@ -577,13 +606,8 @@ async function ensureCaLoaded(): Promise<string> {
 
 async function handleUnlockPrivateKey(): Promise<void> {
   if (!cert.value || props.authorizationDisabled || unlockingKey.value) return;
-  await runWithLoading(unlockingKey, async () => {
-    const full = await fetchCertificateFullWithPrivateKey(cert.value!.id);
-    keyPem.value = full.key_pem;
-    if (full.ca_cert_pem && !caPem.value) {
-      caPem.value = full.ca_cert_pem;
-    }
-  }).catch((error) => {
+  const requestedId = cert.value.id;
+  await unlockRunner.run(requestedId).catch((error) => {
     if (!isMfaStepUpCancelled(error)) {
       logger.error("Failed to unlock certificate private key:", error);
     }

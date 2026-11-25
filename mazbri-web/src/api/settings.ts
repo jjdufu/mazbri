@@ -12,6 +12,11 @@ const SYSTEM_SETTINGS_TTL_MS = 10_000;
 let systemSettingsCache: { data: SystemSettings; at: number } | null = null;
 let systemSettingsInflight: Promise<SystemSettings> | null = null;
 
+export function resetSystemSettingsCache(): void {
+  systemSettingsCache = null;
+  systemSettingsInflight = null;
+}
+
 export function fetchSystemSettings(force = false): Promise<SystemSettings> {
   if (!force && systemSettingsInflight) return systemSettingsInflight;
   if (

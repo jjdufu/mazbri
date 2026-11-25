@@ -12,6 +12,53 @@ use crate::auth_digest::{
 use crate::ssrf::{SsrfChecker, extract_ssrf_error};
 use crate::types::{BodyKind, ExecuteError, OutboundResponse, WireClock};
 
+/// Maximum upstream business response body size (16 MiB).
+pub const MAX_UPSTREAM_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
+
+/// Streams a `reqwest::Response` body up to `max_bytes`, failing immediately if
+/// `Content-Length` or actual streamed bytes exceed `max_bytes` or if the stream breaks mid-flight.
+///
+/// # Errors
+///
+/// Returns [`ExecuteError::UpstreamTransport`] on body truncation, timeout, or size limit overflow.
+pub async fn read_body_bounded(
+    mut resp: reqwest::Response,
+    max_bytes: usize,
+) -> Result<Vec<u8>, ExecuteError> {
+    if let Some(declared_len) = resp.content_length()
+        && declared_len > max_bytes as u64
+    {
+        return Err(ExecuteError::UpstreamTransport(format!(
+            "upstream response content-length {declared_len} exceeds limit of {max_bytes} bytes"
+        )));
+    }
+    let init_cap = resp
+        .content_length()
+        .and_then(|n| usize::try_from(n).ok())
+        .map_or(0, |n| n.min(64 * 1024));
+    let mut out = Vec::with_capacity(init_cap);
+    loop {
+        match resp.chunk().await {
+            Ok(Some(chunk)) => {
+                if out.len().saturating_add(chunk.len()) > max_bytes {
+                    return Err(ExecuteError::UpstreamTransport(format!(
+                        "upstream response body exceeds limit of {max_bytes} bytes"
+                    )));
+                }
+                out.extend_from_slice(&chunk);
+            }
+            Ok(None) => return Ok(out),
+            Err(e) => {
+                return Err(if e.is_timeout() {
+                    ExecuteError::UpstreamTransport(format!("read timeout: {e}"))
+                } else {
+                    ExecuteError::UpstreamTransport(format!("response body stream error: {e}"))
+                });
+            }
+        }
+    }
+}
+
 pub struct HttpCall<'a> {
     pub method: &'a str,
     pub url: &'a str,
@@ -138,7 +185,15 @@ pub async fn send_http_timed(
             resp_headers.insert(key.as_str().to_string(), str_val.to_string());
         }
     }
-    let body_bytes = resp.bytes().await.unwrap_or_default().to_vec();
+    let body_bytes = match read_body_bounded(resp, MAX_UPSTREAM_RESPONSE_BYTES).await {
+        Ok(bytes) => bytes,
+        Err(err) => {
+            if let Some(clock) = wire_clock {
+                clock.add(started.elapsed());
+            }
+            return Err(err);
+        }
+    };
     let wire_duration = started.elapsed();
     if let Some(clock) = wire_clock {
         clock.add(wire_duration);
@@ -243,20 +298,33 @@ pub fn http_version_label(version: reqwest::Version) -> &'static str {
     }
 }
 
+/// Joins `path` onto `base`, strictly locking the outbound `scheme://authority` to `base`.
+///
+/// Even if `path` starts with `http://`, `https://`, or `//`, `base`'s scheme, host, and port
+/// cannot be overridden.
 #[must_use]
 pub fn join_url(base: &str, path: &str) -> String {
-    if path.starts_with("http://") || path.starts_with("https://") {
-        return path.to_string();
+    let base_trimmed = base.trim().trim_end_matches('/');
+    if base_trimmed.is_empty() {
+        return String::new();
     }
-    let base = base.trim_end_matches('/');
-    if path.is_empty() || path == "/" {
-        return base.to_string();
+    let rel = path.trim_start_matches(['/', '\\']);
+    if rel.is_empty() {
+        return base_trimmed.to_string();
     }
-    if path.starts_with('/') {
-        format!("{base}{path}")
-    } else {
-        format!("{base}/{path}")
+    let candidate = format!("{base_trimmed}/{rel}");
+    if let Ok(base_parsed) = url::Url::parse(base_trimmed) {
+        let Ok(cand_parsed) = url::Url::parse(&candidate) else {
+            return base_trimmed.to_string();
+        };
+        if cand_parsed.scheme() != base_parsed.scheme()
+            || cand_parsed.host_str() != base_parsed.host_str()
+            || cand_parsed.port_or_known_default() != base_parsed.port_or_known_default()
+        {
+            return base_trimmed.to_string();
+        }
     }
+    candidate
 }
 
 #[must_use]
@@ -480,5 +548,40 @@ mod tests {
             headers.get("x-request-id").and_then(|v| v.to_str().ok()),
             Some("kept")
         );
+    }
+
+    #[test]
+    fn join_url_locks_scheme_and_authority_to_base_url() {
+        assert_eq!(
+            join_url("https://api.supplier.example/v1/", "/orders"),
+            "https://api.supplier.example/v1/orders"
+        );
+        assert_eq!(
+            join_url("https://api.supplier.example/v1", ""),
+            "https://api.supplier.example/v1"
+        );
+        assert_eq!(
+            join_url("https://api.supplier.example/v1", "/"),
+            "https://api.supplier.example/v1"
+        );
+        // Attempted full-URL override via http(s):// or scheme-relative // stays under base_url:
+        for hijack in [
+            "http://evil.example/steal",
+            "https://169.254.169.254/latest/meta-data/",
+            "//evil.example/steal",
+            "\\\\evil.example/steal",
+            "@evil.example/steal",
+        ] {
+            let joined = join_url("https://api.supplier.example:8443/v1", hijack);
+            let parsed = url::Url::parse(&joined).expect("valid joined URL");
+            assert_eq!(parsed.scheme(), "https", "hijack={hijack}");
+            assert_eq!(
+                parsed.host_str(),
+                Some("api.supplier.example"),
+                "hijack={hijack}"
+            );
+            assert_eq!(parsed.port_or_known_default(), Some(8443), "hijack={hijack}");
+        }
+        assert_eq!(join_url("", "http://evil.example/steal"), "");
     }
 }

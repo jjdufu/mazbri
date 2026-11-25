@@ -8,6 +8,34 @@ use crate::types::{BizError, BodyKind, ExecuteError};
 
 use super::{AdapterCtx, AdapterOutcome, require_object};
 
+fn validate_xml_ncname(name: &str) -> Result<(), ExecuteError> {
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return Err(ExecuteError::SpecInvalid(
+            "SOAP XML element name must not be empty".into(),
+        ));
+    };
+    let is_start = first.is_ascii_alphabetic()
+        || first == '_'
+        || (!first.is_ascii() && first.is_alphabetic());
+    if !is_start {
+        return Err(ExecuteError::SpecInvalid(format!(
+            "invalid SOAP XML NCName '{name}'"
+        )));
+    }
+    let valid_rest = chars.all(|c| {
+        c.is_ascii_alphanumeric()
+            || matches!(c, '_' | '-' | '.')
+            || (!c.is_ascii() && c.is_alphanumeric())
+    });
+    if !valid_rest {
+        return Err(ExecuteError::SpecInvalid(format!(
+            "invalid SOAP XML NCName '{name}'"
+        )));
+    }
+    Ok(())
+}
+
 pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError> {
     require_object(&ctx.input.payload)?;
     let spec = &ctx.input.spec;
@@ -15,6 +43,7 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
         .operation
         .as_deref()
         .ok_or_else(|| ExecuteError::SpecInvalid("soap operation missing".into()))?;
+    validate_xml_ncname(operation)?;
 
     let number_fields: Vec<String> = spec
         .soap
@@ -29,9 +58,7 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
 
     let inner = json_to_xml_children(&ctx.input.payload, &number_fields, &field_map)?;
     let xml = format!(
-        r#"<?xml version="1.0" encoding="utf-8"?><soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><{op}>{inner}</{op}></soap:Body></soap:Envelope>"#,
-        op = xml_escape(operation),
-        inner = inner
+        r#"<?xml version="1.0" encoding="utf-8"?><soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><{operation}>{inner}</{operation}></soap:Body></soap:Envelope>"#,
     );
 
     let mut headers = super::merge_request_headers(ctx.auth, spec);
@@ -116,6 +143,7 @@ fn json_to_xml_children(
     let mut out = String::new();
     for (k, v) in obj {
         let tag = field_map.get(k).cloned().unwrap_or_else(|| k.clone());
+        validate_xml_ncname(&tag)?;
         match v {
             serde_json::Value::Null => {
                 return Err(ExecuteError::SpecInvalid(format!(

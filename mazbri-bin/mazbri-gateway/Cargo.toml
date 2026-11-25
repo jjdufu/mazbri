@@ -73,6 +73,8 @@ rand = { workspace = true }
 base64 = { workspace = true }
 parking_lot = { workspace = true }
 arc-swap = { workspace = true }
+ipnetwork = { workspace = true }
+zeroize = { workspace = true }
 mimalloc = { workspace = true }
 
 [lints]

@@ -9,14 +9,13 @@
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Instant;
 
-use axum::extract::Request;
+use axum::extract::{Request, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::middleware::Next;
 use axum::response::Response;
 use mazbri_core::{
     AccessHttpFields, AccessLogEvent, AccessNetworkFields, AccessOutcomeFields, AccessRouteFields,
     AccessTimingFields, OutcomeClass, TraceContext, classify_outcome, emit_access_log,
-    resolve_client_ip,
 };
 
 use super::metrics::classify_error_class;
@@ -36,6 +35,7 @@ pub struct RejectionScope {
     pub product_id: Option<String>,
     pub method: Option<String>,
     pub path: Option<String>,
+    pub request_bytes: Option<u64>,
 }
 
 /// Shared slot inserted into request extensions; the auth layer fills it once the caller
@@ -46,6 +46,13 @@ pub struct RejectionSlot(Arc<Mutex<RejectionScope>>);
 impl RejectionSlot {
     pub fn set(&self, scope: RejectionScope) {
         *self.0.lock().unwrap_or_else(PoisonError::into_inner) = scope;
+    }
+
+    pub fn update_inner_request(&self, product_id: String, method: String, path: String) {
+        let mut guard = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        guard.product_id = Some(product_id);
+        guard.method = Some(method);
+        guard.path = Some(path);
     }
 
     fn take(&self) -> RejectionScope {
@@ -75,7 +82,11 @@ pub fn rejection_error_code(response: &Response) -> String {
     )
 }
 
-pub async fn rejection_access_log_middleware(mut req: Request, next: Next) -> Response {
+pub async fn rejection_access_log_middleware(
+    State(state): State<crate::router::AppState>,
+    mut req: Request,
+    next: Next,
+) -> Response {
     let started_at = Instant::now();
     let trace_context = req
         .extensions()
@@ -83,12 +94,11 @@ pub async fn rejection_access_log_middleware(mut req: Request, next: Next) -> Re
         .cloned()
         .unwrap_or_else(TraceContext::current);
     let headers = req.headers().clone();
-    let client_ip = resolve_client_ip(
-        &headers,
-        req.extensions()
-            .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
-            .map(|info| info.0),
-    );
+    let peer_addr = req
+        .extensions()
+        .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+        .map(|info| info.0);
+    let client_ip = state.ip_extractor.extract_or_unknown(&headers, peer_addr);
     let http_path = req.uri().path().to_string();
     let slot = RejectionSlot::default();
     req.extensions_mut().insert(slot.clone());
@@ -150,6 +160,11 @@ fn emit_rejection_log(log: &RejectionLog<'_>) {
         .path
         .clone()
         .unwrap_or_else(|| log.http_path.clone());
+    let request_bytes = log.scope.request_bytes.unwrap_or_else(|| {
+        header_str("content-length")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or_default()
+    });
     let event = AccessLogEvent::builder("mazbri-gateway")
         .message("gateway_rejected")
         .trace_context(log.trace_context)
@@ -171,9 +186,7 @@ fn emit_rejection_log(log: &RejectionLog<'_>) {
             route_template: path.clone(),
             path,
             status_code: log.status,
-            request_bytes: header_str("content-length")
-                .and_then(|v| v.parse().ok())
-                .unwrap_or_default(),
+            request_bytes,
             response_bytes: 0,
             user_agent: header_str("user-agent"),
         })
@@ -223,6 +236,8 @@ mod tests {
         assert_eq!(rejection_error_code(&response), "E4020");
         let response = StatusCode::UNAUTHORIZED.into_response();
         assert_eq!(rejection_error_code(&response), "E4010");
+        let response = StatusCode::UNPROCESSABLE_ENTITY.into_response();
+        assert_eq!(rejection_error_code(&response), "E4221");
     }
 
     #[test]
@@ -241,7 +256,10 @@ mod tests {
             tenant_code: Some("T".into()),
             ..RejectionScope::default()
         });
-        assert_eq!(slot.take().tenant_code.as_deref(), Some("T"));
+        slot.update_inner_request("8000000001".into(), "POST".into(), "/v1".into());
+        let taken = slot.take();
+        assert_eq!(taken.tenant_code.as_deref(), Some("T"));
+        assert_eq!(taken.product_id.as_deref(), Some("8000000001"));
         assert!(slot.take().tenant_code.is_none());
     }
 }

@@ -383,6 +383,7 @@ import CommonInlineHint from "@/components/common/inline-hint/index.vue";
 import MfaRequiredHint from "@/components/common/mfa-required-hint/index.vue";
 import ResourceTableShell from "@/components/common/resource-table-shell/index.vue";
 import SurfaceCardHeader from "@/components/common/surface-card-header/index.vue";
+import { useLatestRequest } from "@/composables/useLatestRequest";
 import { logger } from "@/utils/sys";
 import type { ColumnOption, PaginationConfig } from "@/types/component";
 import {
@@ -394,10 +395,8 @@ defineOptions({ name: "AccountTab" });
 const props = defineProps<{
   tenantCode: string;
 }>();
-const loading = ref(false);
 const recharging = ref(false);
 const refunding = ref(false);
-const transactionsLoading = ref(false);
 const account = ref<TenantAccount | null>(null);
 const spend = ref<TenantSpend | null>(null);
 const accountActions = ref<{
@@ -590,50 +589,59 @@ const getPaymentMethodLabel = (method?: string) => {
   };
   return labels[method] || method;
 };
+const accountLoader = useLatestRequest(async (ctx, code: string) => {
+  const to = new Date();
+  const from = new Date(to);
+  from.setUTCDate(from.getUTCDate() - 29);
+  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+  const [res, sp] = await Promise.all([
+    fetchTenantAccount(code, ctx.signal),
+    fetchTenantSpend(code, { from: fmt(from), to: fmt(to) }, ctx.signal),
+  ]);
+  if (!ctx.isLatest() || props.tenantCode !== code) return;
+  account.value = res;
+  spend.value = sp;
+  if (res.actions) {
+    accountActions.value = res.actions;
+  }
+});
+const { loading } = accountLoader;
+
 const loadAccount = async () => {
-  loading.value = true;
+  if (!props.tenantCode) return;
   try {
-    const to = new Date();
-    const from = new Date(to);
-    from.setUTCDate(from.getUTCDate() - 29);
-    const fmt = (d: Date) => d.toISOString().slice(0, 10);
-    const [res, sp] = await Promise.all([
-      fetchTenantAccount(props.tenantCode),
-      fetchTenantSpend(props.tenantCode, { from: fmt(from), to: fmt(to) }),
-    ]);
-    account.value = res;
-    spend.value = sp;
-    if (res.actions) {
-      accountActions.value = res.actions;
-    }
+    await accountLoader.run(props.tenantCode);
   } catch (error) {
     logger.error("Failed to load tenant account:", error);
-  } finally {
-    loading.value = false;
   }
 };
+
+const transactionsLoader = useLatestRequest(async (ctx, code: string) => {
+  const params: TransactionListQuery = {
+    page: pagination.page,
+    page_size: pagination.page_size,
+    transaction_type:
+      (transactionFilter.value as
+        | "credit"
+        | "refund"
+        | "charge"
+        | "adjustment"
+        | "payment"
+        | undefined) || undefined,
+  };
+  const res = await getTenantTransactions(code, params, ctx.signal);
+  if (!ctx.isLatest() || props.tenantCode !== code) return;
+  transactions.value = res.transactions;
+  transactionsTotal.value = res.pagination.total;
+});
+const { loading: transactionsLoading } = transactionsLoader;
+
 const loadTransactions = async () => {
-  transactionsLoading.value = true;
+  if (!props.tenantCode) return;
   try {
-    const params: TransactionListQuery = {
-      page: pagination.page,
-      page_size: pagination.page_size,
-      transaction_type:
-        (transactionFilter.value as
-          | "credit"
-          | "refund"
-          | "charge"
-          | "adjustment"
-          | "payment"
-          | undefined) || undefined,
-    };
-    const res = await getTenantTransactions(props.tenantCode, params);
-    transactions.value = res.transactions;
-    transactionsTotal.value = res.pagination.total;
+    await transactionsLoader.run(props.tenantCode);
   } catch (error) {
     logger.error("Failed to load transactions:", error);
-  } finally {
-    transactionsLoading.value = false;
   }
 };
 const handleFilterChange = () => {
@@ -715,9 +723,19 @@ const handleSubmitRefund = async () => {
     refunding.value = false;
   }
 };
+watch(
+  () => props.tenantCode,
+  (code, prev) => {
+    if (code && code !== prev) {
+      pagination.page = 1;
+      void loadAccount();
+      void loadTransactions();
+    }
+  },
+);
 onMounted(() => {
-  loadAccount();
-  loadTransactions();
+  void loadAccount();
+  void loadTransactions();
 });
 </script>
 

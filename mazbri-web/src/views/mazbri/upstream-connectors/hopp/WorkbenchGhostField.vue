@@ -1,6 +1,14 @@
 <template>
-  <label class="wb-ghost" @focusin="onSelectFocusIn" @focusout="onSelectFocusOut">
-    <span class="wb-ghost__label" :title="label">{{ label }}</span>
+  <label
+    class="wb-ghost"
+    :class="{ 'is-invalid': invalid }"
+    @focusin="onSelectFocusIn"
+    @focusout="onSelectFocusOut"
+  >
+    <span class="wb-ghost__label" :title="label">
+      {{ label }}
+      <span v-if="required" class="wb-ghost__req" aria-hidden="true">*</span>
+    </span>
     <div class="wb-ghost__control">
       <HoppAutoComplete
         v-if="kind === 'select'"
@@ -14,19 +22,32 @@
         @update:model-value="onSelectDraft"
         @select="onSelectPick"
       />
-      <input
-        v-else
-        class="wb-ghost__input"
-        :type="kind === 'number' ? 'number' : 'text'"
-        :value="modelValue ?? ''"
-        :placeholder="placeholder"
-        :aria-label="label"
-        :disabled="disabled"
-        :min="min"
-        :step="step"
-        spellcheck="false"
-        @input="onInput"
-      />
+      <template v-else>
+        <input
+          class="wb-ghost__input"
+          :type="resolvedInputType"
+          :value="modelValue ?? ''"
+          :placeholder="placeholder"
+          :aria-label="label"
+          :aria-invalid="invalid || undefined"
+          :required="required || undefined"
+          :disabled="disabled"
+          :min="min"
+          :step="step"
+          spellcheck="false"
+          autocomplete="off"
+          @input="onInput"
+        />
+        <button
+          v-if="canToggleReveal"
+          type="button"
+          class="wb-ghost__eye"
+          :aria-label="label"
+          @click.prevent="revealed = !revealed"
+        >
+          <ArtSvgIcon :icon="revealed ? 'ri:eye-off-line' : 'ri:eye-line'" />
+        </button>
+      </template>
       <slot />
     </div>
   </label>
@@ -35,6 +56,7 @@
 <script setup lang="ts">
 import HoppAutoComplete from "@/components/common/hopp-autocomplete/index.vue";
 import type { HoppSelectOption } from "@/components/common/hopp-select/index.vue";
+import { isMaskedSecretValue } from "@/utils/originPinning";
 
 const props = withDefaults(
   defineProps<{
@@ -44,6 +66,9 @@ const props = withDefaults(
     options?: HoppSelectOption[];
     placeholder?: string;
     disabled?: boolean;
+    secret?: boolean;
+    invalid?: boolean;
+    required?: boolean;
     appendTo?: HTMLElement | string;
     min?: number;
     step?: number;
@@ -54,6 +79,9 @@ const props = withDefaults(
     options: () => [],
     placeholder: "",
     disabled: false,
+    secret: false,
+    invalid: false,
+    required: false,
     appendTo: undefined,
     min: undefined,
     step: undefined,
@@ -66,6 +94,28 @@ const emit = defineEmits<{
 
 const selectDraft = ref("");
 const selectFocused = ref(false);
+const revealed = ref(false);
+
+const resolvedInputType = computed(() => {
+  if (props.kind === "number") return "number";
+  if (props.secret && !revealed.value) return "password";
+  return "text";
+});
+
+const canToggleReveal = computed(() => {
+  if (!props.secret || props.disabled) return false;
+  const val = String(props.modelValue ?? "");
+  return Boolean(val) && !isMaskedSecretValue(val);
+});
+
+watch(
+  () => [props.disabled, props.secret] as const,
+  ([isDisabled, isSecret]) => {
+    if (isDisabled || !isSecret) {
+      revealed.value = false;
+    }
+  },
+);
 
 function optionLabel(value: string): string {
   const hit = props.options.find((o) => o.value === value);
@@ -126,6 +176,11 @@ function onInput(ev: Event) {
   align-items: stretch;
   min-height: 32px;
   border-bottom: 1px solid var(--wb-divider-light, var(--el-border-color-extra-light));
+
+  &.is-invalid {
+    border-bottom-color: var(--wb-danger, var(--el-color-danger));
+    background: color-mix(in srgb, var(--wb-danger, var(--el-color-danger)) 5%, transparent);
+  }
 }
 .wb-ghost__label {
   box-sizing: border-box;
@@ -133,6 +188,7 @@ function onInput(ev: Event) {
   width: var(--wb-label-col, 12.5rem);
   display: flex;
   align-items: center;
+  gap: 3px;
   padding: 6px 12px 6px 16px;
   font-size: var(--wb-fs-body, 13px);
   font-weight: 600;
@@ -141,6 +197,9 @@ function onInput(ev: Event) {
   white-space: normal;
   overflow-wrap: anywhere;
   overflow: visible;
+}
+.wb-ghost__req {
+  color: var(--wb-danger, var(--el-color-danger));
 }
 .wb-ghost__control {
   flex: 1;
@@ -175,6 +234,25 @@ function onInput(ev: Event) {
   }
   &:disabled {
     opacity: 0.55;
+  }
+}
+.wb-ghost__eye {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 32px;
+  padding: 0;
+  margin-right: 4px;
+  border: none;
+  background: transparent;
+  color: var(--wb-text-muted, var(--el-text-color-secondary));
+  cursor: pointer;
+  border-radius: var(--wb-radius, 4px);
+
+  &:hover {
+    color: var(--wb-text, var(--el-text-color-primary));
+    background: var(--wb-surface-hover, var(--el-fill-color));
   }
 }
 </style>

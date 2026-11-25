@@ -54,8 +54,6 @@ pub enum ExecuteMode {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecuteOptions {
-    #[serde(default)]
-    pub follow_redirects: bool,
     #[serde(default = "default_max_body")]
     pub max_body_capture_bytes: usize,
     #[serde(default = "default_true")]
@@ -75,7 +73,6 @@ const fn default_true() -> bool {
 impl Default for ExecuteOptions {
     fn default() -> Self {
         Self {
-            follow_redirects: false,
             max_body_capture_bytes: DEFAULT_MAX_BODY_CAPTURE,
             mask_secrets: true,
             collect_trace: false,

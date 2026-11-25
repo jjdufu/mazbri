@@ -354,6 +354,29 @@ async fn publish_channels(
     Ok((channel_ids, channels_snapshot))
 }
 
+async fn validate_transparent_channel_egress(
+    ssrf: &SsrfChecker,
+    egress: &mazbri_core::ChannelEgressSpec,
+) -> Result<(), ApiError> {
+    mazbri_core::validate_egress_spec(egress)
+        .map_err(|e| ApiError::validation(format!("CONFIG_INVALID: {e}")))?;
+    ssrf::validate_public_http_url(ssrf, &egress.base_url)
+        .await
+        .map_err(|e| ApiError::validation(format!("SSRF_BLOCKED: {e}")))?;
+    if let Some(token_url) = egress
+        .auth
+        .as_ref()
+        .and_then(|a| a.token_url.as_deref())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        ssrf::validate_public_http_url(ssrf, token_url)
+            .await
+            .map_err(|e| ApiError::validation(format!("SSRF_BLOCKED token_url: {e}")))?;
+    }
+    Ok(())
+}
+
 /// 校验并写入单个渠道；返回渠道 id 与快照。
 async fn publish_channel(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
@@ -389,11 +412,7 @@ async fn publish_channel(
         .encrypt_secrets_for_storage()
         .map_err(|e| ApiError::internal(format!("encrypt egress secrets: {e}")))?;
     if ctx.cfg.is_transparent() {
-        mazbri_core::validate_egress_spec(&egress)
-            .map_err(|e| ApiError::validation(format!("CONFIG_INVALID: {e}")))?;
-        ssrf::validate_public_http_url(ctx.ssrf, &egress.base_url)
-            .await
-            .map_err(|e| ApiError::validation(format!("SSRF_BLOCKED: {e}")))?;
+        validate_transparent_channel_egress(ctx.ssrf, &egress).await?;
     }
     let existing_ch: Option<(Uuid, Uuid, serde_json::Value)> = sqlx::query_as(
         "SELECT id, supplier_id, config FROM channels WHERE channel_code = $1",
@@ -848,6 +867,14 @@ async fn prepare_publish(
         ssrf::validate_public_http_url(checker, &expanded_url)
             .await
             .map_err(|e| ApiError::validation(format!("SSRF_BLOCKED: {e}")))?;
+        if let Some(ref auth) = publish_cfg.auth_flow
+            && auth.enabled
+            && !auth.token_url.trim().is_empty()
+        {
+            ssrf::validate_public_http_url(checker, &auth.token_url)
+                .await
+                .map_err(|e| ApiError::validation(format!("SSRF_BLOCKED token_url: {e}")))?;
+        }
     }
 
     check_publish_gates(&eval.items, req, can_force_publish)?;

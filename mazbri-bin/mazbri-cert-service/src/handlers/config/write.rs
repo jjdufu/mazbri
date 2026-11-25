@@ -98,6 +98,100 @@ fn upsert_internal_error(
         .into_response()
 }
 
+async fn upsert_existing_config(
+    state: &ConfigState,
+    service: &str,
+    existing: crate::config_center::models::ConfigEntry,
+    req: &UpdateConfigRequest,
+    expected_hash: Option<&str>,
+    request_context: &RequestContext,
+) -> Response {
+    if let Some(expected) = expected_hash {
+        let current_hash = existing
+            .content_hash
+            .clone()
+            .unwrap_or_else(|| crate::config_center::validator::compute_content_hash(&existing.content));
+        if expected != current_hash {
+            return ConfigError::Conflict {
+                service_name: service.to_string(),
+                expected_hash: expected.to_string(),
+                current_hash: Some(current_hash),
+            }
+            .into_response();
+        }
+    }
+    let target_sensitive = req.is_sensitive.unwrap_or(existing.is_sensitive);
+    if is_unchanged_config_update(
+        &existing.content,
+        existing.is_sensitive,
+        &req.content,
+        target_sensitive,
+    ) {
+        info!(
+            service = %service, request_id = %request_context.request_id,
+            trace_id = %request_context.trace_id, "配置内容未变更，幂等跳过数据库更新"
+        );
+        return (StatusCode::OK, Json(existing)).into_response();
+    }
+    match state
+        .repo
+        .update(
+            service,
+            &req.content,
+            &req.updated_by,
+            target_sensitive,
+            expected_hash,
+        )
+        .await
+    {
+        Ok(entry) => {
+            info!(
+                service = %service, request_id = %request_context.request_id,
+                trace_id = %request_context.trace_id, "配置已更新"
+            );
+            (StatusCode::OK, Json(entry)).into_response()
+        }
+        Err(err @ ConfigError::Conflict { .. }) => err.into_response(),
+        Err(e) => upsert_internal_error("config_upsert_update_failed", request_context, &e),
+    }
+}
+
+async fn upsert_new_config(
+    state: &ConfigState,
+    service: String,
+    req: UpdateConfigRequest,
+    expected_hash: Option<&str>,
+    request_context: &RequestContext,
+) -> Response {
+    if let Some(expected) = expected_hash {
+        return ConfigError::Conflict {
+            service_name: service,
+            expected_hash: expected.to_string(),
+            current_hash: None,
+        }
+        .into_response();
+    }
+    if let Some(response) = validate_target_service(&service, request_context) {
+        return response;
+    }
+    let create_req = CreateConfigRequest {
+        service_name: service,
+        content: req.content,
+        is_sensitive: req.is_sensitive.unwrap_or(false),
+        updated_by: req.updated_by,
+    };
+    match state.repo.create(&create_req).await {
+        Ok(entry) => {
+            info!(
+                service = %create_req.service_name, request_id = %request_context.request_id,
+                trace_id = %request_context.trace_id, "配置已创建"
+            );
+            (StatusCode::CREATED, Json(entry)).into_response()
+        }
+        Err(e) => upsert_internal_error("config_upsert_create_failed", request_context, &e),
+    }
+}
+
 pub async fn upsert_config(
     State(state): State<ConfigState>,
     Path(service): Path<String>,
@@ -105,6 +199,24 @@ pub async fn upsert_config(
     Json(req): Json<UpdateConfigRequest>,
 ) -> Response {
     let request_context = request_context(&headers);
+    if req.content.trim_start().starts_with("enc:") {
+        let message = "禁止提交裸密文前缀 enc:";
+        log_config_error(
+            "config_upsert_raw_ciphertext_rejected",
+            mazbri_core::error_codes::VALIDATION_ERROR,
+            &request_context.request_id,
+            &request_context.trace_id,
+            &message,
+        );
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "error": mazbri_core::error_codes::VALIDATION_ERROR,
+                "message": format!("{VALIDATION_ERROR_MESSAGE}: {message}"),
+            })),
+        )
+            .into_response();
+    }
     if let Some(response) = validate_toml_schema(&req.content, &request_context) {
         return response;
     }
@@ -113,57 +225,27 @@ pub async fn upsert_config(
         trace_id = % request_context.trace_id, is_sensitive = ? req.is_sensitive,
         updated_by = % req.updated_by, "Upsert 配置请求"
     );
+    let expected_hash = req
+        .expected_content_hash
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
     match state.repo.get_by_service(&service, true).await {
         Ok(existing) => {
-            let target_sensitive = req.is_sensitive.unwrap_or(existing.is_sensitive);
-            if is_unchanged_config_update(
-                &existing.content,
-                existing.is_sensitive,
-                &req.content,
-                target_sensitive,
-            ) {
-                info!(
-                    service = % service, request_id = % request_context.request_id,
-                    trace_id = % request_context.trace_id, "配置内容未变更，幂等跳过数据库更新"
-                );
-                return (StatusCode::OK, Json(existing)).into_response();
-            }
-            match state
-                .repo
-                .update(&service, &req.content, &req.updated_by, target_sensitive)
-                .await
-            {
-                Ok(entry) => {
-                    info!(
-                        service = % service, request_id = % request_context.request_id,
-                        trace_id = % request_context.trace_id, "配置已更新"
-                    );
-                    (StatusCode::OK, Json(entry)).into_response()
-                }
-                Err(e) => upsert_internal_error("config_upsert_update_failed", &request_context, &e),
-            }
+            upsert_existing_config(
+                &state,
+                &service,
+                existing,
+                &req,
+                expected_hash.as_deref(),
+                &request_context,
+            )
+            .await
         }
         Err(ConfigError::NotFound { .. }) => {
-            if let Some(response) = validate_target_service(&service, &request_context) {
-                return response;
-            }
-            let create_req = CreateConfigRequest {
-                service_name: service,
-                content: req.content,
-                is_sensitive: req.is_sensitive.unwrap_or(false),
-                updated_by: req.updated_by,
-            };
-            match state.repo.create(&create_req).await {
-                Ok(entry) => {
-                    info!(
-                        service = % create_req.service_name, request_id = %
-                        request_context.request_id, trace_id = % request_context.trace_id,
-                        "配置已创建"
-                    );
-                    (StatusCode::CREATED, Json(entry)).into_response()
-                }
-                Err(e) => upsert_internal_error("config_upsert_create_failed", &request_context, &e),
-            }
+            upsert_new_config(&state, service, req, expected_hash.as_deref(), &request_context)
+                .await
         }
         Err(e) => upsert_internal_error("config_upsert_lookup_failed", &request_context, &e),
     }

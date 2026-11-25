@@ -23,6 +23,7 @@ pub enum ProxyError {
     NotFound(String),
     BadRequest(String),
     Conflict(String),
+    UnprocessableEntity(String),
     PayloadTooLarge(String),
     /// Channel or platform rate limit; carries suggested Retry-After seconds.
     TooManyRequests {
@@ -56,6 +57,7 @@ impl std::fmt::Display for ProxyError {
             ProxyError::NotFound(msg) => write!(f, "Not Found: {msg}"),
             ProxyError::BadRequest(msg) => write!(f, "Bad Request: {msg}"),
             ProxyError::Conflict(msg) => write!(f, "Conflict: {msg}"),
+            ProxyError::UnprocessableEntity(msg) => write!(f, "Unprocessable Entity: {msg}"),
             ProxyError::PayloadTooLarge(msg) => write!(f, "Payload Too Large: {msg}"),
             ProxyError::TooManyRequests { message, .. } => {
                 write!(f, "Too Many Requests: {message}")
@@ -82,6 +84,7 @@ impl ProxyError {
             ProxyError::NotFound(_) => "E4040",
             ProxyError::BadRequest(_) => "E4000",
             ProxyError::Conflict(_) => "E4090",
+            ProxyError::UnprocessableEntity(_) => "E4221",
             ProxyError::PayloadTooLarge(_) => "E4130",
             ProxyError::TooManyRequests { .. } => "E4290",
             ProxyError::ServiceUnavailable(_) => "E5030",
@@ -132,6 +135,7 @@ impl ProxyError {
             ProxyError::NotFound(_) => OutcomeClass::new("NR", Client),
             ProxyError::BadRequest(_)
             | ProxyError::Conflict(_)
+            | ProxyError::UnprocessableEntity(_)
             | ProxyError::PayloadTooLarge(_) => OutcomeClass::new("-", Client),
             ProxyError::TooManyRequests { .. } => OutcomeClass::new("RL", Gateway),
             ProxyError::ServiceUnavailable(_)
@@ -176,6 +180,7 @@ pub fn status_error_code(status: StatusCode) -> (&'static str, &'static str) {
         402 => ("E4020", "Insufficient balance"),
         403 => ("E4030", "Forbidden"),
         404 => ("E4040", "Not Found"),
+        422 => ("E4221", "Unprocessable Entity"),
         429 => ("E4290", "Too Many Requests"),
         400..=499 => ("E4000", "Bad Request"),
         _ => ("E5000", "Internal Server Error"),
@@ -233,6 +238,7 @@ impl IntoResponse for ProxyError {
             ProxyError::NotFound(_) => (StatusCode::NOT_FOUND, None),
             ProxyError::BadRequest(_) => (StatusCode::BAD_REQUEST, None),
             ProxyError::Conflict(_) => (StatusCode::CONFLICT, None),
+            ProxyError::UnprocessableEntity(_) => (StatusCode::UNPROCESSABLE_ENTITY, None),
             ProxyError::PayloadTooLarge(_) => (StatusCode::PAYLOAD_TOO_LARGE, None),
             ProxyError::TooManyRequests {
                 retry_after_secs, ..

@@ -40,9 +40,10 @@ export async function fetchSuppliers(params?: {
     showErrorMessage: false,
   });
 }
-export function fetchSupplierById(id: string) {
+export function fetchSupplierById(id: string, signal?: AbortSignal) {
   return request.get<Supplier>({
     url: `${API_BASE_PATH}/suppliers/${id}`,
+    signal,
   });
 }
 export function createSupplier(data: CreateSupplierRequest) {

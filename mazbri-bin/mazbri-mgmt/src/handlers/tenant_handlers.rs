@@ -110,15 +110,17 @@ pub async fn delete_tenant(
     }
     let user_id = extract_user_id(&claims)?;
     let client_ip = extract_client_ip(&headers, Some(addr));
-    let data = svc::delete_tenant(
-        &state.db,
-        &state.auth_db,
-        &state.audit,
-        &code,
+    let data = svc::delete_tenant(svc::DeleteTenantParams {
+        pool: &state.db,
+        auth_db: &state.auth_db,
+        ratelimit_db: &state.ratelimit_db,
+        cache_db: &state.cache_db,
+        audit: &state.audit,
+        id_or_code: &code,
         user_id,
-        &claims.sub,
+        username: &claims.sub,
         client_ip,
-    )
+    })
     .await?;
     Ok(ApiResponse::ok(data).into_response())
 }

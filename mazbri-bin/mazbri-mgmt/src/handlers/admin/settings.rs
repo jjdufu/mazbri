@@ -36,13 +36,23 @@ pub async fn update_system_settings(
     if !can_access_settings(&claims) {
         return Err(ApiError::Forbidden);
     }
-    if let Err(response) = crate::handlers::mfa_guard::require_category(
-        &state,
-        &claims,
-        crate::services::mfa::Category::Platform,
-    )
-    .await
-    {
+    let mfa_check = if req.enable_audit_log == Some(false) {
+        crate::handlers::mfa_guard::require_category_fresh(
+            &state,
+            &claims,
+            crate::services::mfa::Category::Platform,
+            60,
+        )
+        .await
+    } else {
+        crate::handlers::mfa_guard::require_category(
+            &state,
+            &claims,
+            crate::services::mfa::Category::Platform,
+        )
+        .await
+    };
+    if let Err(response) = mfa_check {
         return Ok(*response);
     }
     info!("Updating system settings (by {})", claims.sub);

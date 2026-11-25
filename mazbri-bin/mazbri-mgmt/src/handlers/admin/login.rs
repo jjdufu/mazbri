@@ -25,6 +25,7 @@ pub async fn admin_login(
     let jwt_secret = &state.auth_state.jwt_secret;
     let data = admin::admin_login(admin::AdminLoginParams {
         db: &state.admin_db,
+        redis: &state.redis,
         jwt_secret,
         jwt_expiration_secs: state.config.auth.jwt_expiration_secs,
         refresh_token_expiration_secs: state.config.auth.refresh_token_expiration_secs,
@@ -35,10 +36,11 @@ pub async fn admin_login(
         client_ip,
     })
     .await?;
-    Ok(json_with_session_cookies(
-        data,
-        Some(state.config.auth.refresh_token_expiration_secs),
-    ))
+    let refresh_max_age = data
+        .get("refresh_max_age")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(state.config.auth.refresh_token_expiration_secs);
+    Ok(json_with_session_cookies(data, Some(refresh_max_age)))
 }
 /// # Errors
 ///

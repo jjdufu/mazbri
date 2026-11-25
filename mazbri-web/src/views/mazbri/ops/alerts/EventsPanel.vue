@@ -183,6 +183,7 @@ import OpsPanelToolbar from "@/components/ops/OpsPanelToolbar.vue";
 import OpsTableWrap from "@/components/ops/OpsTableWrap.vue";
 import { fetchAlertEvents } from "@/api/alerts";
 import { fetchOpsChanges, type ChangeEvent } from "@/api/opsChanges";
+import { useLatestRequest } from "@/composables/useLatestRequest";
 import type {
   AlertEvent,
   AlertEventQuery,
@@ -233,7 +234,6 @@ const router = useRouter();
 const statuses: AlertStatus[] = ["firing", "resolved"];
 const severities: AlertSeverity[] = ["critical", "warning", "info"];
 
-const loading = ref(false);
 const rows = ref<AlertEvent[]>([]);
 const total = ref(0);
 const page = ref(1);
@@ -352,21 +352,33 @@ function goDrill(row: AlertEvent) {
   }
 }
 
-async function reload() {
-  loading.value = true;
-  try {
-    const res = await fetchAlertEvents({
+const eventsLoader = useLatestRequest(async (ctx) => {
+  const res = await fetchAlertEvents(
+    {
       status: filters.status || undefined,
       severity: filters.severity || undefined,
       event_id: filters.event_id || undefined,
       page: page.value,
       page_size: pageSize.value,
-    });
-    rows.value = res.data;
-    total.value = res.total;
-  } finally {
-    loading.value = false;
-  }
+    },
+    ctx.signal,
+  );
+  if (!ctx.isLatest()) return;
+  rows.value = res.data;
+  total.value = res.total;
+});
+const { loading } = eventsLoader;
+
+const changesLoader = useLatestRequest(
+  async (ctx, rowId: string, start: number, end: number) => {
+    const res = await fetchOpsChanges({ start, end, limit: 20 }, ctx.signal);
+    if (!ctx.isLatest() || selected.value?.id !== rowId) return;
+    relatedChanges.value = res.events || [];
+  },
+);
+
+async function reload() {
+  await eventsLoader.run();
 }
 
 function search() {
@@ -396,12 +408,14 @@ async function selectRow(row: AlertEvent) {
   selected.value = row;
   relatedChanges.value = [];
   const started = Date.parse(row.started_at);
-  if (!Number.isFinite(started)) return;
+  if (!Number.isFinite(started)) {
+    changesLoader.cancel();
+    return;
+  }
   const start = Math.floor(started / 1000) - 300;
   const end = Math.floor(started / 1000) + 300;
   try {
-    const res = await fetchOpsChanges({ start, end, limit: 20 });
-    relatedChanges.value = res.events || [];
+    await changesLoader.run(row.id, start, end);
   } catch {
     relatedChanges.value = [];
   }

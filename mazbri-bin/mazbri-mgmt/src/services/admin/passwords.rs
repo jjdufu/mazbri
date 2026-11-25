@@ -2,11 +2,12 @@ use super::auth_flow::generate_admin_jwt;
 use crate::error::ApiError;
 use crate::handlers::types::{AdminUser, ChangePasswordRequest, FirstLoginChangePasswordRequest};
 use crate::middleware::admin_token::{self, SessionBinding};
-use crate::middleware::auth::AdminClaims;
+use crate::middleware::auth::{AdminClaims, ROLE_SUPER_ADMIN, invalidate_admin_subject_state};
 use crate::repositories::admin as repo;
 use crate::services::{MfaSettingsCache, PasswordPolicyCache};
 use chrono::Utc;
 use mazbri_core::num::SaturatingFrom;
+use mazbri_core::panic_policy::spawn_blocking_recoverable;
 use mazbri_core::redis::RedisClient;
 use sqlx::PgPool;
 use tracing::{error, info, warn};
@@ -84,6 +85,56 @@ async fn post_password_change_stage(
     }))
 }
 
+async fn verify_first_login_current_password(
+    db: &PgPool,
+    user_row: &repo::AdminUserPasswordRow,
+    current_password: &str,
+    policy: &crate::services::PasswordPolicy,
+) -> Result<(), ApiError> {
+    if !user_row.is_active {
+        return Err(ApiError::Forbidden);
+    }
+    if !user_row.force_password_reset {
+        return Err(ApiError::validation(
+            "不需要修改密码。请使用正常登录".to_string(),
+        ));
+    }
+    let Some(ref admin_password_hash) = user_row.password_hash else {
+        error!(
+            "首次登录修改密码时用户 {} 在数据库中没有 password_hash",
+            user_row.username
+        );
+        return Err(ApiError::internal("服务器配置错误".to_string()));
+    };
+    let hash_owned = admin_password_hash.clone();
+    let current_password_bytes = current_password.as_bytes().to_vec();
+    let password_valid = spawn_blocking_recoverable(move || {
+        mazbri_auth::constant_time_argon2_verify(&current_password_bytes, &hash_owned).is_ok()
+    })
+    .await
+    .map_err(|e| ApiError::internal(format!("密码校验任务异常: {e}")))?
+    .map_err(|e| ApiError::internal(format!("密码校验异常: {e}")))?;
+    if !password_valid {
+        if user_row.role != ROLE_SUPER_ADMIN
+            && let Err(e) = repo::record_login_failure(
+                db,
+                user_row.id,
+                policy.max_login_attempts,
+                i64::from(policy.lockout_duration_minutes),
+            )
+            .await
+        {
+            error!(
+                "Failed to record first-login password failure for {}: {e}",
+                user_row.id
+            );
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        return Err(ApiError::validation("用户名或密码无效".to_string()));
+    }
+    Ok(())
+}
+
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
@@ -93,8 +144,7 @@ pub async fn first_login_change_password(
     let db = params.db;
     let user_id = params.user_id;
     let req = params.req;
-    let password_policy_cache = params.password_policy_cache;
-    let policy = password_policy_cache.get().await;
+    let policy = params.password_policy_cache.get().await;
     let validation = policy.validate(&req.new_password);
     if !validation.is_valid {
         let error_message = validation
@@ -105,46 +155,23 @@ pub async fn first_login_change_password(
         return Err(ApiError::validation(error_message));
     }
     let user_row = match repo::get_admin_user_by_id(db, user_id).await {
-        Ok(row) => row,
+        Ok(Some(row)) => row,
+        Ok(None) => {
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            return Err(ApiError::validation("用户名或密码无效".to_string()));
+        }
         Err(e) => {
             error!("Database error during password change: {}", e);
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
             return Err(ApiError::internal("内部服务器错误".to_string()));
         }
     };
-    let Some(user_row) = user_row else {
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        return Err(ApiError::validation("用户名或密码无效".to_string()));
-    };
-    if !user_row.is_active {
-        return Err(ApiError::Forbidden);
-    }
-    if !user_row.force_password_reset {
-        return Err(ApiError::validation(
-            "不需要修改密码。请使用正常登录".to_string(),
-        ));
-    }
-    let Some(admin_password_hash) = user_row.password_hash else {
-        error!(
-            "首次登录修改密码时用户 {} 在数据库中没有 password_hash",
-            user_row.username
-        );
-        return Err(ApiError::internal("服务器配置错误".to_string()));
-    };
-    let password_valid = mazbri_auth::constant_time_argon2_verify(
-        req.current_password.as_bytes(),
-        &admin_password_hash,
-    )
-    .is_ok();
-    if !password_valid {
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        return Err(ApiError::validation("用户名或密码无效".to_string()));
-    }
+    verify_first_login_current_password(db, &user_row, &req.current_password, &policy).await?;
     let passed_username =
         validate_new_username(db, user_row.id, &user_row.role, req.new_username.as_deref()).await?;
     let final_username = passed_username.map_or_else(|| user_row.username.clone(), str::to_string);
 
-    let new_password_hash = hash_new_password(&req.new_password)?;
+    let new_password_hash = hash_new_password_async(&req.new_password).await?;
     if let Some(reuse_error) = policy
         .check_password_reuse(db, user_id, &new_password_hash)
         .await
@@ -160,6 +187,7 @@ pub async fn first_login_change_password(
         &new_password_hash,
     )
     .await?;
+    invalidate_admin_subject_state(params.redis, user_id).await;
     if let Err(error) = policy
         .record_password_history(db, user_id, &new_password_hash)
         .await
@@ -292,13 +320,22 @@ async fn finish_first_login(
     if let Some(stage) = post_password_change_stage(params, &user.username).await? {
         return Ok(stage);
     }
+    let session_state = repo::get_admin_session_state(params.db, params.user_id)
+        .await
+        .map_err(|e| {
+            error!("Failed to reload session state after password reset: {e}");
+            ApiError::internal("内部服务器错误".to_string())
+        })?
+        .ok_or(ApiError::Unauthorized)?;
     let issued_at = Utc::now().timestamp();
+    let session_timeout_secs = super::auth_flow::resolve_session_timeout_secs(
+        params.db,
+        params.refresh_token_expiration_secs,
+    )
+    .await;
     let binding = SessionBinding {
         sid: params.claims.sid.clone(),
-        sxp: Some(
-            issued_at
-                .saturating_add(i64::saturating_from(params.refresh_token_expiration_secs).max(1)),
-        ),
+        sxp: Some(issued_at.saturating_add(i64::saturating_from(session_timeout_secs).max(1))),
     };
     let access_ttl = super::auth_flow::resolve_access_token_expiration_secs(
         params.db,
@@ -306,9 +343,10 @@ async fn finish_first_login(
     )
     .await;
     let token = generate_admin_jwt(
-        &user.username,
+        &session_state.username,
         &user.id,
-        &user.role,
+        &session_state.role,
+        session_state.auth_epoch,
         &binding,
         params.jwt_secret,
         i64::saturating_from(access_ttl),
@@ -319,9 +357,10 @@ async fn finish_first_login(
         ApiError::internal("生成认证令牌失败".to_string())
     })?;
     let refresh = super::auth_flow::issue_refresh_token(
-        &user.username,
+        &session_state.username,
         &user.id,
-        &user.role,
+        &session_state.role,
+        session_state.auth_epoch,
         &binding,
         params.jwt_secret,
         issued_at,
@@ -359,13 +398,6 @@ pub async fn change_password(
             .unwrap_or_else(|| "密码不符合要求".to_string());
         return Err(ApiError::validation(error_message));
     }
-    let new_password_hash = hash_new_password(&req.new_password)?;
-    if let Some(reuse_error) = policy
-        .check_password_reuse(db, user_id, &new_password_hash)
-        .await
-    {
-        return Err(ApiError::validation(reuse_error));
-    }
     let user_row = match repo::get_admin_user_basic_by_id(db, user_id).await {
         Ok(Some(row)) => row,
         Ok(None) => {
@@ -383,14 +415,35 @@ pub async fn change_password(
         );
         return Err(ApiError::internal("服务器配置错误".to_string()));
     };
-    let password_valid = mazbri_auth::constant_time_argon2_verify(
-        req.current_password.as_bytes(),
-        &admin_password_hash,
-    )
-    .is_ok();
+    let current_password_bytes = req.current_password.as_bytes().to_vec();
+    let password_valid = spawn_blocking_recoverable(move || {
+        mazbri_auth::constant_time_argon2_verify(&current_password_bytes, &admin_password_hash)
+            .is_ok()
+    })
+    .await
+    .map_err(|e| ApiError::internal(format!("密码校验任务异常: {e}")))?
+    .map_err(|e| ApiError::internal(format!("密码校验异常: {e}")))?;
     if !password_valid {
+        if user_row.role != ROLE_SUPER_ADMIN
+            && let Err(e) = repo::record_login_failure(
+                db,
+                user_id,
+                policy.max_login_attempts,
+                i64::from(policy.lockout_duration_minutes),
+            )
+            .await
+        {
+            error!("Failed to record password change failure for {user_id}: {e}");
+        }
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         return Err(ApiError::validation("当前密码不正确".to_string()));
+    }
+    let new_password_hash = hash_new_password_async(&req.new_password).await?;
+    if let Some(reuse_error) = policy
+        .check_password_reuse(db, user_id, &new_password_hash)
+        .await
+    {
+        return Err(ApiError::validation(reuse_error));
     }
     repo::update_password(db, user_id, None, &new_password_hash)
         .await
@@ -409,6 +462,13 @@ pub async fn change_password(
         user_row.username
     );
     Ok(serde_json::json!({ "message" : "密码修改成功" }))
+}
+async fn hash_new_password_async(password: &str) -> Result<String, ApiError> {
+    let owned = password.to_string();
+    spawn_blocking_recoverable(move || hash_new_password(&owned))
+        .await
+        .map_err(|e| ApiError::internal(format!("处理新密码任务异常: {e}")))?
+        .map_err(|e| ApiError::internal(format!("处理新密码异常: {e}")))?
 }
 fn hash_new_password(password: &str) -> Result<String, ApiError> {
     use argon2::{Argon2, PasswordHasher};

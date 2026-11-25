@@ -3,15 +3,17 @@
 use super::envelope::{
     DEFAULT_WRAPPING_ALGORITHM, TenantKeyEnvelope, parse_envelope, serialize_envelope,
 };
+use super::supplier_secrets::RootMaterialKeyring;
 use super::transport::{
-    TENANT_SECRET_KEY_BYTES, TransportCipher, decrypt_with_alg, default_data_alg, default_suite, encrypt_with_alg,
-    sign_payload,
+    TENANT_SECRET_KEY_BYTES, TransportCipher, decrypt_with_alg, default_data_alg, default_suite,
+    encrypt_with_alg, sign_payload,
 };
 use base64::Engine;
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use mazbri_crypto::id::AlgorithmId;
 use mazbri_crypto::registry::AlgorithmRegistry;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use zeroize::Zeroizing;
 
 /// 商业根保护包装密钥 id（环境变量引用形态）。
 pub const COMMERCIAL_ROOT_PROTECTION_WRAPPING_KEY_ID: &str =
@@ -53,17 +55,29 @@ pub enum TenantKeyError {
 }
 
 /// 商业根保护材料包。
-#[derive(Debug, Clone, Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RootProtectionMaterialBundle {
-    /// 当前密钥版本。
+    /// 密钥版本号（如 `v1`、`v2`）。
     pub current_key_version: String,
     /// 包装密钥 id。
     pub wrapping_key_id: String,
-    /// 主密钥材料。
+    /// 主密钥材料（Base64 32 字节）。
     pub master_key: String,
-    /// 完整性密钥材料。
+    /// 完整性密钥材料（Base64 32 字节）。
     pub integrity_key: String,
+}
+
+/// 商业根保护多版本密钥环响应（`GET /authorizations/root/materials/keyring`）。
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RootProtectionKeyring {
+    /// 当前可用于新加密/新包装的密钥版本（仅当 `issuance_allowed` 为 `true` 时非空）。
+    pub current_key_version: Option<String>,
+    /// 当前许可证是否允许执行新签发与新密钥密封。
+    pub issuance_allowed: bool,
+    /// 全部可解密根材料版本（`active` + `deprecated`）。
+    pub materials: Vec<RootProtectionMaterialBundle>,
 }
 
 /// 新包装的租户密钥材料。
@@ -159,6 +173,46 @@ pub async fn fetch_root_protection_material_bundle(
         })
 }
 
+/// 拉取完整多版本根材料密钥环（`GET /authorizations/root/materials/keyring`）。
+///
+/// # Errors
+///
+/// HTTP 请求失败或 JSON 响应解析失败时返回错误。
+pub async fn fetch_root_protection_keyring(
+    client: &reqwest::Client,
+    base_url: &str,
+    token: &str,
+) -> Result<RootProtectionKeyring, TenantKeyError> {
+    let url = format!(
+        "{}/authorizations/root/materials/keyring",
+        base_url.trim_end_matches('/')
+    );
+    let response = client
+        .get(url)
+        .bearer_auth(token)
+        .send()
+        .await
+        .map_err(|error| {
+            TenantKeyError::RootMaterialRequestFailed(format!(
+                "failed to query commercial root protection keyring: {error}"
+            ))
+        })?;
+    if !response.status().is_success() {
+        return Err(TenantKeyError::RootMaterialRequestFailed(format!(
+            "commercial root protection keyring request failed with {}",
+            response.status()
+        )));
+    }
+    response
+        .json::<RootProtectionKeyring>()
+        .await
+        .map_err(|error| {
+            TenantKeyError::RootMaterialRequestFailed(format!(
+                "failed to parse commercial root protection keyring: {error}"
+            ))
+        })
+}
+
 /// # Errors
 ///
 /// 环境变量缺失时返回错误。
@@ -224,13 +278,13 @@ pub fn wrap_new_tenant_key_with_registry(
     wrapping_key_id: &str,
     wrapping_alg: AlgorithmId,
 ) -> Result<WrappedTenantKey, TenantKeyError> {
-    let tenant_key = generate_tenant_secret_key();
+    let tenant_key = Zeroizing::new(generate_tenant_secret_key());
     let aad = envelope_aad(tenant_id, key_version);
     let parts = encrypt_with_alg(
         TransportCipher::strict(registry),
         wrapping_alg,
         master_key,
-        &tenant_key,
+        tenant_key.as_slice(),
         aad.as_bytes(),
     )?;
     let envelope = TenantKeyEnvelope::new(
@@ -241,9 +295,14 @@ pub fn wrap_new_tenant_key_with_registry(
         parts.tag,
         aad,
     );
-    let tenant_secret_key_b64 = STANDARD.encode(tenant_key);
-    let secret_key_digest =
-        secret_key_digest(registry, integrity_key, tenant_id, key_version, &tenant_key)?;
+    let tenant_secret_key_b64 = STANDARD.encode(tenant_key.as_slice());
+    let secret_key_digest = secret_key_digest(
+        registry,
+        integrity_key,
+        tenant_id,
+        key_version,
+        tenant_key.as_slice(),
+    )?;
     Ok(WrappedTenantKey {
         tenant_secret_key_b64,
         encrypted_secret_key: serialize_envelope(&envelope, registry)?,
@@ -270,6 +329,90 @@ pub fn unwrap_tenant_key(
         key_version,
         master_key,
     )
+}
+
+/// 使用多版本 `RootMaterialKeyring` 解包并验证租户密钥摘要（支持许可证 `Rekey` 后无损解密历史租户密钥）。
+///
+/// # Errors
+///
+/// 信封格式非法、密钥环中无任何版本能解开或完整性摘要不匹配时返回错误。
+pub fn unwrap_and_verify_tenant_key_with_keyring(
+    encrypted_secret_key: &str,
+    tenant_id: &str,
+    key_version: &str,
+    expected_digest: &str,
+    keyring: &RootMaterialKeyring,
+) -> Result<Zeroizing<Vec<u8>>, TenantKeyError> {
+    let registry = AlgorithmRegistry::global();
+    let envelope = parse_envelope(encrypted_secret_key, registry)?;
+    let expected_aad = envelope_aad(tenant_id, key_version);
+    if envelope.aad != expected_aad {
+        return Err(TenantKeyError::InvalidEncoding);
+    }
+    let wrapping_alg = mazbri_crypto::parse_algorithm_id(&envelope.algorithm)
+        .map_err(|_| TenantKeyError::InvalidEncoding)?;
+
+    let hinted_version = envelope
+        .wrapping_key_id
+        .rsplit_once(':')
+        .map(|(_, suffix)| suffix)
+        .filter(|s| keyring.master_key_for_version(s).is_some());
+
+    let mut candidate_versions: Vec<&str> = Vec::new();
+    if let Some(hint) = hinted_version {
+        candidate_versions.push(hint);
+    }
+    if let Some(cur) = keyring.current_key_version()
+        && !candidate_versions.contains(&cur)
+    {
+        candidate_versions.push(cur);
+    }
+    for ver in keyring.versions() {
+        if !candidate_versions.contains(&ver) {
+            candidate_versions.push(ver);
+        }
+    }
+
+    let mut last_err = TenantKeyError::MasterKeyMissing;
+    for root_ver in candidate_versions {
+        let Some(master_key) = keyring.master_key_for_version(root_ver) else {
+            continue;
+        };
+        match decrypt_with_alg(
+            TransportCipher::strict(registry),
+            wrapping_alg,
+            master_key,
+            &envelope.iv,
+            &envelope.ciphertext,
+            &envelope.tag,
+            envelope.aad.as_bytes(),
+        ) {
+            Ok(raw_key) => {
+                let raw_key = Zeroizing::new(raw_key);
+                if raw_key.len() != TENANT_SECRET_KEY_BYTES {
+                    return Err(TenantKeyError::InvalidKeyLength);
+                }
+                if let Some(integrity_key) = keyring.integrity_key_for_version(root_ver) {
+                    if verify_secret_key_digest(
+                        integrity_key,
+                        tenant_id,
+                        key_version,
+                        &raw_key,
+                        expected_digest,
+                    )? {
+                        return Ok(raw_key);
+                    }
+                    last_err = TenantKeyError::InvalidEncoding;
+                } else {
+                    return Ok(raw_key);
+                }
+            }
+            Err(e) => {
+                last_err = TenantKeyError::Transport(e);
+            }
+        }
+    }
+    Err(last_err)
 }
 
 /// 指定注册表的打开入口。
@@ -316,15 +459,15 @@ pub fn verify_secret_key_digest(
     tenant_secret_key: &[u8],
     digest: &str,
 ) -> Result<bool, TenantKeyError> {
-    Ok(
-        secret_key_digest(
-            AlgorithmRegistry::global(),
-            integrity_key,
-            tenant_id,
-            key_version,
-            tenant_secret_key,
-        )? == digest,
-    )
+    use subtle::ConstantTimeEq;
+    let computed = secret_key_digest(
+        AlgorithmRegistry::global(),
+        integrity_key,
+        tenant_id,
+        key_version,
+        tenant_secret_key,
+    )?;
+    Ok(bool::from(computed.as_bytes().ct_eq(digest.as_bytes())))
 }
 
 /// # Errors
@@ -337,12 +480,12 @@ pub fn secret_key_digest(
     key_version: &str,
     tenant_secret_key: &[u8],
 ) -> Result<String, TenantKeyError> {
-    let payload = format!(
+    let payload = Zeroizing::new(format!(
         "{}:{}:{}",
         tenant_id,
         key_version,
         STANDARD.encode(tenant_secret_key)
-    );
+    ));
     Ok(sign_payload(
         TransportCipher::strict(registry),
         DEFAULT_INTEGRITY_MAC,
@@ -373,33 +516,54 @@ mod tests {
     use super::*;
 
     #[test]
-    fn wrap_unwrap_roundtrip() {
+    fn wrap_unwrap_roundtrip_and_multi_version_keyring_recovery() {
         let registry = AlgorithmRegistry::default_registry();
-        let master = [11u8; 32];
-        let integrity = [13u8; 32];
-        let wrapped = wrap_new_tenant_key_with_registry(
+        let master_v1 = [11u8; 32];
+        let integrity_v1 = [13u8; 32];
+        let master_v2 = [21u8; 32];
+        let integrity_v2 = [23u8; 32];
+
+        let wrapped_v1 = wrap_new_tenant_key_with_registry(
             &registry,
             "t1",
             "v1",
-            &master,
-            &integrity,
-            "env:TEST",
+            &master_v1,
+            &integrity_v1,
+            "commercial-root-protection:key_password:v1",
             AlgorithmId::Aes256Gcm,
         )
         .unwrap();
-        let opened = unwrap_tenant_key_with_registry(
-            &registry,
-            &wrapped.encrypted_secret_key,
+
+        let keyring = RootMaterialKeyring::from_protection_keyring(&RootProtectionKeyring {
+            current_key_version: Some("v2".to_string()),
+            issuance_allowed: true,
+            materials: vec![
+                RootProtectionMaterialBundle {
+                    current_key_version: "v2".to_string(),
+                    wrapping_key_id: "commercial-root-protection:key_password:v2".to_string(),
+                    master_key: STANDARD.encode(master_v2),
+                    integrity_key: STANDARD.encode(integrity_v2),
+                },
+                RootProtectionMaterialBundle {
+                    current_key_version: "v1".to_string(),
+                    wrapping_key_id: "commercial-root-protection:key_password:v1".to_string(),
+                    master_key: STANDARD.encode(master_v1),
+                    integrity_key: STANDARD.encode(integrity_v1),
+                },
+            ],
+        })
+        .unwrap();
+
+        let opened = unwrap_and_verify_tenant_key_with_keyring(
+            &wrapped_v1.encrypted_secret_key,
             "t1",
             "v1",
-            &master,
+            &wrapped_v1.secret_key_digest,
+            &keyring,
         )
         .unwrap();
-        assert_eq!(STANDARD.encode(&opened), wrapped.tenant_secret_key_b64);
-        assert!(
-            verify_secret_key_digest(&integrity, "t1", "v1", &opened, &wrapped.secret_key_digest)
-                .unwrap()
-        );
+        assert_eq!(STANDARD.encode(&*opened), wrapped_v1.tenant_secret_key_b64);
+
         let meta = default_key_metadata();
         assert_eq!(meta["dataAlg"], "aes-256-gcm");
         assert_eq!(meta["wrappingAlgorithm"], "aes-256-gcm");

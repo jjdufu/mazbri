@@ -4,8 +4,8 @@ import type {
   ConfigSummary,
 } from "@/types/api/config-center";
 import { logger } from "@/utils/sys";
-import type { Ref } from "vue";
-import { runWithLoading } from "@/composables/useAsyncState";
+import { watch, type Ref } from "vue";
+import { useLatestRequest } from "@/composables/useLatestRequest";
 
 interface RefreshState {
   loading: Ref<boolean>;
@@ -25,33 +25,39 @@ interface RefreshOptions {
 }
 
 export function useConfigCenterRefresh(state: RefreshState) {
-  const loadDataCore = async () => {
+  const listRunner = useLatestRequest(async (ctx) => {
     const filteredSearch = Object.fromEntries(
       Object.entries(state.searchForm).filter(
         ([_, value]) => value !== undefined && value !== "",
       ),
     );
-    const res = await fetchConfigList({
-      ...filteredSearch,
-      page: state.pagination.current,
-      page_size: state.pagination.size,
-    });
+    const res = await fetchConfigList(
+      {
+        ...filteredSearch,
+        page: state.pagination.current,
+        page_size: state.pagination.size,
+      },
+      ctx.signal,
+    );
+    if (!ctx.isLatest()) return;
     state.tableData.value = res.configs;
     state.pagination.total = res.total;
-  };
+  });
+
+  watch(listRunner.loading, (val) => {
+    state.loading.value = val;
+  });
 
   const loadData = async (silent = false) => {
-    if (silent) {
-      try {
-        await loadDataCore();
-      } catch (error) {
-        logger.error("Failed to load config list:", error);
+    try {
+      if (silent) {
+        await listRunner.runSilent();
+      } else {
+        await listRunner.run();
       }
-      return;
-    }
-    await runWithLoading(state.loading, loadDataCore).catch((error) => {
+    } catch (error) {
       logger.error("Failed to load config list:", error);
-    });
+    }
   };
 
   const refresh = async (options: RefreshOptions = {}) => {

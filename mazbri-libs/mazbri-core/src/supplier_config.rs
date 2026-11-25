@@ -20,7 +20,8 @@ use crate::channel_egress::{
     UpstreamTlsSpec, mask_tls_in_json, merge_tls_secret_in_json, validate_invalidation_rules,
 };
 use crate::crypto::supplier_secrets::{
-    SupplierSecretsError, decrypt_credentials_map, encrypt_credentials_map, supplier_secrets_key,
+    KeyringRef, SupplierSecretsError, decrypt_credentials_map, decrypt_credentials_map_with_owner,
+    encrypt_credentials_map, encrypt_credentials_map_with_owner, supplier_secrets_key,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -317,6 +318,46 @@ impl SupplierConfig {
         self
     }
 
+    /// 写入 DB 前绑定 `supplier_id` 加密 credentials 与 `tls.client_key`。
+    ///
+    /// # Errors
+    ///
+    /// 密钥环不可用或 AEAD 密封失败时返回错误。
+    pub fn encrypt_credentials_for_storage_with_owner<'a>(
+        mut self,
+        keyring: impl KeyringRef<'a>,
+        supplier_id: &str,
+    ) -> Result<Self, ConfigValidationError> {
+        let kr = keyring.into_keyring();
+        if let Some(ref mut auth) = self.auth_flow {
+            encrypt_credentials_map_with_owner(&mut auth.credentials, &*kr, "supplier", supplier_id)?;
+        }
+        if let Some(ref mut tls) = self.tls {
+            tls.encrypt_for_storage_with_owner(&*kr, "supplier", supplier_id)?;
+        }
+        Ok(self)
+    }
+
+    /// 数据面出站前绑定 `supplier_id` 解密 credentials 与 `tls.client_key`。
+    ///
+    /// # Errors
+    ///
+    /// 密钥环不可用、AAD 不匹配或密文损坏时返回错误。
+    pub fn decrypt_credentials_for_runtime_with_owner<'a>(
+        mut self,
+        keyring: impl KeyringRef<'a>,
+        supplier_id: &str,
+    ) -> Result<Self, ConfigValidationError> {
+        let kr = keyring.into_keyring();
+        if let Some(ref mut auth) = self.auth_flow {
+            decrypt_credentials_map_with_owner(&mut auth.credentials, &*kr, "supplier", supplier_id)?;
+        }
+        if let Some(ref mut tls) = self.tls {
+            tls.decrypt_for_runtime_with_owner(&*kr, "supplier", supplier_id)?;
+        }
+        Ok(self)
+    }
+
     /// 写入 DB 前加密 credentials 与 `tls.client_key`（G-05）。
     ///
     /// # Errors
@@ -326,10 +367,10 @@ impl SupplierConfig {
         if self.auth_flow.is_some() || self.tls.is_some() {
             let key = supplier_secrets_key()?;
             if let Some(ref mut auth) = self.auth_flow {
-                encrypt_credentials_map(&mut auth.credentials, key)?;
+                encrypt_credentials_map(&mut auth.credentials, &key)?;
             }
             if let Some(ref mut tls) = self.tls {
-                tls.encrypt_for_storage(key)?;
+                tls.encrypt_for_storage(&key)?;
             }
         }
         Ok(self)
@@ -344,10 +385,10 @@ impl SupplierConfig {
         if self.auth_flow.is_some() || self.tls.is_some() {
             let key = supplier_secrets_key()?;
             if let Some(ref mut auth) = self.auth_flow {
-                decrypt_credentials_map(&mut auth.credentials, key)?;
+                decrypt_credentials_map(&mut auth.credentials, &key)?;
             }
             if let Some(ref mut tls) = self.tls {
-                tls.decrypt_for_runtime(key)?;
+                tls.decrypt_for_runtime(&key)?;
             }
         }
         Ok(self)
@@ -715,6 +756,7 @@ mod tests {
 
     #[test]
     fn encrypt_decrypt_credentials_roundtrip() {
+        let _kr = crate::crypto::supplier_secrets::install_deterministic_test_keyring();
         let mut cfg = SupplierConfig {
             upstream_type: UPSTREAM_TYPE_TRANSPARENT.into(),
             auth_flow: Some(AuthFlowConfig {
@@ -737,7 +779,7 @@ mod tests {
             .credentials
             .get("username")
             .unwrap();
-        assert!(stored.starts_with("enc:v2:aes-256-gcm:"));
+        assert!(stored.starts_with("enc:v3:v1:aes-256-gcm:"));
         cfg = cfg.decrypt_credentials_for_runtime().unwrap();
         assert_eq!(
             cfg.auth_flow
@@ -754,7 +796,7 @@ mod tests {
     fn mask_hides_encrypted() {
         let json = serde_json::json!({
             "auth_flow": {
-                "credentials": { "password": "enc:v2:aes-256-gcm:abc" }
+                "credentials": { "password": "enc:v3:v1:aes-256-gcm:abc" }
             }
         });
         let masked = mask_config_credentials(json);
@@ -814,6 +856,7 @@ mod tests {
         assert_eq!(flow.token_url, "");
         assert_eq!(flow.credentials.len(), 2);
 
+        let _kr = crate::crypto::supplier_secrets::install_deterministic_test_keyring();
         let encrypted_once = cfg.encrypt_credentials_for_storage().unwrap();
         let cipher = encrypted_once
             .auth_flow
@@ -823,7 +866,7 @@ mod tests {
             .get("crypto_data_key")
             .unwrap()
             .clone();
-        assert!(cipher.starts_with("enc:v2:"));
+        assert!(cipher.starts_with("enc:v3:v1:"));
 
         let encrypted_twice = encrypted_once
             .clone()
@@ -881,6 +924,7 @@ mod tests {
             }),
             ..Default::default()
         };
+        let _kr = crate::crypto::supplier_secrets::install_deterministic_test_keyring();
         cfg.validate().unwrap();
         let stored = cfg.encrypt_credentials_for_storage().unwrap();
         let raw_json = stored.to_json_value().unwrap();
@@ -888,7 +932,7 @@ mod tests {
             raw_json["tls"]["client_key"]
                 .as_str()
                 .unwrap()
-                .starts_with("enc:v2:")
+                .starts_with("enc:v3:v1:")
         );
         let masked = mask_config_credentials(raw_json.clone());
         assert_eq!(masked["tls"]["client_key"], "••••••••");

@@ -1,66 +1,141 @@
-//! Token cache with singleflight, shared by production and probe paths.
+//! Token cache with cancellation-safe singleflight, shared by production and probe paths.
 
 use chrono::{DateTime, Utc};
+use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
 use std::future::Future;
+use std::sync::Arc;
+use std::time::Duration;
 use subtle::ConstantTimeEq;
-use tokio::sync::{Mutex, RwLock, watch};
+use tokio::sync::watch;
 
-type FlightReceiver<V> = watch::Receiver<Option<Result<V, String>>>;
+const DEFAULT_LEADER_FETCH_TIMEOUT: Duration = Duration::from_secs(15);
 
-pub struct Group<K, V> {
+type FlightPayload<V> = Option<Result<V, String>>;
+type FlightReceiver<V> = watch::Receiver<FlightPayload<V>>;
+type FlightSender<V> = watch::Sender<FlightPayload<V>>;
+
+struct LeaderCleanupGuard<'a, K, V>
+where
+    K: std::hash::Hash + Eq + Clone,
+{
+    in_flight: &'a Mutex<HashMap<K, FlightReceiver<V>>>,
+    key: K,
+    tx: Option<FlightSender<V>>,
+}
+
+impl<K, V> LeaderCleanupGuard<'_, K, V>
+where
+    K: std::hash::Hash + Eq + Clone,
+{
+    fn finish(&mut self, outcome: Result<V, String>) {
+        self.in_flight.lock().remove(&self.key);
+        if let Some(tx) = self.tx.take() {
+            let _ = tx.send(Some(outcome));
+        }
+    }
+}
+
+impl<K, V> Drop for LeaderCleanupGuard<'_, K, V>
+where
+    K: std::hash::Hash + Eq + Clone,
+{
+    fn drop(&mut self) {
+        if let Some(tx) = self.tx.take() {
+            self.in_flight.lock().remove(&self.key);
+            let _ = tx.send(Some(Err("singleflight leader task aborted".to_string())));
+        }
+    }
+}
+
+struct GroupInner<K, V> {
     in_flight: Mutex<HashMap<K, FlightReceiver<V>>>,
+    leader_timeout: Duration,
+}
+
+/// Cancellation-safe singleflight group: the leader executes inside an independent
+/// `tokio::spawn` task bounded by `leader_timeout`, so cancelling one short-deadline
+/// caller never aborts the in-flight fetch or strands concurrent waiters.
+pub struct Group<K, V> {
+    inner: Arc<GroupInner<K, V>>,
 }
 
 impl<K, V> Group<K, V>
 where
-    K: std::hash::Hash + Eq + Clone,
-    V: Clone,
+    K: std::hash::Hash + Eq + Clone + Send + Sync + 'static,
+    V: Clone + Send + Sync + 'static,
 {
+    #[must_use]
     pub fn new() -> Self {
+        Self::with_timeout(DEFAULT_LEADER_FETCH_TIMEOUT)
+    }
+
+    #[must_use]
+    pub fn with_timeout(leader_timeout: Duration) -> Self {
         Self {
-            in_flight: Mutex::new(HashMap::new()),
+            inner: Arc::new(GroupInner {
+                in_flight: Mutex::new(HashMap::new()),
+                leader_timeout: leader_timeout.max(Duration::from_millis(10)),
+            }),
         }
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the leader task fails, times out, or aborts.
     pub async fn work<F, Fut>(&self, key: &K, f: F) -> Result<V, String>
     where
         F: FnOnce() -> Fut,
-        Fut: Future<Output = Result<V, String>>,
+        Fut: Future<Output = Result<V, String>> + Send + 'static,
     {
-        let mut map = self.in_flight.lock().await;
-        if let Some(rx) = map.get(key) {
-            let mut rx = rx.clone();
-            drop(map);
-            loop {
+        let mut rx = {
+            let mut map = self.inner.in_flight.lock();
+            if let Some(existing) = map.get(key) {
+                existing.clone()
+            } else {
+                let (tx, rx) = watch::channel(None);
+                map.insert(key.clone(), rx.clone());
+                let group_inner = Arc::clone(&self.inner);
+                let owned_key = key.clone();
+                let leader_fut = f();
+                tokio::spawn(async move {
+                    let mut guard = LeaderCleanupGuard {
+                        in_flight: &group_inner.in_flight,
+                        key: owned_key,
+                        tx: Some(tx),
+                    };
+                    let res =
+                        match tokio::time::timeout(group_inner.leader_timeout, leader_fut).await {
+                            Ok(res) => res,
+                            Err(_) => Err(format!(
+                                "token fetch timed out after {}ms",
+                                group_inner.leader_timeout.as_millis()
+                            )),
+                        };
+                    guard.finish(res);
+                });
+                rx
+            }
+        };
+
+        loop {
+            if let Some(ref res) = *rx.borrow_and_update() {
+                return res.clone();
+            }
+            if rx.changed().await.is_err() {
                 if let Some(ref res) = *rx.borrow() {
                     return res.clone();
                 }
-                if rx.changed().await.is_err() {
-                    return Err("Singleflight sender dropped".to_string());
-                }
+                return Err("singleflight leader task aborted".to_string());
             }
         }
-
-        let (tx, rx) = watch::channel(None);
-        map.insert(key.clone(), rx);
-        drop(map);
-
-        let res = f().await;
-
-        let mut map = self.in_flight.lock().await;
-        map.remove(key);
-        let _ = tx.send(Some(res.clone()));
-        drop(map);
-
-        res
     }
 }
 
 impl<K, V> Default for Group<K, V>
 where
-    K: std::hash::Hash + Eq + Clone,
-    V: Clone,
+    K: std::hash::Hash + Eq + Clone + Send + Sync + 'static,
+    V: Clone + Send + Sync + 'static,
 {
     fn default() -> Self {
         Self::new()
@@ -84,32 +159,52 @@ pub enum StaleEvict {
     Superseded,
 }
 
-/// 进程内令牌缓存：命中未过期（扣除提前量）的令牌直接返回，否则经 singleflight 换票。
-pub struct TokenCache {
-    cache: RwLock<HashMap<String, CachedToken>>,
+#[derive(Default)]
+struct CacheState {
+    entries: HashMap<String, (CachedToken, u64)>,
+    generations: HashMap<String, u64>,
+}
+
+struct TokenCacheInner {
+    state: RwLock<CacheState>,
     flight_group: Group<String, CachedToken>,
     refresh_skew: chrono::Duration,
+}
+
+impl TokenCacheInner {
+    fn is_fresh(&self, cached: &CachedToken, now: DateTime<Utc>) -> bool {
+        cached.expires_at > now + self.refresh_skew
+    }
+}
+
+/// 进程内令牌缓存：命中未过期（扣除提前量）的令牌直接返回，否则经取消安全的 singleflight 换票。
+pub struct TokenCache {
+    inner: Arc<TokenCacheInner>,
 }
 
 impl TokenCache {
     /// `refresh_skew`：令牌剩余有效期不足该值即视为过期（来自运行时配置）。
     #[must_use]
-    pub fn new(refresh_skew: std::time::Duration) -> Self {
+    pub fn new(refresh_skew: Duration) -> Self {
+        Self::with_fetch_timeout(refresh_skew, DEFAULT_LEADER_FETCH_TIMEOUT)
+    }
+
+    #[must_use]
+    pub fn with_fetch_timeout(refresh_skew: Duration, fetch_timeout: Duration) -> Self {
         Self {
-            cache: RwLock::new(HashMap::new()),
-            flight_group: Group::new(),
-            refresh_skew: chrono::Duration::from_std(refresh_skew).unwrap_or(chrono::Duration::MAX),
+            inner: Arc::new(TokenCacheInner {
+                state: RwLock::new(CacheState::default()),
+                flight_group: Group::with_timeout(fetch_timeout),
+                refresh_skew: chrono::Duration::from_std(refresh_skew)
+                    .unwrap_or(chrono::Duration::MAX),
+            }),
         }
     }
 
     /// 提前视为过期的余量。
     #[must_use]
-    pub fn refresh_skew(&self) -> std::time::Duration {
-        self.refresh_skew.to_std().unwrap_or_default()
-    }
-
-    fn is_fresh(&self, cached: &CachedToken, now: DateTime<Utc>) -> bool {
-        cached.expires_at > now + self.refresh_skew
+    pub fn refresh_skew(&self) -> Duration {
+        self.inner.refresh_skew.to_std().unwrap_or_default()
     }
 
     /// # Errors
@@ -118,7 +213,7 @@ impl TokenCache {
     pub async fn get_token<F, Fut>(&self, cache_key: &str, fetch_fn: F) -> Result<String, String>
     where
         F: FnOnce() -> Fut,
-        Fut: Future<Output = Result<CachedToken, String>>,
+        Fut: Future<Output = Result<CachedToken, String>> + Send + 'static,
     {
         self.get_token_timed(cache_key, fetch_fn)
             .await
@@ -127,6 +222,8 @@ impl TokenCache {
 
     /// 获取令牌并返回因未命中缓存而在外部换票请求上等待的真实时长（缓存命中时为 0）。
     ///
+    /// 仅由后台 Leader 任务按 `generation` 单点写入缓存条目，杜绝慢速 Follower 回写被驱逐的脏令牌。
+    ///
     /// # Errors
     ///
     /// 换票请求或响应解析失败时返回错误。
@@ -134,76 +231,91 @@ impl TokenCache {
         &self,
         cache_key: &str,
         fetch_fn: F,
-    ) -> Result<(String, std::time::Duration), String>
+    ) -> Result<(String, Duration), String>
     where
         F: FnOnce() -> Fut,
-        Fut: Future<Output = Result<CachedToken, String>>,
+        Fut: Future<Output = Result<CachedToken, String>> + Send + 'static,
     {
         {
-            let guard = self.cache.read().await;
-            if let Some(cached) = guard.get(cache_key)
-                && self.is_fresh(cached, Utc::now())
+            let guard = self.inner.state.read();
+            if let Some((cached, _)) = guard.entries.get(cache_key)
+                && self.inner.is_fresh(cached, Utc::now())
             {
-                return Ok((cached.token.clone(), std::time::Duration::ZERO));
+                return Ok((cached.token.clone(), Duration::ZERO));
             }
         }
 
         let wait_started = std::time::Instant::now();
+        let key_lookup = cache_key.to_string();
+        let key_owned = cache_key.to_string();
+        let inner = Arc::clone(&self.inner);
         let cached = self
+            .inner
             .flight_group
-            .work(&cache_key.to_string(), || async move {
-                {
-                    let guard = self.cache.read().await;
-                    if let Some(cached) = guard.get(cache_key)
-                        && self.is_fresh(cached, Utc::now())
-                    {
-                        return Ok(cached.clone());
-                    }
-                }
+            .work(&key_lookup, || {
+                let fetch_fut = fetch_fn();
+                async move {
+                    let start_gen = {
+                        let guard = inner.state.read();
+                        if let Some((cached, _)) = guard.entries.get(&key_owned)
+                            && inner.is_fresh(cached, Utc::now())
+                        {
+                            return Ok(cached.clone());
+                        }
+                        guard.generations.get(&key_owned).copied().unwrap_or(0)
+                    };
 
-                let new_cached = fetch_fn().await?;
-                Ok(new_cached)
+                    let new_cached = fetch_fut.await?;
+                    {
+                        let mut guard = inner.state.write();
+                        let cur_gen = guard.generations.get(&key_owned).copied().unwrap_or(0);
+                        if cur_gen == start_gen {
+                            guard
+                                .entries
+                                .insert(key_owned, (new_cached.clone(), start_gen));
+                        }
+                    }
+                    Ok(new_cached)
+                }
             })
             .await?;
         let waited = wait_started.elapsed();
-
-        let mut guard = self.cache.write().await;
-        guard.insert(cache_key.to_string(), cached.clone());
-
         Ok((cached.token, waited))
     }
 
-    /// 认证被拒后的「作废令牌」决策（原子，写锁内完成）：
-    ///
-    /// - 缓存仍是 `failed`：本请求是这一代令牌的首个被拒者，调用 `gate`（重试预算）；
-    ///   通过则作废并返回 [`StaleEvict::Evicted`]，不通过则保留缓存返回 [`StaleEvict::Denied`]
-    ///   （凭证持续无效时不会每个请求都触发换票）；
-    /// - 缓存已被换新或已被别的请求作废：返回 [`StaleEvict::Superseded`]，不消耗预算——
-    ///   同一代令牌只为首个被拒者付一次预算，其余并发请求直接用新令牌重放。
+    /// 认证被拒后的「作废令牌」决策（原子，写锁内完成）。
     pub async fn evict_if_current_gated(
         &self,
         cache_key: &str,
         failed: &str,
         gate: impl FnOnce() -> bool,
     ) -> StaleEvict {
-        let mut guard = self.cache.write().await;
-        match guard.get(cache_key) {
-            Some(c) if bool::from(c.token.as_bytes().ct_eq(failed.as_bytes())) => {
-                if gate() {
-                    guard.remove(cache_key);
-                    StaleEvict::Evicted
-                } else {
-                    StaleEvict::Denied
+        let decision = {
+            let mut guard = self.inner.state.write();
+            match guard.entries.get(cache_key) {
+                Some((c, _)) if bool::from(c.token.as_bytes().ct_eq(failed.as_bytes())) => {
+                    if gate() {
+                        guard.entries.remove(cache_key);
+                        let next_gen = guard
+                            .generations
+                            .get(cache_key)
+                            .copied()
+                            .unwrap_or(0)
+                            .saturating_add(1);
+                        guard.generations.insert(cache_key.to_string(), next_gen);
+                        StaleEvict::Evicted
+                    } else {
+                        StaleEvict::Denied
+                    }
                 }
+                _ => StaleEvict::Superseded,
             }
-            _ => StaleEvict::Superseded,
-        }
+        };
+        tokio::task::consume_budget().await;
+        decision
     }
 
     /// 仅当缓存中的令牌仍是 `failed` 时删除，返回是否删除（常量时间比较）。
-    ///
-    /// 并发 N 个请求同时被拒时只有第一个真正删除；其余看到的已是新令牌或空，
-    /// 直接走 [`Self::get_token`]，不会误删别的请求刚换回来的新令牌。
     pub async fn evict_if_current(&self, cache_key: &str, failed: &str) -> bool {
         self.evict_if_current_gated(cache_key, failed, || true)
             .await
@@ -214,9 +326,7 @@ impl TokenCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::time::Duration;
 
     fn token(t: &str, ttl_secs: i64) -> CachedToken {
         CachedToken {
@@ -290,5 +400,56 @@ mod tests {
             .unwrap();
         assert_eq!(got, "KEEP", "剩余 31s > skew 30s 命中缓存");
         assert_eq!(cache.refresh_skew(), Duration::from_secs(30));
+    }
+
+    #[tokio::test]
+    async fn cancelling_short_timeout_caller_does_not_drop_singleflight_for_peers() {
+        let cache = Arc::new(TokenCache::new(Duration::from_secs(30)));
+        let fetches = Arc::new(AtomicUsize::new(0));
+
+        // Caller 1 initiates a 150ms token fetch, but cancels after 30ms.
+        let c1 = Arc::clone(&cache);
+        let f1 = Arc::clone(&fetches);
+        let caller1 = tokio::spawn(async move {
+            tokio::time::timeout(
+                Duration::from_millis(30),
+                c1.get_token("shared-key", move || async move {
+                    f1.fetch_add(1, Ordering::SeqCst);
+                    tokio::time::sleep(Duration::from_millis(150)).await;
+                    Ok(token("FRESH-TOK", 600))
+                }),
+            )
+            .await
+        });
+
+        // Give caller 1 a moment to become the singleflight leader, then launch 10 followers.
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        let mut followers = Vec::new();
+        for _ in 0..10 {
+            let cf = Arc::clone(&cache);
+            let ff = Arc::clone(&fetches);
+            followers.push(tokio::spawn(async move {
+                cf.get_token("shared-key", move || async move {
+                    ff.fetch_add(1, Ordering::SeqCst);
+                    Ok(token("UNEXPECTED", 600))
+                })
+                .await
+            }));
+        }
+
+        assert!(caller1.await.expect("join c1").is_err(), "caller 1 timed out");
+        for f in followers {
+            let res = f.await.expect("join follower");
+            assert_eq!(res.as_deref(), Ok("FRESH-TOK"));
+        }
+        assert_eq!(fetches.load(Ordering::SeqCst), 1);
+
+        // Subsequent call hits the populated cache entry immediately.
+        let hit = cache
+            .get_token_timed("shared-key", || async { Err("must hit cache".into()) })
+            .await
+            .expect("cache hit");
+        assert_eq!(hit.0, "FRESH-TOK");
+        assert_eq!(hit.1, Duration::ZERO);
     }
 }

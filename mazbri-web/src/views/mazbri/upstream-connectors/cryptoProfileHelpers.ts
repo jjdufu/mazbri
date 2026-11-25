@@ -81,6 +81,8 @@ export interface UpstreamCryptoProfileDraft {
   iv: IvSourceId;
   scope: CipherScopeId;
   response_crypt?: CryptSpecDraft | null;
+  verify_response?: boolean;
+  decrypt_response?: boolean;
   allow_insecure: boolean;
 }
 
@@ -133,6 +135,8 @@ export function defaultCryptoProfile(
     crypt: null,
     wrap: null,
     response_crypt: null,
+    verify_response: false,
+    decrypt_response: false,
   };
   applyOrderDefaults(base);
   return base;
@@ -152,12 +156,16 @@ export function applyOrderDefaults(profile: UpstreamCryptoProfileDraft): void {
 
   if (!needsSign) {
     profile.sign = null;
+    profile.verify_response = false;
   } else if (!profile.sign?.alg) {
     profile.sign = { alg: "hmac-sha256" };
   }
 
   if (!needsCrypt) {
     profile.crypt = null;
+    if (!profile.response_crypt?.alg) {
+      profile.decrypt_response = false;
+    }
   } else if (!profile.crypt?.alg) {
     profile.crypt = {
       alg: profile.order === "aead_only" ? "aes-256-gcm" : "aes-256-cbc",
@@ -269,6 +277,8 @@ export function parseCryptoProfile(raw: unknown): UpstreamCryptoProfileDraft | n
     iv: (IV_SOURCES as readonly string[]).includes(iv) ? iv : "random",
     scope: (CIPHER_SCOPES as readonly string[]).includes(scope) ? scope : "whole_body",
     response_crypt: parseCrypt(obj.response_crypt),
+    verify_response: Boolean(obj.verify_response),
+    decrypt_response: Boolean(obj.decrypt_response),
     allow_insecure: Boolean(obj.allow_insecure),
   };
   return profile;
@@ -300,6 +310,8 @@ export function serializeCryptoProfile(
     },
     iv: profile.iv,
     scope: profile.scope,
+    verify_response: Boolean(profile.verify_response),
+    decrypt_response: Boolean(profile.decrypt_response),
     allow_insecure: Boolean(profile.allow_insecure),
   };
 
@@ -500,6 +512,24 @@ export function validateCryptoProfileClient(
         message: `order=encrypt_only 时 response_crypt 不可使用无完整性的分组密码`,
       });
     }
+  }
+
+  if (profile.verify_response && !profile.sign?.alg) {
+    issues.push({
+      code: "verify_response_sign",
+      message: "verify_response=true 需要配置 sign.alg",
+    });
+  }
+
+  if (
+    profile.decrypt_response &&
+    !profile.crypt?.alg &&
+    !profile.response_crypt?.alg
+  ) {
+    issues.push({
+      code: "decrypt_response_crypt",
+      message: "decrypt_response=true 需要配置 crypt 或 response_crypt",
+    });
   }
 
   if (profile.scope === "named_fields") {

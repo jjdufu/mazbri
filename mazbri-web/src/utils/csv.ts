@@ -22,6 +22,7 @@ export function parseCsvLine(line: string): string[] {
   result.push(current);
   return result;
 }
+
 export function parseCsvRecords(content: string): string[] {
   const normalized = content.replace(/\r\n/g, "\n");
   const records: string[] = [];
@@ -48,6 +49,41 @@ export function parseCsvRecords(content: string): string[] {
   }
   return records.filter((record) => record.trim());
 }
+
+const PURE_DECIMAL_NEGATIVE_RE = /^-\d+(?:\.\d+)?$/;
+
+export function sanitizeCsvFormulaCell(value: string): string {
+  if (!value) return "";
+  const first = value[0];
+  if (
+    first === "=" ||
+    first === "+" ||
+    first === "@" ||
+    first === "\t" ||
+    first === "\r"
+  ) {
+    return `'${value}`;
+  }
+  if (first === "-" && !PURE_DECIMAL_NEGATIVE_RE.test(value)) {
+    return `'${value}`;
+  }
+  return value;
+}
+
+function formatCsvCell(raw: string, forceQuote = false): string {
+  const sanitized = sanitizeCsvFormulaCell(raw);
+  if (
+    forceQuote ||
+    sanitized.includes(",") ||
+    sanitized.includes("\n") ||
+    sanitized.includes("\r") ||
+    sanitized.includes('"')
+  ) {
+    return `"${sanitized.replace(/"/g, '""')}"`;
+  }
+  return sanitized;
+}
+
 export function parseCsv<T extends Record<string, unknown>>(
   content: string,
   columnMapping: Record<string, keyof T>,
@@ -56,12 +92,12 @@ export function parseCsv<T extends Record<string, unknown>>(
   if (lines.length < 2) {
     return [];
   }
-  const headerLine = lines[0].toLowerCase();
+  const headerLine = lines[0].replace(/^\uFEFF/, "").toLowerCase();
   const headers = parseCsvLine(headerLine);
   const columnIndices: Record<string, number> = {};
-  for (const csvKey of Object.keys(columnMapping)) {
-    const objectKey = columnMapping[csvKey];
-    const index = headers.findIndex((h) => h.trim() === csvKey);
+  for (const [csvKey, objectKey] of Object.entries(columnMapping)) {
+    const normalizedCsvKey = csvKey.trim().toLowerCase();
+    const index = headers.findIndex((h) => h.trim() === normalizedCsvKey);
     if (index >= 0) {
       columnIndices[objectKey as string] = index;
     }
@@ -72,16 +108,18 @@ export function parseCsv<T extends Record<string, unknown>>(
     if (!line.trim()) continue;
     const columns = parseCsvLine(line);
     const obj: Record<string, unknown> = {};
-    for (const [objectKey, csvKey] of Object.entries(columnMapping)) {
-      const index = columnIndices[objectKey];
+    for (const [, objectKey] of Object.entries(columnMapping)) {
+      const propKey = objectKey as string;
+      const index = columnIndices[propKey];
       if (index !== undefined && index < columns.length) {
-        obj[objectKey] = columns[index] || "";
+        obj[propKey] = columns[index] ?? "";
       }
     }
     results.push(obj as T);
   }
   return results;
 }
+
 export function generateCsv<T extends Record<string, unknown>>(
   data: T[],
   columns: {
@@ -94,7 +132,9 @@ export function generateCsv<T extends Record<string, unknown>>(
 ): string {
   const { withBOM = true } = options;
   let csv = withBOM ? "\uFEFF" : "";
-  csv += columns.map((col) => col.label).join(",") + "\n";
+  csv +=
+    columns.map((col) => formatCsvCell(String(col.label ?? ""))).join(",") +
+    "\n";
   for (const item of data) {
     const row: string[] = [];
     for (const col of columns) {
@@ -102,25 +142,21 @@ export function generateCsv<T extends Record<string, unknown>>(
       if (value === undefined || value === null) {
         row.push("");
       } else if (typeof value === "string") {
-        if (
-          value.includes(",") ||
-          value.includes("\n") ||
-          value.includes('"')
-        ) {
-          row.push(`"${value.replace(/"/g, '""')}"`);
-        } else {
-          row.push(value);
-        }
+        row.push(formatCsvCell(value));
       } else if (Array.isArray(value)) {
-        row.push(`"${value.join("\n")}"`);
+        const joined = value
+          .map((entry) => sanitizeCsvFormulaCell(String(entry ?? "")))
+          .join("\n");
+        row.push(formatCsvCell(joined, true));
       } else {
-        row.push(String(value));
+        row.push(formatCsvCell(String(value)));
       }
     }
     csv += row.join(",") + "\n";
   }
   return csv;
 }
+
 export function downloadCsv(content: string, filename: string): void {
   const blob = new Blob([content], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
@@ -136,12 +172,7 @@ export function downloadCsv(content: string, filename: string): void {
 export function serializeRawCsv(rows: unknown[][]): string {
   return rows
     .map((row) =>
-      row
-        .map((val) => {
-          const text = String(val ?? "");
-          return `"${text.replace(/"/g, '""')}"`;
-        })
-        .join(","),
+      row.map((val) => formatCsvCell(String(val ?? ""), true)).join(","),
     )
     .join("\n");
 }

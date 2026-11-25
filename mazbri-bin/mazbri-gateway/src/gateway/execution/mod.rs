@@ -46,4 +46,4 @@ use channel::{
     ChannelAttempt, execute_channel_attempt, should_switch, should_switch_status,
     spawn_store_fallback_snapshot,
 };
-use http_upstream::{AttemptCtx, execute_http_upstream_request};
+use http_upstream::{AttemptCtx, execute_http_upstream_request, is_retry_safe_request};

@@ -102,7 +102,7 @@ impl CertificateRepository {
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn subject_exists(&self, subject: &str) -> CertResult<bool> {
         let exists: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM certificates WHERE subject = $1 AND revoked = false)",
+            "SELECT EXISTS(SELECT 1 FROM certificates WHERE subject = $1 AND revoked = false AND expires_at > NOW())",
         )
         .bind(subject)
         .fetch_one(&*self.db)
@@ -120,11 +120,13 @@ impl CertificateRepository {
         expires_at: DateTime<Utc>,
         dns_names: &[String],
     ) -> CertResult<CertificateRecord> {
+        let fingerprint =
+            compute_cert_fingerprint(cert_pem).map_err(CertError::VerificationFailed)?;
         let record = sqlx::query_as::<_, CertificateRecord>(
             r"
             UPDATE certificates
             SET cert_pem = $2, key_pem = $3, expires_at = $4, dns_names = $5,
-                renewal_count = renewal_count + 1, updated_at = NOW()
+                fingerprint = $6, renewal_count = renewal_count + 1, updated_at = NOW()
             WHERE id = $1 AND revoked = false
             RETURNING *
             ",
@@ -134,6 +136,7 @@ impl CertificateRepository {
         .bind(key_pem)
         .bind(expires_at)
         .bind(dns_names)
+        .bind(&fingerprint)
         .fetch_optional(&*self.db)
         .await?
         .ok_or_else(|| CertError::NotFound(id.to_string()))?;
@@ -187,6 +190,32 @@ impl CertificateRepository {
             .await?;
         Ok(records.into_iter().map(CertificateSummary::from).collect())
     }
+    /// 返回全部已吊销证书的规范化正整数序列号（小写十六进制升序去重）及其 SHA-256 摘要。
+    ///
+    /// # Errors
+    ///
+    /// 数据库查询失败时返回错误。
+    pub async fn list_revoked_serials_hex(&self) -> CertResult<(String, Vec<String>)> {
+        let pems = sqlx::query_scalar::<_, String>(
+            "SELECT cert_pem FROM certificates WHERE revoked = true ORDER BY id",
+        )
+        .fetch_all(&*self.db)
+        .await?;
+        let mut serials = Vec::with_capacity(pems.len());
+        for pem in &pems {
+            if let Ok((_, pem_obj)) = x509_parser::pem::parse_x509_pem(pem.as_bytes())
+                && let Ok((_, cert)) = x509_parser::parse_x509_certificate(&pem_obj.contents)
+            {
+                let norm = mazbri_tls::normalize_serial_bytes(cert.raw_serial());
+                serials.push(hex::encode(norm));
+            }
+        }
+        serials.sort_unstable();
+        serials.dedup();
+        let digest = hex::encode(Sha256::digest(serials.join("\n").as_bytes()));
+        Ok((digest, serials))
+    }
+
     /// 返回所有未吊销证书的去重主体名称列表（按字母升序）。
     ///
     /// # Errors
@@ -607,4 +636,47 @@ fn push_datetime_filter(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::compute_cert_fingerprint;
+    use crate::ca::CaManager;
+    use crate::config::CertConfig;
+    use std::sync::Arc;
+
+    #[test]
+    fn subject_exists_and_update_certificate_sql_keep_expiry_and_fingerprint_in_sync() {
+        let src = include_str!("repository.rs");
+        assert!(
+            src.contains(
+                "SELECT EXISTS(SELECT 1 FROM certificates WHERE subject = $1 AND revoked = false AND expires_at > NOW())"
+            ),
+            "subject_exists must exclude expired certificates to align with get_by_subject"
+        );
+        assert!(
+            src.contains("fingerprint = $6, renewal_count = renewal_count + 1"),
+            "update_certificate must refresh SHA-256 fingerprint on renewal"
+        );
+    }
+
+    #[test]
+    fn renewed_certificate_produces_fresh_sha256_fingerprint() {
+        let ca = CaManager::new(Arc::new(CertConfig {
+            ca_validity_days: 3650,
+            cert_validity_days: 365,
+            key_password: Some("test-pw".to_string()),
+        }))
+        .expect("ca");
+        let sans = vec!["mazbri-gateway".to_string()];
+        let (first_pem, _) = ca.issue_certificate("mazbri-gateway", &sans).expect("first");
+        let (renewed_pem, _) = ca
+            .issue_certificate("mazbri-gateway", &sans)
+            .expect("renewed");
+        let fp1 = compute_cert_fingerprint(&first_pem).expect("fp1");
+        let fp2 = compute_cert_fingerprint(&renewed_pem).expect("fp2");
+        assert_eq!(fp1.len(), 32);
+        assert_eq!(fp2.len(), 32);
+        assert_ne!(fp1, fp2, "renewed certificate must have updated fingerprint");
+    }
 }

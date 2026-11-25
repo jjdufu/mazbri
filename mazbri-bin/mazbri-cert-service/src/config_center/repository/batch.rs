@@ -24,6 +24,34 @@ impl super::super::ConfigRepository {
             .await?;
         Ok(entries)
     }
+    async fn decrypt_batch_entries(&self, entries: &mut [ConfigEntry]) -> ConfigResult<()> {
+        let enc = self.encryption.lock().await;
+        for entry in entries {
+            if entry.is_sensitive {
+                entry.content = enc.decrypt(&entry.service_name, &entry.content).await?;
+            }
+        }
+        Ok(())
+    }
+
+    async fn prepare_batch_writes(
+        &self,
+        entries: &[ConfigEntry],
+    ) -> ConfigResult<Vec<(uuid::Uuid, String, String, bool)>> {
+        let mut prepared = Vec::with_capacity(entries.len());
+        let enc = self.encryption.lock().await;
+        for entry in entries {
+            let content_hash = compute_batch_content_hash(&entry.content);
+            let stored_content = if entry.is_sensitive {
+                enc.encrypt(&entry.service_name, &entry.content).await?
+            } else {
+                entry.content.clone()
+            };
+            prepared.push((entry.id, stored_content, content_hash, entry.is_sensitive));
+        }
+        Ok(prepared)
+    }
+
     /// # Errors
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
@@ -43,19 +71,7 @@ impl super::super::ConfigRepository {
                 errors: vec![],
             });
         }
-        {
-            let enc = self.encryption.lock().await;
-            for entry in &mut entries {
-                if entry.is_sensitive {
-                    match enc.decrypt(&entry.content).await {
-                        Ok(decrypted) => entry.content = decrypted,
-                        Err(e) => {
-                            return Err(e.into());
-                        }
-                    }
-                }
-            }
-        }
+        self.decrypt_batch_entries(&mut entries).await?;
         let mut errors: Vec<BatchError> = Vec::new();
         let mut successful_entries: Vec<ConfigEntry> = Vec::new();
         for entry in &entries {
@@ -78,50 +94,45 @@ impl super::super::ConfigRepository {
                 errors,
             });
         }
-        let mut updated_count = 0usize;
-        for entry in &successful_entries {
-            let (stored_content, content_hash) = if entry.is_sensitive {
-                let enc = self.encryption.lock().await;
-                let encrypted = enc.encrypt(&entry.content).await?;
-                (encrypted, compute_batch_content_hash(&entry.content))
-            } else {
-                (
-                    entry.content.clone(),
-                    compute_batch_content_hash(&entry.content),
-                )
-            };
-            let result = sqlx::query(
-                    r"
+        if !errors.is_empty() {
+            return Ok(BatchResult {
+                success: false,
+                affected_count: 0,
+                affected_entries: vec![],
+                errors,
+            });
+        }
+        let prepared_writes = self.prepare_batch_writes(&successful_entries).await?;
+        let mut tx = self.db.begin().await?;
+        for (id, stored_content, content_hash, is_sensitive) in &prepared_writes {
+            if let Err(e) = sqlx::query(
+                r"
                 UPDATE config_entries
                 SET content = $1, content_hash = $2, is_sensitive = $3, updated_by = $4, updated_at = NOW()
                 WHERE id = $5
                 ",
-                )
-                .bind(&stored_content)
-                .bind(&content_hash)
-                .bind(entry.is_sensitive)
-                .bind(updated_by)
-                .bind(entry.id)
-                .execute(&*self.db)
-                .await;
-            match result {
-                Ok(_) => updated_count += 1,
-                Err(e) => {
-                    errors.push(BatchError {
-                        entry_key: entry.service_name.clone(),
-                        error: e.to_string(),
-                    });
-                }
+            )
+            .bind(stored_content)
+            .bind(content_hash)
+            .bind(*is_sensitive)
+            .bind(updated_by)
+            .bind(*id)
+            .execute(&mut *tx)
+            .await
+            {
+                let _ = tx.rollback().await;
+                return Err(e.into());
             }
         }
+        tx.commit().await?;
         Ok(BatchResult {
-            success: errors.is_empty(),
-            affected_count: updated_count,
+            success: true,
+            affected_count: prepared_writes.len(),
             affected_entries: successful_entries
                 .iter()
                 .map(ConfigEntrySummary::from)
                 .collect(),
-            errors,
+            errors: vec![],
         })
     }
 }

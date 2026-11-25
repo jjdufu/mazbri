@@ -37,7 +37,6 @@ import type {
   TenantCryptoKey,
 } from "@/types/api/tenant";
 import type {
-  ApiKey,
   ApiKeyListResponse,
   CreateApiKeyRequest,
   CreateApiKeyResponse,
@@ -472,20 +471,6 @@ export function deleteApiKey(
   return request.del<void>({
     url: `${BASE_PATH}/${tenantCode}/api-keys/${keyId}`,
     showSuccessMessage: false,
-    signal,
-  });
-}
-export function updateApiKeyWarmup(
-  tenantCode: string,
-  keyId: string,
-  warmupEnabled: boolean,
-  signal?: AbortSignal,
-) {
-  return request.request<{ key_prefix: string; warmup_enabled: boolean }>({
-    url: `${BASE_PATH}/${tenantCode}/api-keys/${keyId}/warmup`,
-    method: "PATCH",
-    params: { warmup_enabled: warmupEnabled },
-    showSuccessMessage: true,
     signal,
   });
 }

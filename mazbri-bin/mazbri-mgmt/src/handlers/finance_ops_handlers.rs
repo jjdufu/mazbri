@@ -110,9 +110,17 @@ pub async fn get_finance_balances(
 /// 租户不存在、参数非法或数据库失败时返回错误。
 pub async fn get_tenant_spend(
     State(state): State<AppState>,
+    axum::Extension(claims): axum::Extension<crate::middleware::auth::AdminClaims>,
     Path(code): Path<String>,
     Query(query): Query<SpendQuery>,
 ) -> Result<axum::response::Response, BillingError> {
+    if !crate::middleware::auth::is_business_admin(&claims) {
+        return Ok(ApiResponse::err(
+            axum::http::StatusCode::FORBIDDEN,
+            "只有超级管理员或管理员可以查看租户消费",
+        )
+        .into_response());
+    }
     let tenant_id = crate::services::tenant::resolve_tenant_id(&state.db, &code)
         .await
         .map_err(|e| BillingError::Validation(e.to_string()))?;

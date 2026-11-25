@@ -15,7 +15,7 @@ pub struct AuthConfig {
 impl Default for AuthConfig {
     fn default() -> Self {
         Self {
-            jwt_expiration_secs: 86400,
+            jwt_expiration_secs: 1800,
             refresh_token_expiration_secs: 604_800,
         }
     }

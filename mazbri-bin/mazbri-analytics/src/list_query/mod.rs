@@ -5,6 +5,41 @@ use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_MAX_FILTERS: usize = 16;
 
+/// Typed parameter value bound via `clickhouse::Query::bind(...)`.
+#[derive(Debug, Clone, PartialEq)]
+pub enum BoundValue {
+    Str(String),
+    U64(u64),
+    I64(i64),
+    U16(u16),
+    F64(f64),
+}
+
+/// Parameterized SQL predicate fragment with ordered `.bind(...)` arguments.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct BoundCond {
+    pub sql: String,
+    pub binds: Vec<BoundValue>,
+}
+
+impl BoundCond {
+    #[must_use]
+    pub fn plain(sql: impl Into<String>) -> Self {
+        Self {
+            sql: sql.into(),
+            binds: Vec::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn with_binds(sql: impl Into<String>, binds: Vec<BoundValue>) -> Self {
+        Self {
+            sql: sql.into(),
+            binds,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FilterOp {
@@ -324,9 +359,11 @@ pub fn parse_filters_json(raw: Option<&str>) -> Result<Vec<ListFilter>, ListQuer
         .map_err(|e| ListQueryError::parse(format!("Invalid filters JSON: {e}")))
 }
 
+/// Validate filters up front so malformed or empty `IN` values map to HTTP `400`.
+///
 /// # Errors
 ///
-/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+/// 过滤字段未知、操作符不允许、空 `IN` 数组或值类型非法时返回错误。
 pub fn validate_filters(filters: &[ListFilter]) -> Result<(), ListQueryError> {
     if filters.len() > DEFAULT_MAX_FILTERS {
         return Err(ListQueryError::too_many(DEFAULT_MAX_FILTERS));
@@ -346,12 +383,7 @@ pub fn validate_filters(filters: &[ListFilter]) -> Result<(), ListQueryError> {
                 f.op.as_str()
             )));
         }
-        // Reject non-Unix-second time values up front (400), not at compile time (500).
-        if def.temporal
-            && let Some(value) = &f.value
-        {
-            compile_temporal_condition(def.field, f.op, value)?;
-        }
+        compile_filter_condition(f)?;
     }
     Ok(())
 }
@@ -441,26 +473,34 @@ pub fn collect_flat_numeric_filters(params: &FlatNumericFilters) -> Vec<ListFilt
     out
 }
 
-/// Escape LIKE special characters for `ClickHouse` string patterns.
+/// Escape `ClickHouse` `LIKE` pattern metacharacters (`\`, `%`, `_`) before `.bind(...)`.
+///
+/// Single quotes are NOT escaped here because `clickhouse::Query::bind` escapes SQL string
+/// literals (`\` -> `\\`, `'` -> `\'`) at the wire layer.
 #[must_use]
 pub fn escape_like(value: &str) -> String {
     value
         .replace('\\', "\\\\")
         .replace('%', "\\%")
         .replace('_', "\\_")
-        .replace('\'', "\\'")
 }
 
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub fn value_as_string(v: &FilterValue) -> Result<String, ListQueryError> {
-    match v {
-        FilterValue::String(s) => Ok(s.clone()),
-        FilterValue::Number(n) => Ok(n.to_string()),
-        FilterValue::Bool(b) => Ok(b.to_string()),
-        _ => Err(ListQueryError::invalid_value("expected scalar value")),
+    let s = match v {
+        FilterValue::String(s) => s.clone(),
+        FilterValue::Number(n) => n.to_string(),
+        FilterValue::Bool(b) => b.to_string(),
+        _ => return Err(ListQueryError::invalid_value("expected scalar value")),
+    };
+    if s.contains('\0') {
+        return Err(ListQueryError::invalid_value(
+            "filter value cannot contain null byte",
+        ));
     }
+    Ok(s)
 }
 
 /// # Errors
@@ -478,19 +518,19 @@ pub fn value_as_u64(v: &FilterValue) -> Result<u64, ListQueryError> {
     }
 }
 
-/// Compile a single filter into a CH condition fragment (values already sanitized).
+/// Compile a single filter into a parameterized `ClickHouse` condition (`?` + `.bind(...)`).
 ///
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub fn compile_filter_condition(filter: &ListFilter) -> Result<String, ListQueryError> {
+pub fn compile_filter_condition(filter: &ListFilter) -> Result<BoundCond, ListQueryError> {
     let def =
         find_field(&filter.field).ok_or_else(|| ListQueryError::invalid_field(&filter.field))?;
-    let col = def.field; // catalog field == CH column for call_monitor
+    let col = def.field;
 
     match filter.op {
-        FilterOp::IsNull => return Ok(format!("{col} IS NULL")),
-        FilterOp::IsNotNull => return Ok(format!("{col} IS NOT NULL")),
+        FilterOp::IsNull => return Ok(BoundCond::plain(format!("{col} IS NULL"))),
+        FilterOp::IsNotNull => return Ok(BoundCond::plain(format!("{col} IS NOT NULL"))),
         _ => {}
     }
     let value = filter
@@ -499,60 +539,107 @@ pub fn compile_filter_condition(filter: &ListFilter) -> Result<String, ListQuery
         .ok_or_else(|| ListQueryError::invalid_value("missing value"))?;
 
     if def.temporal {
-        return compile_temporal_condition(col, filter.op, value);
-    }
-
-    if def.numeric {
-        match filter.op {
-            FilterOp::Eq => Ok(format!("{col} = {}", value_as_u64(value)?)),
-            FilterOp::Neq => Ok(format!("{col} != {}", value_as_u64(value)?)),
-            FilterOp::Gt => Ok(format!("{col} > {}", value_as_u64(value)?)),
-            FilterOp::Gte => Ok(format!("{col} >= {}", value_as_u64(value)?)),
-            FilterOp::Lt => Ok(format!("{col} < {}", value_as_u64(value)?)),
-            FilterOp::Lte => Ok(format!("{col} <= {}", value_as_u64(value)?)),
-            FilterOp::Between => {
-                let (a, b) = between_u64(value)?;
-                Ok(format!("{col} >= {a} AND {col} <= {b}"))
-            }
-            FilterOp::In => {
-                let nums = number_list(value)?;
-                Ok(format!("{col} IN ({})", nums.join(", ")))
-            }
-            _ => Err(ListQueryError::invalid_op(col, filter.op.as_str())),
-        }
+        compile_temporal_condition(col, filter.op, value)
+    } else if def.numeric {
+        compile_numeric_condition(col, filter.op, value)
     } else {
-        match filter.op {
-            FilterOp::Eq => {
-                let s = escape_like(&value_as_string(value)?);
-                Ok(format!("{col} = '{s}'"))
-            }
-            FilterOp::Neq => {
-                let s = escape_like(&value_as_string(value)?);
-                Ok(format!("{col} != '{s}'"))
-            }
-            FilterOp::Contains => {
-                let s = escape_like(&value_as_string(value)?);
-                Ok(format!("{col} LIKE '%{s}%'"))
-            }
-            FilterOp::StartsWith => {
-                let s = escape_like(&value_as_string(value)?);
-                Ok(format!("{col} LIKE '{s}%'"))
-            }
-            FilterOp::EndsWith => {
-                let s = escape_like(&value_as_string(value)?);
-                Ok(format!("{col} LIKE '%{s}'"))
-            }
-            FilterOp::In => {
-                let parts = string_list(value)?;
-                let joined = parts
-                    .iter()
-                    .map(|s| format!("'{}'", escape_like(s)))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                Ok(format!("{col} IN ({joined})"))
-            }
-            _ => Err(ListQueryError::invalid_op(col, filter.op.as_str())),
+        compile_string_condition(col, filter.op, value)
+    }
+}
+
+fn compile_numeric_condition(
+    col: &str,
+    op: FilterOp,
+    value: &FilterValue,
+) -> Result<BoundCond, ListQueryError> {
+    match op {
+        FilterOp::Eq => Ok(BoundCond::with_binds(
+            format!("{col} = ?"),
+            vec![BoundValue::U64(value_as_u64(value)?)],
+        )),
+        FilterOp::Neq => Ok(BoundCond::with_binds(
+            format!("{col} != ?"),
+            vec![BoundValue::U64(value_as_u64(value)?)],
+        )),
+        FilterOp::Gt => Ok(BoundCond::with_binds(
+            format!("{col} > ?"),
+            vec![BoundValue::U64(value_as_u64(value)?)],
+        )),
+        FilterOp::Gte => Ok(BoundCond::with_binds(
+            format!("{col} >= ?"),
+            vec![BoundValue::U64(value_as_u64(value)?)],
+        )),
+        FilterOp::Lt => Ok(BoundCond::with_binds(
+            format!("{col} < ?"),
+            vec![BoundValue::U64(value_as_u64(value)?)],
+        )),
+        FilterOp::Lte => Ok(BoundCond::with_binds(
+            format!("{col} <= ?"),
+            vec![BoundValue::U64(value_as_u64(value)?)],
+        )),
+        FilterOp::Between => {
+            let (a, b) = between_u64(value)?;
+            Ok(BoundCond::with_binds(
+                format!("{col} >= ? AND {col} <= ?"),
+                vec![BoundValue::U64(a), BoundValue::U64(b)],
+            ))
         }
+        FilterOp::In => {
+            let nums = number_list(value)?;
+            let placeholders = vec!["?"; nums.len()].join(", ");
+            Ok(BoundCond::with_binds(
+                format!("{col} IN ({placeholders})"),
+                nums.into_iter().map(BoundValue::U64).collect(),
+            ))
+        }
+        _ => Err(ListQueryError::invalid_op(col, op.as_str())),
+    }
+}
+
+fn compile_string_condition(
+    col: &str,
+    op: FilterOp,
+    value: &FilterValue,
+) -> Result<BoundCond, ListQueryError> {
+    match op {
+        FilterOp::Eq => Ok(BoundCond::with_binds(
+            format!("{col} = ?"),
+            vec![BoundValue::Str(value_as_string(value)?)],
+        )),
+        FilterOp::Neq => Ok(BoundCond::with_binds(
+            format!("{col} != ?"),
+            vec![BoundValue::Str(value_as_string(value)?)],
+        )),
+        FilterOp::Contains => {
+            let s = escape_like(&value_as_string(value)?);
+            Ok(BoundCond::with_binds(
+                format!("{col} LIKE ?"),
+                vec![BoundValue::Str(format!("%{s}%"))],
+            ))
+        }
+        FilterOp::StartsWith => {
+            let s = escape_like(&value_as_string(value)?);
+            Ok(BoundCond::with_binds(
+                format!("{col} LIKE ?"),
+                vec![BoundValue::Str(format!("{s}%"))],
+            ))
+        }
+        FilterOp::EndsWith => {
+            let s = escape_like(&value_as_string(value)?);
+            Ok(BoundCond::with_binds(
+                format!("{col} LIKE ?"),
+                vec![BoundValue::Str(format!("%{s}"))],
+            ))
+        }
+        FilterOp::In => {
+            let parts = string_list(value)?;
+            let placeholders = vec!["?"; parts.len()].join(", ");
+            Ok(BoundCond::with_binds(
+                format!("{col} IN ({placeholders})"),
+                parts.into_iter().map(BoundValue::Str).collect(),
+            ))
+        }
+        _ => Err(ListQueryError::invalid_op(col, op.as_str())),
     }
 }
 
@@ -562,31 +649,31 @@ fn compile_temporal_condition(
     col: &str,
     op: FilterOp,
     value: &FilterValue,
-) -> Result<String, ListQueryError> {
+) -> Result<BoundCond, ListQueryError> {
     match op {
         // `eq` means the whole second [t, t+1) that contains the instant.
         FilterOp::Eq => {
             let t = unix_seconds(value)?;
-            Ok(format!(
-                "{col} >= toDateTime({t}, 'UTC') AND {col} < toDateTime({}, 'UTC')",
-                t.saturating_add(1)
+            Ok(BoundCond::with_binds(
+                format!("{col} >= toDateTime(?, 'UTC') AND {col} < toDateTime(?, 'UTC')"),
+                vec![BoundValue::U64(t), BoundValue::U64(t.saturating_add(1))],
             ))
         }
-        FilterOp::Gt => Ok(format!(
-            "{col} > toDateTime({}, 'UTC')",
-            unix_seconds(value)?
+        FilterOp::Gt => Ok(BoundCond::with_binds(
+            format!("{col} > toDateTime(?, 'UTC')"),
+            vec![BoundValue::U64(unix_seconds(value)?)],
         )),
-        FilterOp::Gte => Ok(format!(
-            "{col} >= toDateTime({}, 'UTC')",
-            unix_seconds(value)?
+        FilterOp::Gte => Ok(BoundCond::with_binds(
+            format!("{col} >= toDateTime(?, 'UTC')"),
+            vec![BoundValue::U64(unix_seconds(value)?)],
         )),
-        FilterOp::Lt => Ok(format!(
-            "{col} < toDateTime({}, 'UTC')",
-            unix_seconds(value)?
+        FilterOp::Lt => Ok(BoundCond::with_binds(
+            format!("{col} < toDateTime(?, 'UTC')"),
+            vec![BoundValue::U64(unix_seconds(value)?)],
         )),
-        FilterOp::Lte => Ok(format!(
-            "{col} <= toDateTime({}, 'UTC')",
-            unix_seconds(value)?
+        FilterOp::Lte => Ok(BoundCond::with_binds(
+            format!("{col} <= toDateTime(?, 'UTC')"),
+            vec![BoundValue::U64(unix_seconds(value)?)],
         )),
         FilterOp::Between => {
             let FilterValue::NumberArray(v) = value else {
@@ -600,8 +687,9 @@ fn compile_temporal_condition(
                 ));
             };
             let (a, b) = (seconds_from_f64(*a)?, seconds_from_f64(*b)?);
-            Ok(format!(
-                "{col} >= toDateTime({a}, 'UTC') AND {col} <= toDateTime({b}, 'UTC')"
+            Ok(BoundCond::with_binds(
+                format!("{col} >= toDateTime(?, 'UTC') AND {col} <= toDateTime(?, 'UTC')"),
+                vec![BoundValue::U64(a), BoundValue::U64(b)],
             ))
         }
         _ => Err(ListQueryError::invalid_op(col, op.as_str())),
@@ -628,10 +716,18 @@ fn seconds_from_f64(n: f64) -> Result<u64, ListQueryError> {
 
 fn between_u64(value: &FilterValue) -> Result<(u64, u64), ListQueryError> {
     match value {
-        FilterValue::NumberArray(v) if v.len() == 2 => Ok((
-            mazbri_core::num::f64_to_u64(v[0]),
-            mazbri_core::num::f64_to_u64(v[1]),
-        )),
+        FilterValue::NumberArray(v)
+            if v.len() == 2
+                && v[0].is_finite()
+                && v[0] >= 0.0
+                && v[1].is_finite()
+                && v[1] >= 0.0 =>
+        {
+            Ok((
+                mazbri_core::num::f64_to_u64(v[0]),
+                mazbri_core::num::f64_to_u64(v[1]),
+            ))
+        }
         FilterValue::StringArray(v) if v.len() == 2 => {
             let a = v[0]
                 .parse::<u64>()
@@ -645,31 +741,81 @@ fn between_u64(value: &FilterValue) -> Result<(u64, u64), ListQueryError> {
     }
 }
 
-fn number_list(value: &FilterValue) -> Result<Vec<String>, ListQueryError> {
+fn number_list(value: &FilterValue) -> Result<Vec<u64>, ListQueryError> {
     match value {
-        FilterValue::NumberArray(v) => Ok(v
-            .iter()
-            .map(|n| mazbri_core::num::f64_to_u64(*n).to_string())
-            .collect()),
+        FilterValue::NumberArray(v) => {
+            if v.is_empty() {
+                return Err(ListQueryError::invalid_value(
+                    "IN filter requires a non-empty array",
+                ));
+            }
+            let mut out = Vec::with_capacity(v.len());
+            for n in v {
+                if !n.is_finite() || *n < 0.0 {
+                    return Err(ListQueryError::invalid_value("invalid number in list"));
+                }
+                out.push(mazbri_core::num::f64_to_u64(*n));
+            }
+            Ok(out)
+        }
         FilterValue::StringArray(v) => {
-            let mut out = Vec::new();
+            if v.is_empty() {
+                return Err(ListQueryError::invalid_value(
+                    "IN filter requires a non-empty array",
+                ));
+            }
+            let mut out = Vec::with_capacity(v.len());
             for s in v {
                 let n: u64 = s
                     .parse()
                     .map_err(|_| ListQueryError::invalid_value("invalid number in list"))?;
-                out.push(n.to_string());
+                out.push(n);
             }
             Ok(out)
         }
-        FilterValue::Number(n) => Ok(vec![mazbri_core::num::f64_to_u64(*n).to_string()]),
+        FilterValue::Number(n) if *n >= 0.0 && n.is_finite() => {
+            Ok(vec![mazbri_core::num::f64_to_u64(*n)])
+        }
         _ => Err(ListQueryError::invalid_value("expected number list")),
     }
 }
 
 fn string_list(value: &FilterValue) -> Result<Vec<String>, ListQueryError> {
     match value {
-        FilterValue::StringArray(v) => Ok(v.clone()),
-        FilterValue::String(s) => Ok(s.split(',').map(|x| x.trim().to_string()).collect()),
+        FilterValue::StringArray(v) => {
+            if v.is_empty() {
+                return Err(ListQueryError::invalid_value(
+                    "IN filter requires a non-empty array",
+                ));
+            }
+            for s in v {
+                if s.contains('\0') {
+                    return Err(ListQueryError::invalid_value(
+                        "filter value cannot contain null byte",
+                    ));
+                }
+            }
+            Ok(v.clone())
+        }
+        FilterValue::String(s) => {
+            if s.contains('\0') {
+                return Err(ListQueryError::invalid_value(
+                    "filter value cannot contain null byte",
+                ));
+            }
+            let items: Vec<String> = s
+                .split(',')
+                .map(str::trim)
+                .filter(|x| !x.is_empty())
+                .map(ToOwned::to_owned)
+                .collect();
+            if items.is_empty() {
+                return Err(ListQueryError::invalid_value(
+                    "IN filter requires a non-empty list",
+                ));
+            }
+            Ok(items)
+        }
         _ => Err(ListQueryError::invalid_value("expected string list")),
     }
 }
@@ -681,7 +827,7 @@ const _: &[FilterOp] = STRING_OPS;
 mod tests {
     use super::*;
 
-    fn ts(op: FilterOp, value: FilterValue) -> Result<String, ListQueryError> {
+    fn ts(op: FilterOp, value: FilterValue) -> Result<BoundCond, ListQueryError> {
         compile_filter_condition(&ListFilter {
             field: "timestamp".to_string(),
             op,
@@ -693,7 +839,13 @@ mod tests {
     fn temporal_eq_compiles_to_one_second_bucket() {
         assert_eq!(
             ts(FilterOp::Eq, FilterValue::Number(1_793_502_392.0)).expect("compile"),
-            "timestamp >= toDateTime(1793502392, 'UTC') AND timestamp < toDateTime(1793502393, 'UTC')"
+            BoundCond::with_binds(
+                "timestamp >= toDateTime(?, 'UTC') AND timestamp < toDateTime(?, 'UTC')",
+                vec![
+                    BoundValue::U64(1_793_502_392),
+                    BoundValue::U64(1_793_502_393)
+                ],
+            )
         );
     }
 
@@ -701,11 +853,17 @@ mod tests {
     fn temporal_range_ops_use_unix_seconds() {
         assert_eq!(
             ts(FilterOp::Gte, FilterValue::Number(1_793_502_000.0)).expect("gte"),
-            "timestamp >= toDateTime(1793502000, 'UTC')"
+            BoundCond::with_binds(
+                "timestamp >= toDateTime(?, 'UTC')",
+                vec![BoundValue::U64(1_793_502_000)],
+            )
         );
         assert_eq!(
             ts(FilterOp::Lte, FilterValue::Number(1_793_502_600.0)).expect("lte"),
-            "timestamp <= toDateTime(1793502600, 'UTC')"
+            BoundCond::with_binds(
+                "timestamp <= toDateTime(?, 'UTC')",
+                vec![BoundValue::U64(1_793_502_600)],
+            )
         );
         assert_eq!(
             ts(
@@ -713,7 +871,13 @@ mod tests {
                 FilterValue::NumberArray(vec![1_793_502_000.0, 1_793_502_600.0])
             )
             .expect("between"),
-            "timestamp >= toDateTime(1793502000, 'UTC') AND timestamp <= toDateTime(1793502600, 'UTC')"
+            BoundCond::with_binds(
+                "timestamp >= toDateTime(?, 'UTC') AND timestamp <= toDateTime(?, 'UTC')",
+                vec![
+                    BoundValue::U64(1_793_502_000),
+                    BoundValue::U64(1_793_502_600)
+                ],
+            )
         );
     }
 
@@ -732,15 +896,65 @@ mod tests {
     }
 
     #[test]
-    fn validate_rejects_string_timestamp() {
-        let filter = |value| ListFilter {
+    fn validate_rejects_string_timestamp_and_empty_in_arrays() {
+        let ts_filter = |value| ListFilter {
             field: "timestamp".into(),
             op: FilterOp::Gte,
             value: Some(value),
         };
         assert!(
-            validate_filters(&[filter(FilterValue::String("2026-11-01 11:00:00".into()))]).is_err()
+            validate_filters(&[ts_filter(FilterValue::String(
+                "2026-11-01 11:00:00".into()
+            ))])
+            .is_err()
         );
-        assert!(validate_filters(&[filter(FilterValue::Number(1_793_502_000.0))]).is_ok());
+        assert!(validate_filters(&[ts_filter(FilterValue::Number(1_793_502_000.0))]).is_ok());
+
+        let empty_str_in = ListFilter {
+            field: "tenant_id".into(),
+            op: FilterOp::In,
+            value: Some(FilterValue::StringArray(vec![])),
+        };
+        assert!(validate_filters(&[empty_str_in]).is_err());
+
+        let empty_num_in = ListFilter {
+            field: "status_code".into(),
+            op: FilterOp::In,
+            value: Some(FilterValue::NumberArray(vec![])),
+        };
+        assert!(validate_filters(&[empty_num_in]).is_err());
+
+        let blank_csv_in = ListFilter {
+            field: "error_source".into(),
+            op: FilterOp::In,
+            value: Some(FilterValue::String(" , ".into())),
+        };
+        assert!(validate_filters(&[blank_csv_in]).is_err());
+    }
+
+    #[test]
+    fn like_and_eq_bind_question_marks_and_backslashes_safely() {
+        let contains = compile_filter_condition(&ListFilter {
+            field: "path".into(),
+            op: FilterOp::Contains,
+            value: Some(FilterValue::String("/api/v1?a=1&b=2\\pct%50_x'y".into())),
+        })
+        .expect("contains");
+        assert_eq!(contains.sql, "path LIKE ?");
+        assert_eq!(
+            contains.binds,
+            vec![BoundValue::Str(
+                "%/api/v1?a=1&b=2\\\\pct\\%50\\_x'y%".to_string()
+            )]
+        );
+
+        let eq = compile_filter_condition(&ListFilter {
+            field: "supplier_code".into(),
+            op: FilterOp::Eq,
+            value: Some(FilterValue::String("test\\?x='1'".into())),
+        })
+        .expect("eq");
+        assert_eq!(eq.sql, "supplier_code = ?");
+        assert_eq!(eq.binds, vec![BoundValue::Str("test\\?x='1'".to_string())]);
     }
 }

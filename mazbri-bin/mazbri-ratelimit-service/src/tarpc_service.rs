@@ -1,4 +1,5 @@
 use chrono::{TimeZone, Utc};
+use ipnetwork::IpNetwork;
 use mazbri_core::num::SaturatingFrom;
 use mazbri_rpc::RpcError;
 use mazbri_rpc::ratelimit::{
@@ -10,6 +11,7 @@ use mazbri_rpc::ratelimit::{
 use serde_json::Value;
 use sqlx::{PgPool, Postgres, QueryBuilder, Row};
 use std::collections::HashMap;
+use std::net::IpAddr;
 use std::sync::Arc;
 use tarpc::context::Context;
 use tracing::{debug, warn};
@@ -164,62 +166,156 @@ fn validate_usage_deltas(
     Ok(validated_deltas)
 }
 
+const MAX_DIMENSION_KEY_LEN: usize = 768;
+
+/// Parse optional `client_ip` into a canonical host [`IpNetwork`] for `PostgreSQL` `INET` columns.
+/// Non-IP strings (e.g. `"not-an-ip"`, `"unknown"`, empty, or arbitrary CIDRs) safely yield `None`
+/// (`NULL` in SQL) so a malformed header value never aborts a multi-row transaction.
+fn parse_client_ip_inet(raw: Option<&str>) -> Option<IpNetwork> {
+    let trimmed = raw?.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let ip = trimmed.parse::<IpAddr>().ok()?;
+    let canonical = match ip {
+        IpAddr::V6(v6) => v6.to_ipv4_mapped().map_or(IpAddr::V6(v6), IpAddr::V4),
+        IpAddr::V4(v4) => IpAddr::V4(v4),
+    };
+    Some(IpNetwork::from(canonical))
+}
+
+fn format_dimension_key(
+    product_id: &str,
+    api_endpoint: &str,
+    client_ip: Option<IpNetwork>,
+    policy_version: i64,
+) -> String {
+    let ip_part = client_ip.map_or_else(String::new, |net| net.ip().to_string());
+    let mut key = format!("{product_id}|{api_endpoint}|{ip_part}|{policy_version}");
+    if key.len() > MAX_DIMENSION_KEY_LEN {
+        key.truncate(key.floor_char_boundary(MAX_DIMENSION_KEY_LEN));
+    }
+    key
+}
+
+struct UsageDeltaUnnestBatch {
+    gateway_ids: Vec<String>,
+    tenant_ids: Vec<Uuid>,
+    policy_versions: Vec<i64>,
+    product_ids: Vec<String>,
+    api_endpoints: Vec<String>,
+    client_ips: Vec<Option<IpNetwork>>,
+    window_starts: Vec<chrono::DateTime<Utc>>,
+    window_secs: Vec<i32>,
+    allowed_counts: Vec<i64>,
+    denied_counts: Vec<i64>,
+    bytes_in: Vec<i64>,
+    bytes_out: Vec<i64>,
+    snapshot_ages_ms: Vec<i64>,
+    degraded_flags: Vec<bool>,
+    degrade_reasons: Vec<Option<String>>,
+}
+
+impl UsageDeltaUnnestBatch {
+    /// Number of SQL bind parameters used by the `UNNEST` statement (constant 15, independent of row count).
+    const SQL_BIND_PARAM_COUNT: usize = 15;
+
+    fn from_validated(validated_deltas: &[ValidatedDelta<'_>]) -> Self {
+        let len = validated_deltas.len();
+        let mut batch = Self {
+            gateway_ids: Vec::with_capacity(len),
+            tenant_ids: Vec::with_capacity(len),
+            policy_versions: Vec::with_capacity(len),
+            product_ids: Vec::with_capacity(len),
+            api_endpoints: Vec::with_capacity(len),
+            client_ips: Vec::with_capacity(len),
+            window_starts: Vec::with_capacity(len),
+            window_secs: Vec::with_capacity(len),
+            allowed_counts: Vec::with_capacity(len),
+            denied_counts: Vec::with_capacity(len),
+            bytes_in: Vec::with_capacity(len),
+            bytes_out: Vec::with_capacity(len),
+            snapshot_ages_ms: Vec::with_capacity(len),
+            degraded_flags: Vec::with_capacity(len),
+            degrade_reasons: Vec::with_capacity(len),
+        };
+        for (delta, tenant_id, window_start) in validated_deltas {
+            batch.gateway_ids.push(delta.gateway_id.clone());
+            batch.tenant_ids.push(*tenant_id);
+            batch.policy_versions.push(delta.policy_version);
+            batch.product_ids.push(delta.product_id.clone());
+            batch.api_endpoints.push(delta.api_endpoint.clone());
+            batch
+                .client_ips
+                .push(parse_client_ip_inet(delta.client_ip.as_deref()));
+            batch.window_starts.push(*window_start);
+            batch.window_secs.push(delta.window_secs);
+            batch.allowed_counts.push(delta.allowed_count);
+            batch.denied_counts.push(delta.denied_count);
+            batch.bytes_in.push(delta.bytes_in);
+            batch.bytes_out.push(delta.bytes_out);
+            batch.snapshot_ages_ms.push(delta.snapshot_age_ms);
+            batch.degraded_flags.push(delta.degraded);
+            batch.degrade_reasons.push(delta.degrade_reason.clone());
+        }
+        batch
+    }
+}
+
 async fn insert_usage_deltas(
     conn: &mut sqlx::PgConnection,
     validated_deltas: &[ValidatedDelta<'_>],
 ) -> Result<(), sqlx::Error> {
-    let mut builder = QueryBuilder::<Postgres>::new(
+    if validated_deltas.is_empty() {
+        return Ok(());
+    }
+    const {
+        assert!(UsageDeltaUnnestBatch::SQL_BIND_PARAM_COUNT < 65_535);
+    }
+    let batch = UsageDeltaUnnestBatch::from_validated(validated_deltas);
+    sqlx::query(
         r"
         INSERT INTO rate_limit_usage_deltas (
             gateway_id, tenant_id, policy_version, product_id, api_endpoint, client_ip,
             window_start, window_secs, allowed_count, denied_count, bytes_in, bytes_out,
             snapshot_age_ms, degraded, degrade_reason
-        ) VALUES 
+        )
+        SELECT * FROM UNNEST(
+            $1::text[],
+            $2::uuid[],
+            $3::bigint[],
+            $4::text[],
+            $5::text[],
+            $6::inet[],
+            $7::timestamptz[],
+            $8::int4[],
+            $9::bigint[],
+            $10::bigint[],
+            $11::bigint[],
+            $12::bigint[],
+            $13::bigint[],
+            $14::bool[],
+            $15::text[]
+        )
         ",
-    );
-    for (i, (delta, tenant_id, window_start)) in validated_deltas.iter().enumerate() {
-        if i > 0 {
-            builder.push(", ");
-        }
-        builder.push("(");
-        builder.push_bind(&delta.gateway_id);
-        builder.push(", ");
-        builder.push_bind(tenant_id);
-        builder.push(", ");
-        builder.push_bind(delta.policy_version);
-        builder.push(", ");
-        builder.push_bind(&delta.product_id);
-        builder.push(", ");
-        builder.push_bind(&delta.api_endpoint);
-        builder.push(", ");
-        let client_ip = delta.client_ip.as_deref().unwrap_or("").trim();
-        let client_ip_opt = if client_ip.is_empty() {
-            None
-        } else {
-            Some(client_ip)
-        };
-        builder.push_bind(client_ip_opt);
-        builder.push("::inet, ");
-        builder.push_bind(*window_start);
-        builder.push(", ");
-        builder.push_bind(delta.window_secs);
-        builder.push(", ");
-        builder.push_bind(delta.allowed_count);
-        builder.push(", ");
-        builder.push_bind(delta.denied_count);
-        builder.push(", ");
-        builder.push_bind(delta.bytes_in);
-        builder.push(", ");
-        builder.push_bind(delta.bytes_out);
-        builder.push(", ");
-        builder.push_bind(delta.snapshot_age_ms);
-        builder.push(", ");
-        builder.push_bind(delta.degraded);
-        builder.push(", ");
-        builder.push_bind(&delta.degrade_reason);
-        builder.push(")");
-    }
-    builder.build().execute(&mut *conn).await?;
+    )
+    .bind(&batch.gateway_ids)
+    .bind(&batch.tenant_ids)
+    .bind(&batch.policy_versions)
+    .bind(&batch.product_ids)
+    .bind(&batch.api_endpoints)
+    .bind(&batch.client_ips)
+    .bind(&batch.window_starts)
+    .bind(&batch.window_secs)
+    .bind(&batch.allowed_counts)
+    .bind(&batch.denied_counts)
+    .bind(&batch.bytes_in)
+    .bind(&batch.bytes_out)
+    .bind(&batch.snapshot_ages_ms)
+    .bind(&batch.degraded_flags)
+    .bind(&batch.degrade_reasons)
+    .execute(&mut *conn)
+    .await?;
 
     Ok(())
 }
@@ -230,10 +326,12 @@ async fn upsert_global_counters(
 ) -> Result<(), sqlx::Error> {
     let mut aggregated_counters: HashMap<CounterKey, AggregatedCounter> = HashMap::new();
     for (delta, tenant_id, window_start) in validated_deltas {
-        let client_ip = delta.client_ip.clone().unwrap_or_default();
-        let dimension_key = format!(
-            "{}|{}|{}|{}",
-            delta.product_id, delta.api_endpoint, client_ip, delta.policy_version
+        let parsed_ip = parse_client_ip_inet(delta.client_ip.as_deref());
+        let dimension_key = format_dimension_key(
+            &delta.product_id,
+            &delta.api_endpoint,
+            parsed_ip,
+            delta.policy_version,
         );
         let key = (*tenant_id, dimension_key, *window_start, delta.window_secs);
         let entry = aggregated_counters.entry(key).or_insert(AggregatedCounter {
@@ -250,40 +348,56 @@ async fn upsert_global_counters(
         entry.bytes_out += delta.bytes_out;
     }
 
-    let mut builder = QueryBuilder::<Postgres>::new(
+    if aggregated_counters.is_empty() {
+        return Ok(());
+    }
+
+    let len = aggregated_counters.len();
+    let mut tenant_ids = Vec::with_capacity(len);
+    let mut policy_versions = Vec::with_capacity(len);
+    let mut dimension_keys = Vec::with_capacity(len);
+    let mut window_starts = Vec::with_capacity(len);
+    let mut window_secs = Vec::with_capacity(len);
+    let mut allowed_counts = Vec::with_capacity(len);
+    let mut denied_counts = Vec::with_capacity(len);
+    let mut bytes_in = Vec::with_capacity(len);
+    let mut bytes_out = Vec::with_capacity(len);
+
+    for (key, value) in aggregated_counters {
+        tenant_ids.push(key.0);
+        policy_versions.push(value.policy_version);
+        dimension_keys.push(key.1);
+        window_starts.push(key.2);
+        window_secs.push(key.3);
+        allowed_counts.push(value.allowed_count);
+        denied_counts.push(value.denied_count);
+        bytes_in.push(value.bytes_in);
+        bytes_out.push(value.bytes_out);
+    }
+
+    sqlx::query(
         r"
         INSERT INTO rate_limit_global_counters (
             tenant_id, policy_version, dimension_key, window_start, window_secs,
             allowed_count, denied_count, bytes_in, bytes_out, gateway_count
-        ) VALUES 
-        ",
-    );
-    for (i, (key, value)) in aggregated_counters.iter().enumerate() {
-        if i > 0 {
-            builder.push(", ");
-        }
-        builder.push("(");
-        builder.push_bind(key.0);
-        builder.push(", ");
-        builder.push_bind(value.policy_version);
-        builder.push(", ");
-        builder.push_bind(&key.1);
-        builder.push(", ");
-        builder.push_bind(key.2);
-        builder.push(", ");
-        builder.push_bind(key.3);
-        builder.push(", ");
-        builder.push_bind(value.allowed_count);
-        builder.push(", ");
-        builder.push_bind(value.denied_count);
-        builder.push(", ");
-        builder.push_bind(value.bytes_in);
-        builder.push(", ");
-        builder.push_bind(value.bytes_out);
-        builder.push(", 1)");
-    }
-    builder.push(
-        r"
+        )
+        SELECT
+            u.tenant_id, u.policy_version, u.dimension_key, u.window_start, u.window_secs,
+            u.allowed_count, u.denied_count, u.bytes_in, u.bytes_out, 1
+        FROM UNNEST(
+            $1::uuid[],
+            $2::bigint[],
+            $3::text[],
+            $4::timestamptz[],
+            $5::int4[],
+            $6::bigint[],
+            $7::bigint[],
+            $8::bigint[],
+            $9::bigint[]
+        ) AS u(
+            tenant_id, policy_version, dimension_key, window_start, window_secs,
+            allowed_count, denied_count, bytes_in, bytes_out
+        )
         ON CONFLICT (tenant_id, dimension_key, window_start, window_secs)
         DO UPDATE SET
             policy_version = EXCLUDED.policy_version,
@@ -294,8 +408,18 @@ async fn upsert_global_counters(
             gateway_count = GREATEST(rate_limit_global_counters.gateway_count, EXCLUDED.gateway_count),
             updated_at = NOW()
         ",
-    );
-    builder.build().execute(&mut *conn).await?;
+    )
+    .bind(&tenant_ids)
+    .bind(&policy_versions)
+    .bind(&dimension_keys)
+    .bind(&window_starts)
+    .bind(&window_secs)
+    .bind(&allowed_counts)
+    .bind(&denied_counts)
+    .bind(&bytes_in)
+    .bind(&bytes_out)
+    .execute(&mut *conn)
+    .await?;
 
     Ok(())
 }
@@ -304,77 +428,100 @@ async fn insert_usage_audit_events(
     conn: &mut sqlx::PgConnection,
     validated_deltas: &[ValidatedDelta<'_>],
 ) -> Result<(), sqlx::Error> {
-    let mut audit_events = Vec::new();
+    let mut tenant_ids = Vec::new();
+    let mut gateway_ids = Vec::new();
+    let mut policy_versions = Vec::new();
+    let mut scope_keys = Vec::new();
+    let mut product_ids = Vec::new();
+    let mut api_endpoints = Vec::new();
+    let mut client_ips = Vec::new();
+    let mut allowed_flags = Vec::new();
+    let mut reasons = Vec::new();
+    let mut degraded_flags = Vec::new();
+    let mut counts = Vec::new();
+
     for (delta, tenant_id, _window_start) in validated_deltas {
-        if delta.degraded || delta.denied_count > 0 {
-            audit_events.push((delta, tenant_id));
+        if !(delta.degraded || delta.denied_count > 0) {
+            continue;
         }
-    }
-    if !audit_events.is_empty() {
-        let mut builder = QueryBuilder::<Postgres>::new(
-            r"
-            INSERT INTO rate_limit_events (
-                tenant_id, gateway_id, request_id, policy_version, scope, scope_key,
-                product_id, api_endpoint, client_ip, allowed, reason, local_decision,
-                degraded, current_count, limit_value, retry_after_ms
-            ) VALUES 
-            ",
+        let parsed_ip = parse_client_ip_inet(delta.client_ip.as_deref());
+        let dimension_key = format_dimension_key(
+            &delta.product_id,
+            &delta.api_endpoint,
+            parsed_ip,
+            delta.policy_version,
         );
-        for (i, (delta, tenant_id)) in audit_events.iter().enumerate() {
-            if i > 0 {
-                builder.push(", ");
-            }
-            let client_ip = delta.client_ip.as_deref().unwrap_or("").trim();
-            let client_ip_opt = if client_ip.is_empty() {
-                None
-            } else {
-                Some(client_ip.to_string())
-            };
-            let dimension_key = format!(
-                "{}|{}|{}|{}",
-                delta.product_id,
-                delta.api_endpoint,
-                delta.client_ip.as_deref().unwrap_or(""),
-                delta.policy_version
-            );
-            builder.push("(");
-            builder.push_bind(*tenant_id);
-            builder.push(", ");
-            builder.push_bind(&delta.gateway_id);
-            builder.push(", NULL, ");
-            builder.push_bind(delta.policy_version);
-            builder.push(", ");
-            builder.push_bind("tenant");
-            builder.push(", ");
-            builder.push_bind(dimension_key);
-            builder.push(", ");
-            builder.push_bind(&delta.product_id);
-            builder.push(", ");
-            builder.push_bind(&delta.api_endpoint);
-            builder.push(", ");
-            builder.push_bind(client_ip_opt);
-            builder.push("::inet, ");
-            builder.push_bind(delta.denied_count == 0);
-            builder.push(", ");
-            let reason = if delta.degraded {
-                delta
-                    .degrade_reason
-                    .clone()
-                    .unwrap_or_else(|| "degraded".to_string())
-            } else {
-                "usage_delta".to_string()
-            };
-            builder.push_bind(reason);
-            builder.push(", true, ");
-            builder.push_bind(delta.degraded);
-            builder.push(", ");
-            builder.push_bind(delta.allowed_count + delta.denied_count);
-            builder.push(", ");
-            builder.push_bind(delta.allowed_count + delta.denied_count);
-            builder.push(", 0)");
-        }
-        builder.build().execute(&mut *conn).await?;
+        let reason = if delta.degraded {
+            delta
+                .degrade_reason
+                .clone()
+                .unwrap_or_else(|| "degraded".to_string())
+        } else {
+            "usage_delta".to_string()
+        };
+        let total = delta.allowed_count.saturating_add(delta.denied_count);
+
+        tenant_ids.push(*tenant_id);
+        gateway_ids.push(delta.gateway_id.clone());
+        policy_versions.push(delta.policy_version);
+        scope_keys.push(dimension_key);
+        product_ids.push(delta.product_id.clone());
+        api_endpoints.push(delta.api_endpoint.clone());
+        client_ips.push(parsed_ip);
+        allowed_flags.push(delta.denied_count == 0);
+        reasons.push(reason);
+        degraded_flags.push(delta.degraded);
+        counts.push(total);
     }
+
+    if tenant_ids.is_empty() {
+        return Ok(());
+    }
+
+    sqlx::query(
+        r"
+        INSERT INTO rate_limit_events (
+            tenant_id, gateway_id, request_id, policy_version, scope, scope_key,
+            product_id, api_endpoint, client_ip, allowed, reason, local_decision,
+            degraded, current_count, limit_value, retry_after_ms
+        )
+        SELECT
+            u.tenant_id, u.gateway_id, NULL, u.policy_version, 'tenant', u.scope_key,
+            u.product_id, u.api_endpoint, u.client_ip, u.allowed, u.reason, true,
+            u.degraded, u.total_count, u.total_count, 0
+        FROM UNNEST(
+            $1::uuid[],
+            $2::text[],
+            $3::bigint[],
+            $4::text[],
+            $5::text[],
+            $6::text[],
+            $7::inet[],
+            $8::bool[],
+            $9::text[],
+            $10::bool[],
+            $11::bigint[]
+        ) AS u(
+            tenant_id, gateway_id, policy_version, scope_key,
+            product_id, api_endpoint, client_ip, allowed,
+            reason, degraded, total_count
+        )
+        ",
+    )
+    .bind(&tenant_ids)
+    .bind(&gateway_ids)
+    .bind(&policy_versions)
+    .bind(&scope_keys)
+    .bind(&product_ids)
+    .bind(&api_endpoints)
+    .bind(&client_ips)
+    .bind(&allowed_flags)
+    .bind(&reasons)
+    .bind(&degraded_flags)
+    .bind(&counts)
+    .execute(&mut *conn)
+    .await?;
+
     Ok(())
 }
 
@@ -697,5 +844,84 @@ mod tests {
         let rule = parsed.get("/a").expect("/a");
         assert_eq!(rule.qps, Some(10));
         assert_eq!(rule.burst, Some(20));
+    }
+
+    #[test]
+    fn parse_client_ip_inet_maps_invalid_strings_to_none_and_canonicalizes_mapped_v6() {
+        for bad in [
+            None,
+            Some(""),
+            Some("   "),
+            Some("not-an-ip"),
+            Some("unknown"),
+            Some("10.0.0.0/8"),
+            Some("999.999.999.999"),
+        ] {
+            assert_eq!(parse_client_ip_inet(bad), None, "bad={bad:?}");
+        }
+
+        assert_eq!(
+            parse_client_ip_inet(Some("198.51.100.7")),
+            Some("198.51.100.7/32".parse().expect("v4 host"))
+        );
+        assert_eq!(
+            parse_client_ip_inet(Some("::ffff:198.51.100.7")),
+            Some("198.51.100.7/32".parse().expect("mapped v4 host"))
+        );
+        assert_eq!(
+            parse_client_ip_inet(Some("2001:db8::42")),
+            Some("2001:db8::42/128".parse().expect("v6 host"))
+        );
+    }
+
+    #[test]
+    fn usage_delta_unnest_batch_handles_6000_rows_and_malformed_client_ips() {
+        let tenant_uuid = Uuid::new_v4();
+        let tenant_str = tenant_uuid.to_string();
+        let deltas: Vec<UsageDelta> = (0..6_000_i64)
+            .map(|idx| UsageDelta {
+                gateway_id: "gw-1".to_string(),
+                tenant_id: tenant_str.clone(),
+                policy_version: 3,
+                product_id: "prod-1".to_string(),
+                api_endpoint: format!("/v1/items/{idx}"),
+                client_ip: match idx % 4 {
+                    0 => Some("not-an-ip".to_string()),
+                    1 => Some("198.51.100.12".to_string()),
+                    2 => Some("::ffff:192.0.2.9".to_string()),
+                    _ => None,
+                },
+                window_start_unix: 1_760_000_000 + idx,
+                window_secs: 60,
+                allowed_count: 10,
+                denied_count: i64::from(idx % 2 == 0),
+                bytes_in: 128,
+                bytes_out: 256,
+                snapshot_age_ms: 5,
+                degraded: false,
+                degrade_reason: None,
+            })
+            .collect();
+
+        let validated = validate_usage_deltas(&deltas).expect("validate 6000 deltas");
+        assert_eq!(validated.len(), 6_000);
+
+        let batch = UsageDeltaUnnestBatch::from_validated(&validated);
+        assert_eq!(batch.tenant_ids.len(), 6_000);
+        assert_eq!(batch.gateway_ids.len(), 6_000);
+        assert_eq!(batch.client_ips.len(), 6_000);
+        const {
+            assert!(UsageDeltaUnnestBatch::SQL_BIND_PARAM_COUNT < 65_535);
+        }
+        assert_eq!(batch.client_ips[0], None);
+        assert_eq!(
+            batch.client_ips[1],
+            Some("198.51.100.12/32".parse().expect("v4"))
+        );
+        assert_eq!(
+            batch.client_ips[2],
+            Some("192.0.2.9/32".parse().expect("mapped v4"))
+        );
+        assert_eq!(batch.client_ips[3], None);
     }
 }

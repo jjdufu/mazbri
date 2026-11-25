@@ -44,6 +44,8 @@ impl ServiceConfig for BillingServiceConfig {
 impl ValidateConfig for BillingServiceConfig {
     fn validate(&self) -> Result<()> {
         self.worker.validate()?;
+        mazbri_billing::validate_clickhouse_table_ident(&self.reconcile.clickhouse_table)
+            .map_err(|e| anyhow::anyhow!(e))?;
         Ok(())
     }
 }

@@ -130,6 +130,57 @@ pub async fn precheck_update_config(
     query::precheck_config_exists(ctx, service_name, client_ip, request_id, trace_id).await
 }
 
+async fn decode_cert_update_response(
+    resp: reqwest::Response,
+    service_name: &str,
+    request_id: &str,
+    trace_id: &str,
+) -> Result<serde_json::Value, ApiError> {
+    if resp.status() == reqwest::StatusCode::CONFLICT {
+        return Err(ApiError::ConfigConflict(format!(
+            "配置 '{service_name}' 已被其他会话修改，请刷新后重试"
+        )));
+    }
+    if resp.status() == reqwest::StatusCode::BAD_REQUEST {
+        let body = resp.text().await.unwrap_or_default();
+        let detail = serde_json::from_str::<serde_json::Value>(&body)
+            .ok()
+            .and_then(|v| {
+                v.get("message")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_string)
+            })
+            .unwrap_or_else(|| "配置内容校验失败".to_string());
+        return Err(validation_error(
+            "config_center_update_validation_failed",
+            detail,
+            request_id,
+            trace_id,
+        ));
+    }
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp
+            .text()
+            .await
+            .unwrap_or_else(|_| "<unreadable body>".to_string());
+        return Err(dependency_internal_error(
+            "config_center_update_failed",
+            request_id,
+            trace_id,
+            &format!("cert-service returned status {status}: {body}"),
+        ));
+    }
+    resp.json::<serde_json::Value>().await.map_err(|e| {
+        dependency_internal_error(
+            "config_center_update_decode_failed",
+            request_id,
+            trace_id,
+            &e,
+        )
+    })
+}
+
 pub async fn update_config(
     ctx: ConfigCenterCtx<'_>,
     claims: &auth::AdminClaims,
@@ -141,8 +192,7 @@ pub async fn update_config(
 ) -> Result<serde_json::Value, ApiError> {
     ensure_toml(&payload.content, request_id, trace_id)?;
     info!("Updating config: {} (by {})", service_name, claims.sub);
-    let encoded_name = urlencoding::encode(service_name);
-    let path = format!("/configs/{encoded_name}");
+    let path = format!("/configs/{}", urlencoding::encode(service_name));
     let current_resp = cert_service_request(
         ctx,
         reqwest::Method::GET,
@@ -162,6 +212,11 @@ pub async fn update_config(
             trace_id,
         ));
     }
+    let expected_hash = payload
+        .expected_content_hash
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
     let mut before_hash: Option<String> = None;
     if current_resp.status().is_success() {
         let existing_content = current_resp.text().await.map_err(|e| {
@@ -172,6 +227,14 @@ pub async fn update_config(
                 &e,
             )
         })?;
+        let current_hash = sha256_hex(&existing_content);
+        if let Some(expected) = expected_hash
+            && current_hash != expected
+        {
+            return Err(ApiError::ConfigConflict(format!(
+                "配置 '{service_name}' 已被其他会话修改，请刷新后重试"
+            )));
+        }
         if existing_content == payload.content {
             info!(
                 "Config {} content unchanged, skipping UPDATE to preserve config_history window",
@@ -179,14 +242,22 @@ pub async fn update_config(
             );
             return query::get_config(ctx, service_name, client_ip, request_id, trace_id).await;
         }
-        before_hash = Some(sha256_hex(&existing_content));
+        before_hash = Some(current_hash);
     }
     let updated_by = payload.updated_by.as_deref().unwrap_or(&claims.sub);
     let user_id = auth::extract_user_id(claims)?;
-    let resource_id = service_name.to_string();
-    let write_payload = serde_json::json!(
-        { "content" : payload.content, "updated_by" : updated_by, }
-    );
+    let mut write_payload = serde_json::json!({
+        "content": payload.content,
+        "updated_by": updated_by,
+    });
+    if let Some(expected) = expected_hash
+        && let Some(obj) = write_payload.as_object_mut()
+    {
+        obj.insert(
+            "expected_content_hash".to_string(),
+            serde_json::Value::String(expected.to_string()),
+        );
+    }
     let resp = cert_service_request(
         ctx,
         reqwest::Method::PUT,
@@ -197,27 +268,7 @@ pub async fn update_config(
         trace_id,
     )
     .await?;
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let body = resp
-            .text()
-            .await
-            .unwrap_or_else(|_| "<unreadable body>".to_string());
-        return Err(dependency_internal_error(
-            "config_center_update_failed",
-            request_id,
-            trace_id,
-            &format!("cert-service returned status {status}: {body}"),
-        ));
-    }
-    let entry = resp.json::<serde_json::Value>().await.map_err(|e| {
-        dependency_internal_error(
-            "config_center_update_decode_failed",
-            request_id,
-            trace_id,
-            &e,
-        )
-    })?;
+    let entry = decode_cert_update_response(resp, service_name, request_id, trace_id).await?;
     info!("Upserted config: {}", service_name);
     let after_hash = entry
         .get("content_hash")
@@ -227,7 +278,7 @@ pub async fn update_config(
     ctx.audit.log(config_center_audit(
         user_id,
         AuditAction::ConfigCenterUpdate,
-        resource_id,
+        service_name.to_string(),
         Some(serde_json::json!({
             "service_name": service_name,
             "before_hash": before_hash,

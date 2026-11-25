@@ -15,10 +15,14 @@ export type MetricsOverviewQuery = {
 };
 
 /** 总览：traffic 跟时间窗，realtime / components 为此刻。曲线请用 fetchMetricTimeseries。 */
-export async function fetchMetricsOverview(params: MetricsOverviewQuery) {
+export async function fetchMetricsOverview(
+  params: MetricsOverviewQuery,
+  signal?: AbortSignal,
+) {
   return request.get<MetricOverview>({
     url: `${BASE_PATH}/overview`,
     params,
+    signal,
     showErrorMessage: false,
   });
 }
@@ -28,10 +32,14 @@ export async function fetchMetricsCatalog() {
     showErrorMessage: false,
   });
 }
-export async function fetchMetricTimeseries(params: MetricTimeseriesQuery) {
+export async function fetchMetricTimeseries(
+  params: MetricTimeseriesQuery,
+  signal?: AbortSignal,
+) {
   return request.get<MetricSeries>({
     url: `${BASE_PATH}/timeseries`,
     params,
+    signal,
     showErrorMessage: false,
   });
 }

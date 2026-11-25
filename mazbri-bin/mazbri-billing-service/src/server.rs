@@ -94,7 +94,8 @@ pub async fn serve(
         None
     };
     let (bg_shutdown_tx, bg_tasks) = spawn_durability_tasks(&durability, &db);
-    let service = BillingTarpcService::new(service_name, billing_service, Some(charge_queue));
+    let rpc_charge_queue = worker_config.enabled.then_some(charge_queue);
+    let service = BillingTarpcService::new(service_name, billing_service, rpc_charge_queue);
     mazbri_service::run_tarpc_server!(
         addr,
         service,

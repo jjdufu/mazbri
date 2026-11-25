@@ -77,13 +77,23 @@ pub async fn update_admin(
     Json(req): Json<UpdateAdminRequest>,
 ) -> Result<Response, ApiError> {
     let lifts = svc::admin_update_lifts_mfa_requirement(&state.admin_db, &claims, id, &req).await?;
-    if let Err(response) = crate::handlers::mfa_guard::require_category(
-        &state,
-        &claims,
-        crate::services::mfa::Category::Admin,
-    )
-    .await
-    {
+    let mfa_check = if lifts {
+        crate::handlers::mfa_guard::require_category_fresh(
+            &state,
+            &claims,
+            crate::services::mfa::Category::Admin,
+            60,
+        )
+        .await
+    } else {
+        crate::handlers::mfa_guard::require_category(
+            &state,
+            &claims,
+            crate::services::mfa::Category::Admin,
+        )
+        .await
+    };
+    if let Err(response) = mfa_check {
         return Ok(*response);
     }
     let client_ip = extract_client_ip(&headers, Some(addr));
@@ -97,6 +107,7 @@ pub async fn update_admin(
         lifts,
     )
     .await?;
+    crate::middleware::auth::invalidate_admin_subject_state(&state.redis, id).await;
     Ok(ApiResponse::ok(data).into_response())
 }
 /// # Errors
@@ -121,5 +132,6 @@ pub async fn delete_admin(
     }
     let client_ip = extract_client_ip(&headers, Some(addr));
     let data = svc::delete_admin(&state.admin_db, &state.audit, &claims, id, client_ip).await?;
+    crate::middleware::auth::invalidate_admin_subject_state(&state.redis, id).await;
     Ok(ApiResponse::ok(data).into_response())
 }

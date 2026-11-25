@@ -269,6 +269,11 @@ impl TenantTransportProfile {
         }
         assert_not_legacy_or_allowed(data, self.allow_insecure)?;
 
+        if self.require_signature && mac_alg.is_none() {
+            return Err(CryptoError::InvalidProfile {
+                reason: "require_signature=true requires mac_alg".to_owned(),
+            });
+        }
         let needs_mac = data_meta.kind == AlgorithmKind::BlockCipher || require_mac_for(data);
         match (needs_mac, mac_alg) {
             (true, None) => {

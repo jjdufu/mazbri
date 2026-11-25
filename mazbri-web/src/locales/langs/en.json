@@ -94,7 +94,7 @@
       "logout": "Log out"
     },
     "guide": {
-      "title": "Click here to view",
+      "title": "Interface settings",
       "theme": "Theme style",
       "menu": "Open top menu",
       "description": "More configurations"
@@ -2624,7 +2624,8 @@
       "codeRequired": "Please enter a supplier code",
       "nameRequired": "Please enter a supplier name",
       "accessAddressRequired": "Please enter an access address",
-      "contractIdRequired": "Microservice mode requires contract_id"
+      "contractIdRequired": "Microservice mode requires contract_id",
+      "credentialRequiredOnOriginChange": "Origin changed; re-enter credential"
     },
     "messages": {
       "deleteConfirm": "Are you sure you want to delete supplier {name}?"
@@ -4131,6 +4132,11 @@
     "cryptoSlotRole": "Role (sign/cipher/biz…)",
     "cryptoSlotName": "Field name",
     "cryptoResponseCrypt": "Response decrypt (optional)",
+    "cryptoDirection": "Response direction",
+    "cryptoVerifyResponse": "Verify response",
+    "cryptoDecryptResponse": "Decrypt response",
+    "cryptoReuseRequestCipher": "Default to request cipher",
+    "originChangedCredRequired": "Target origin changed; re-enter credentials",
     "cryptoAllowInsecure": "Allow legacy algorithms (allow_insecure)",
     "cryptoAllowInsecureHint": "Enable only for legacy peers; unlocks ECB / HMAC-MD5 and similar weak algorithms.",
     "cryptoAllowInsecureAdminOnly": "Only a super admin can toggle the legacy gate.",

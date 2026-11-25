@@ -5,18 +5,20 @@ use mazbri_rpc::{
     CBProServiceClient, CBProServiceRequest, CBProServiceResponse, FallbackRequest,
     FallbackResponse, FallbackSource, RpcError, StoreRequest, StoreResponse,
 };
+use mazbri_tls::ManagedCertHandle;
+use std::sync::Arc;
+use std::time::Instant;
+use tokio::sync::{Mutex, RwLock};
+use tracing::{debug, warn};
 
 type InstrumentedCBProClient =
     CBProServiceClient<RpcMetricsChannel<CBProServiceRequest, CBProServiceResponse>>;
-use mazbri_tls::ManagedCertificate;
-use std::sync::Arc;
-use tokio::sync::RwLock;
-use tracing::{debug, warn};
 
 #[derive(Clone)]
 pub struct CBProClient {
     endpoint: ServiceEndpoint,
     client: Arc<RwLock<Option<InstrumentedCBProClient>>>,
+    connect_lock: Arc<Mutex<()>>,
     tls_connector: mazbri_tls::TlsConnector,
 }
 
@@ -26,25 +28,42 @@ impl CBProClient {
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn new(
         endpoint: ServiceEndpoint,
-        tls_ca_cert: &str,
-        client_cert: &ManagedCertificate,
+        cert_handle: &ManagedCertHandle,
         tls_config: &mazbri_tls::TlsConfig,
     ) -> Result<Self, CoreError> {
-        let tls_connector =
-            mazbri_tls::TlsConnector::new(tls_ca_cert, Some(client_cert), tls_config)
-                .map_err(|error| CoreError::Tls(error.to_string()))?;
+        let tls_connector = mazbri_tls::TlsConnector::from_cert_handle(cert_handle, tls_config)
+            .map_err(|error| CoreError::Tls(error.to_string()))?;
         Ok(Self {
             endpoint,
             client: Arc::new(RwLock::new(None)),
+            connect_lock: Arc::new(Mutex::new(())),
             tls_connector,
         })
+    }
+
+    fn rpc_context(&self) -> tarpc::context::Context {
+        let mut ctx = tarpc::context::current();
+        ctx.deadline = Instant::now() + self.endpoint.timeout();
+        ctx
+    }
+
+    async fn evict_client(&self) {
+        let mut guard = self.client.write().await;
+        *guard = None;
     }
 
     async fn get_client(&self) -> Result<InstrumentedCBProClient, CoreError> {
         {
             let guard = self.client.read().await;
             if let Some(client) = guard.as_ref() {
-                debug!(url = % self.endpoint.url(), "Using cached CBPro client");
+                debug!(url = %self.endpoint.url(), "Using cached CBPro client");
+                return Ok(client.clone());
+            }
+        }
+        let _singleflight = self.connect_lock.lock().await;
+        {
+            let guard = self.client.read().await;
+            if let Some(client) = guard.as_ref() {
                 return Ok(client.clone());
             }
         }
@@ -78,13 +97,15 @@ impl CBProClient {
                 let rpc_result = retry_rpc(&DEFAULT_RETRY_CONFIG, || {
                     let c = client.clone();
                     let r = request.clone();
-                    async move { c.get_fallback(tarpc::context::current(), r).await }
+                    let ctx = self.rpc_context();
+                    async move { c.get_fallback(ctx, r).await }
                 })
                 .await;
                 match rpc_result {
                     Ok(response) => response,
                     Err(error) => {
-                        warn!(error = % error, "CBPro get_fallback failed");
+                        self.evict_client().await;
+                        warn!(error = %error, "CBPro get_fallback failed; evicted cached client");
                         FallbackResponse {
                             available: false,
                             data: None,
@@ -99,7 +120,7 @@ impl CBProClient {
                 }
             }
             Err(error) => {
-                warn!(error = % error, "Failed to connect to CBPro service");
+                warn!(error = %error, "Failed to connect to CBPro service");
                 FallbackResponse {
                     available: false,
                     data: None,
@@ -120,13 +141,15 @@ impl CBProClient {
                 let rpc_result = retry_rpc(&DEFAULT_RETRY_CONFIG, || {
                     let c = client.clone();
                     let r = request.clone();
-                    async move { c.store_response(tarpc::context::current(), r).await }
+                    let ctx = self.rpc_context();
+                    async move { c.store_response(ctx, r).await }
                 })
                 .await;
                 match rpc_result {
                     Ok(response) => response,
                     Err(error) => {
-                        warn!(error = % error, "CBPro store_response failed");
+                        self.evict_client().await;
+                        warn!(error = %error, "CBPro store_response failed; evicted cached client");
                         StoreResponse {
                             success: false,
                             cache_key: String::new(),
@@ -139,7 +162,7 @@ impl CBProClient {
                 }
             }
             Err(error) => {
-                warn!(error = % error, "Failed to connect to CBPro service");
+                warn!(error = %error, "Failed to connect to CBPro service");
                 StoreResponse {
                     success: false,
                     cache_key: String::new(),

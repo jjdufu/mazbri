@@ -70,6 +70,7 @@ fn subject() -> TokenSubject<'static> {
         username: "revocation-user",
         user_id: "00000000-0000-0000-0000-0000000000aa",
         role: "R_ADMIN",
+        auth_epoch: 0,
         binding,
     }
 }
@@ -82,6 +83,7 @@ fn router(redis: Arc<RedisClient>) -> Router {
     let state = Arc::new(AdminAuthState {
         jwt_secret: SECRET.to_string(),
         redis,
+        admin_db: None,
     });
     let api = Router::new()
         .route("/auth/me", get(echo))

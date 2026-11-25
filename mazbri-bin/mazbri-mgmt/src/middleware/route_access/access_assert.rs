@@ -73,7 +73,17 @@ pub const IA_MUST_NOT_WIDEN: &[(&str, &str, Access)] = &[
     ("POST", "/alerts/inhibits", Access::Roles(ADMIN)),
     ("PUT", "/alerts/inhibits/{id}", Access::Roles(ADMIN)),
     ("DELETE", "/alerts/inhibits/{id}", Access::Roles(ADMIN)),
-    // 计费运维 BIZ
+    // 计费与对账全量收口 BIZ
+    ("GET", "/billing/accounts", Access::Roles(BIZ)),
+    ("GET", "/billing/adjustments", Access::Roles(BIZ)),
+    ("GET", "/billing/bills", Access::Roles(BIZ)),
+    ("GET", "/billing/bills/{id}", Access::Roles(BIZ)),
+    ("GET", "/billing/bills/{id}/adjustments", Access::Roles(BIZ)),
+    ("GET", "/billing/reconciliation/discrepancies", Access::Roles(BIZ)),
+    ("GET", "/billing/reconciliation/settings", Access::Roles(BIZ)),
+    ("GET", "/tenants/{code}/spend", Access::Roles(BIZ)),
+    ("GET", "/tenants/{code}/account", Access::Roles(BIZ)),
+    ("GET", "/tenants/{code}/account/transactions", Access::Roles(BIZ)),
     ("GET", "/billing/ops/failures", Access::Roles(BIZ)),
     ("GET", "/billing/ops/funnel", Access::Roles(BIZ)),
     ("GET", "/billing/ops/finance/overview", Access::Roles(BIZ)),
@@ -125,7 +135,10 @@ pub fn assert_ia_audit_matrix_groups() {
     assert_prefix_access("/alerts/rules", Access::Roles(ADMIN), &[]);
     assert_prefix_access("/alerts/silences", Access::Roles(ADMIN), &[]);
     assert_prefix_access("/alerts/inhibits", Access::Roles(ADMIN), &[]);
-    assert_prefix_access("/billing/ops/", Access::Roles(BIZ), &[]);
+    assert_prefix_access("/billing/", Access::Roles(BIZ), &[]);
+    assert_access_eq("GET", "/tenants/{code}/spend", Access::Roles(BIZ));
+    assert_access_eq("GET", "/tenants/{code}/account", Access::Roles(BIZ));
+    assert_access_eq("GET", "/tenants/{code}/account/transactions", Access::Roles(BIZ));
     assert_access_eq("GET", "/alerts/events", Access::AnyRole);
     assert_access_eq("GET", "/alerts/summary", Access::AnyRole);
     assert_access_eq("GET", "/stats/ops/anomalies", Access::Roles(BIZ));

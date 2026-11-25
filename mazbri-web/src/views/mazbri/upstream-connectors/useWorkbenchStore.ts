@@ -36,7 +36,14 @@ import {
   type Supplier,
 } from "@/api/supplier";
 import { useUserStore } from "@/store/modules/user";
+import { useLatestRequest } from "@/composables/useLatestRequest";
 import { canWriteUpstreamConnector } from "@/utils/ops/roles";
+import {
+  canonicalOrigin,
+  clearMaskedKvEntries,
+  hasOriginChanged,
+  isMaskedSecretValue,
+} from "@/utils/originPinning";
 import { copyWithFeedback } from "@/utils/ui/copy-feedback";
 import { isHttpError } from "@/utils/http/error";
 import { isSessionHttpAuthActive } from "./authMatrix";
@@ -281,7 +288,11 @@ export function useWorkbenchStore() {
   const supplierTlsForm = ref<TlsFormState>(emptyTlsForm());
   const endpointTlsForm = ref<TlsFormState>(emptyTlsForm());
 
-  const bootstrapping = ref(true);
+  const initialUpstreamUrl = ref("");
+  const initialTokenUrl = ref("");
+  const initialEndpointBaseUrls = ref<Record<string, string>>({});
+  const originClearedCredKeys = ref<string[]>([]);
+
   const saving = ref(false);
   const savedSnapshotSig = ref("");
   const ephemeralRunIds = ref<string[]>([]);
@@ -396,6 +407,47 @@ export function useWorkbenchStore() {
   const envVarCount = computed(
     () => Object.keys(staticEnvMap.value).length,
   );
+
+  const sessionLoader = useLatestRequest(
+    async (
+      ctx,
+      task: (
+        signal: AbortSignal,
+        isLatest: () => boolean,
+      ) => Promise<boolean | void>,
+    ) => {
+      return await task(ctx.signal, ctx.isLatest);
+    },
+  );
+  const bootstrapping = sessionLoader.loading;
+
+  function captureOriginBaseline(): void {
+    initialUpstreamUrl.value = draft.value?.upstream_url ?? "";
+    initialTokenUrl.value = configForm.value.auth_flow.token_url ?? "";
+    const epBases: Record<string, string> = {};
+    endpoints.value.forEach((ep, idx) => {
+      const key = ep.id || `ep-${idx + 1}`;
+      epBases[key] = ep.base_url ?? "";
+    });
+    initialEndpointBaseUrls.value = epBases;
+    originClearedCredKeys.value = [];
+  }
+
+  const requiredCredKeys = computed(() => {
+    if (!originClearedCredKeys.value.length) return [];
+    const creds = configForm.value.auth_flow.credentials || [];
+    return originClearedCredKeys.value.filter((reqKey) => {
+      const hit = creds.find((c) => c.key.trim() === reqKey);
+      return Boolean(hit) && (!hit!.value.trim() || isMaskedSecretValue(hit!.value));
+    });
+  });
+
+  function blockIfOriginCredsMissing(): boolean {
+    if (!requiredCredKeys.value.length) return false;
+    reqTab.value = "auth";
+    ElMessage.warning($t("upstreamConnector.originChangedCredRequired"));
+    return true;
+  }
 
   const isEditMode = computed(
     () =>
@@ -997,7 +1049,10 @@ export function useWorkbenchStore() {
   async function openSession(
     d: ConnectorDraft,
     prefetchedSupplier?: Supplier,
+    sessionCtx?: { signal?: AbortSignal; isLatest?: () => boolean },
   ): Promise<boolean> {
+    const isLatest = sessionCtx?.isLatest ?? (() => true);
+    if (!isLatest()) return false;
     if (isMicroserviceUpstream(d) && d.linked_supplier_id) {
       draft.value = null;
       leaveForMicroservice(d.linked_supplier_id);
@@ -1034,11 +1089,13 @@ export function useWorkbenchStore() {
         const sup =
           prefetchedSupplier?.id === d.linked_supplier_id
             ? prefetchedSupplier
-            : await fetchSupplierById(d.linked_supplier_id);
+            : await fetchSupplierById(d.linked_supplier_id, sessionCtx?.signal);
+        if (!isLatest()) return false;
         publishForm.value.supplier_code = sup.supplier_code;
         publishForm.value.supplier_name = sup.name;
         if (draft.value) draft.value.name = sup.name;
       } catch {
+        if (!isLatest()) return false;
         publishForm.value.supplier_code = d.draft_code
           .replace(/^from-/i, "")
           .replace(/-[a-f0-9]{6}$/i, "")
@@ -1059,6 +1116,7 @@ export function useWorkbenchStore() {
     envState.value = normalizeWorkbenchEnvDoc(d.workbench_env ?? []);
     syncKvFromActive();
     refreshUrlDraft();
+    captureOriginBaseline();
     saveError.value = false;
     lastSavedAt.value = isPersistedDraftId(d.id)
       ? new Date(d.updated_at)
@@ -1066,8 +1124,15 @@ export function useWorkbenchStore() {
 
     if (isPersistedDraftId(d.id)) {
       try {
-        runs.value = (await listRuns(d.id)) || [];
+        const loadedRuns =
+          (await listRuns(
+            d.id,
+            sessionCtx?.signal ? { signal: sessionCtx.signal } : undefined,
+          )) || [];
+        if (!isLatest()) return false;
+        runs.value = loadedRuns;
       } catch {
+        if (!isLatest()) return false;
         runs.value = [];
       }
     } else {
@@ -1083,8 +1148,10 @@ export function useWorkbenchStore() {
 
     recordPassedGateSigs(d.gate);
     await syncSessionRoute(d);
+    if (!isLatest()) return false;
     void refreshSwitcherOptions();
     await nextTick();
+    if (!isLatest()) return false;
     savedSnapshotSig.value = coerced ? "" : currentSnapshotSig.value;
     return true;
   }
@@ -1260,6 +1327,7 @@ export function useWorkbenchStore() {
   }
 
   function exportEnvToFile() {
+    if (!canWriteWorkbench.value) return;
     const doc = exportWorkbenchEnvJson(envState.value, draft.value?.name);
     const blob = new Blob([JSON.stringify(doc, null, 2)], {
       type: "application/json",
@@ -1352,6 +1420,10 @@ export function useWorkbenchStore() {
     skipRouteSync?: boolean;
   }) {
     if (!canWriteWorkbench.value || !draft.value) return;
+    if (blockIfOriginCredsMissing()) {
+      saveError.value = true;
+      throw new Error($t("upstreamConnector.originChangedCredRequired"));
+    }
     const tlsMsgs = tlsIssuesAll();
     if (tlsMsgs.length) {
       if (!opts?.silent) ElMessage.warning(tlsMsgs[0]!);
@@ -1403,6 +1475,7 @@ export function useWorkbenchStore() {
         endpointTlsForm.value = tlsSpecToForm(activeEp.value?.tls ?? null);
       }
       recordPassedGateSigs(updated.gate);
+      captureOriginBaseline();
       saveError.value = false;
       lastSavedAt.value = new Date();
       await nextTick();
@@ -1441,6 +1514,76 @@ export function useWorkbenchStore() {
   watch(urlDraft, (v) => {
     if (v.trim()) urlMissing.value = false;
   });
+
+  watch(
+    [
+      () => draft.value?.upstream_url ?? "",
+      () => configForm.value.auth_flow.token_url ?? "",
+      () =>
+        endpoints.value
+          .map((ep, idx) => `${ep.id || `ep-${idx + 1}`}|${ep.base_url ?? ""}`)
+          .join("\n"),
+    ] as const,
+    ([nextUpstream, nextToken]) => {
+      if (!canWriteWorkbench.value || !draft.value || bootstrapping.value) {
+        return;
+      }
+      const env = staticEnvMap.value;
+      const baseOrigin = canonicalOrigin(
+        applyEnv(initialUpstreamUrl.value, env),
+        { defaultScheme: "https" },
+      );
+      const upstreamChanged = hasOriginChanged(
+        applyEnv(initialUpstreamUrl.value, env),
+        applyEnv(nextUpstream, env),
+        { defaultScheme: "https" },
+      );
+      const tokenChanged = hasOriginChanged(
+        applyEnv(initialTokenUrl.value, env),
+        applyEnv(nextToken, env),
+        {
+          defaultScheme: "https",
+          fallbackInitialOrigin: baseOrigin || undefined,
+        },
+      );
+      const epOriginChanged = endpoints.value.some((ep, idx) => {
+        const key = ep.id || `ep-${idx + 1}`;
+        const initialBase = initialEndpointBaseUrls.value[key] ?? "";
+        return hasOriginChanged(
+          applyEnv(initialBase, env),
+          applyEnv(ep.base_url ?? "", env),
+          {
+            defaultScheme: "https",
+            fallbackInitialOrigin: baseOrigin || undefined,
+          },
+        );
+      });
+      if (!upstreamChanged && !tokenChanged && !epOriginChanged) return;
+
+      const cleared = clearMaskedKvEntries(configForm.value.auth_flow.credentials);
+      clearMaskedKvEntries(configForm.value.auth_flow.headers);
+      if (cleared.length > 0) {
+        originClearedCredKeys.value = Array.from(
+          new Set([...originClearedCredKeys.value, ...cleared]),
+        );
+      }
+    },
+  );
+
+  watch(
+    () =>
+      configForm.value.auth_flow.credentials.map(
+        (item) => `${item.key.trim()}=${item.value}`,
+      ),
+    () => {
+      if (!originClearedCredKeys.value.length) return;
+      const creds = configForm.value.auth_flow.credentials;
+      originClearedCredKeys.value = originClearedCredKeys.value.filter((k) => {
+        const row = creds.find((item) => item.key.trim() === k);
+        return Boolean(row) && (!row!.value.trim() || isMaskedSecretValue(row!.value));
+      });
+    },
+  );
 
   function beginTabRun(epId: string): { signal: AbortSignal; gen: number } {
     responseCollapsed.value = false;
@@ -1548,6 +1691,7 @@ export function useWorkbenchStore() {
     const ep = activeEp.value;
     if (!draft.value || !ep || !ep.id) return;
     if (localSendBlock(focusUrl)) return;
+    if (blockIfOriginCredsMissing()) return;
     if (blockIfUnresolved(unresolved.value)) return;
     const method = (ep.method || "GET").toUpperCase();
     if (mode === "business" && WRITE_METHODS.has(method)) {
@@ -1662,6 +1806,7 @@ export function useWorkbenchStore() {
   async function doTransformPreview() {
     const ep = activeEp.value;
     if (!draft.value || !ep || !ep.id) return;
+    if (blockIfOriginCredsMissing()) return;
     if (blockIfUnresolved(unresolved.value)) return;
     const tlsMsgs = tlsIssuesAll();
     if (tlsMsgs.length) {
@@ -1782,48 +1927,51 @@ export function useWorkbenchStore() {
   async function createBlankSession() {
     if (!canWriteWorkbench.value) return;
     if (!(await confirmDiscardIfDirty())) return;
+    sessionLoader.cancel();
     await openSession(buildLocalBlankDraft());
   }
 
   async function switchToDraft(draftId: string) {
     if (!draftId || draftId === draft.value?.id) return;
     if (!(await confirmDiscardIfDirty())) return;
-    bootstrapping.value = true;
     try {
-      const d = await getDraft(draftId);
-      await openSession(d);
+      await sessionLoader.run(async (signal, isLatest) => {
+        const d = await getDraft(draftId, { signal });
+        if (!isLatest()) return;
+        await openSession(d, undefined, { signal, isLatest });
+      });
     } catch (e) {
       ElMessage.error(
         (e as Error)?.message || $t("upstreamConnector.bootstrapFailed"),
       );
-    } finally {
-      bootstrapping.value = false;
     }
   }
 
   async function switchToSupplier(supplierId: string) {
     if (!supplierId || supplierId === draft.value?.linked_supplier_id) return;
     if (!(await confirmDiscardIfDirty())) return;
-    bootstrapping.value = true;
     try {
-      const sup = await fetchSupplierById(supplierId);
-      if (resolveUpstreamType(sup) === "microservice") {
-        leaveForMicroservice(supplierId);
-        return;
-      }
-      if (!canWriteWorkbench.value) {
-        const d = await previewDraftFromSupplier(supplierId);
-        await openSession(d, sup);
-        return;
-      }
-      const d = await draftFromSupplier(supplierId);
-      await openSession(d, sup);
+      await sessionLoader.run(async (signal, isLatest) => {
+        const sup = await fetchSupplierById(supplierId, signal);
+        if (!isLatest()) return;
+        if (resolveUpstreamType(sup) === "microservice") {
+          leaveForMicroservice(supplierId);
+          return;
+        }
+        if (!canWriteWorkbench.value) {
+          const d = await previewDraftFromSupplier(supplierId, { signal });
+          if (!isLatest()) return;
+          await openSession(d, sup, { signal, isLatest });
+          return;
+        }
+        const d = await draftFromSupplier(supplierId, { signal });
+        if (!isLatest()) return;
+        await openSession(d, sup, { signal, isLatest });
+      });
     } catch (e) {
       ElMessage.error(
         (e as Error)?.message || $t("upstreamConnector.bootstrapFailed"),
       );
-    } finally {
-      bootstrapping.value = false;
     }
   }
 
@@ -1847,19 +1995,23 @@ export function useWorkbenchStore() {
     } catch {
       return;
     }
-    bootstrapping.value = true;
+    const targetSupplierId = draft.value.linked_supplier_id;
     try {
-      const d = await draftFromSupplier(draft.value.linked_supplier_id, {
-        force_resync: true,
+      const done = await sessionLoader.run(async (signal, isLatest) => {
+        const d = await draftFromSupplier(targetSupplierId, {
+          force_resync: true,
+          signal,
+        });
+        if (!isLatest()) return false;
+        return await openSession(d, undefined, { signal, isLatest });
       });
-      await openSession(d);
-      ElMessage.success($t("upstreamConnector.resyncOk"));
+      if (done) {
+        ElMessage.success($t("upstreamConnector.resyncOk"));
+      }
     } catch (e) {
       ElMessage.error(
         isHttpError(e) ? e.message : $t("upstreamConnector.bootstrapFailed"),
       );
-    } finally {
-      bootstrapping.value = false;
     }
   }
 
@@ -1962,6 +2114,7 @@ export function useWorkbenchStore() {
       ElMessage.warning($t("upstreamConnector.publishNeedRun"));
       return;
     }
+    if (blockIfOriginCredsMissing()) return;
     if (blockIfUnresolved(unresolvedAll.value)) return;
     publishResult.value = null;
     publishChannels.value = autoChannelsFromEndpoints(endpoints.value);
@@ -1982,6 +2135,7 @@ export function useWorkbenchStore() {
 
   async function doPublish() {
     if (!canWriteWorkbench.value || !draft.value) return;
+    if (blockIfOriginCredsMissing()) return;
     if (blockIfUnresolved(unresolvedAll.value)) return;
     const cryptoMsgsPublish = cryptoIssuesOnEndpoints();
     if (cryptoMsgsPublish.length) {
@@ -2066,48 +2220,54 @@ export function useWorkbenchStore() {
   }
 
   async function bootstrap() {
-    bootstrapping.value = true;
     try {
-      const supplierId =
-        typeof route.query.supplier_id === "string"
-          ? route.query.supplier_id
-          : "";
-      const sessionId =
-        typeof route.query.session === "string" ? route.query.session : "";
+      await sessionLoader.run(async (signal, isLatest) => {
+        const supplierId =
+          typeof route.query.supplier_id === "string"
+            ? route.query.supplier_id
+            : "";
+        const sessionId =
+          typeof route.query.session === "string" ? route.query.session : "";
 
-      if (supplierId) {
-        const sup = await fetchSupplierById(supplierId);
-        if (resolveUpstreamType(sup) === "microservice") {
-          leaveForMicroservice(supplierId);
+        if (supplierId) {
+          const sup = await fetchSupplierById(supplierId, signal);
+          if (!isLatest()) return;
+          if (resolveUpstreamType(sup) === "microservice") {
+            leaveForMicroservice(supplierId);
+            return;
+          }
+          if (!canWriteWorkbench.value) {
+            const d = await previewDraftFromSupplier(supplierId, { signal });
+            if (!isLatest()) return;
+            await openSession(d, sup, { signal, isLatest });
+            return;
+          }
+          const d = await draftFromSupplier(supplierId, { signal });
+          if (!isLatest()) return;
+          await openSession(d, sup, { signal, isLatest });
+          return;
+        }
+        if (sessionId) {
+          const d = await getDraft(sessionId, { signal });
+          if (!isLatest()) return;
+          await openSession(d, undefined, { signal, isLatest });
           return;
         }
         if (!canWriteWorkbench.value) {
-          const d = await previewDraftFromSupplier(supplierId);
-          await openSession(d, sup);
+          draft.value = null;
+          void refreshSwitcherOptions();
           return;
         }
-        const d = await draftFromSupplier(supplierId);
-        await openSession(d, sup);
-        return;
-      }
-      if (sessionId) {
-        const d = await getDraft(sessionId);
-        await openSession(d);
-        return;
-      }
-      if (!canWriteWorkbench.value) {
-        draft.value = null;
-        void refreshSwitcherOptions();
-        return;
-      }
-      await initBlankSession();
+        await openSession(buildLocalBlankDraft(), undefined, {
+          signal,
+          isLatest,
+        });
+      });
     } catch (e) {
       draft.value = null;
       ElMessage.error(
         (e as Error)?.message || $t("upstreamConnector.bootstrapFailed"),
       );
-    } finally {
-      bootstrapping.value = false;
     }
   }
 
@@ -2205,6 +2365,7 @@ export function useWorkbenchStore() {
     activeAssertions,
     activeCaptures,
     sessionCredentialKeys,
+    requiredCredKeys,
     authSeedJson,
     queryCount,
     headerCount,

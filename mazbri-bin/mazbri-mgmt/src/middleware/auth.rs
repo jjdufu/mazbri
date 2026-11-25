@@ -39,12 +39,119 @@ pub struct AdminClaims {
     /// 会话绝对到期（刷新令牌 `exp`）。只有临时令牌可以省略。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sxp: Option<i64>,
+    /// 签发时的账号认证纪元，用于与 `admin_users.auth_epoch` 实时核验。
+    #[serde(default)]
+    pub auth_epoch: i64,
 }
 #[derive(Clone)]
 pub struct AdminAuthState {
     pub jwt_secret: String,
     pub redis: Arc<RedisClient>,
+    pub admin_db: Option<Arc<PgPool>>,
 }
+
+const SUBJECT_STATE_CACHE_TTL_SECS: usize = 30;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CachedAdminSubjectState {
+    pub role: String,
+    pub is_active: bool,
+    pub locked_until_ts: Option<i64>,
+    pub force_password_reset: bool,
+    pub auth_epoch: i64,
+}
+
+#[must_use]
+pub fn admin_subject_state_key(user_id: uuid::Uuid) -> String {
+    format!("admin:subject_state:{user_id}")
+}
+
+/// 主动失效指定管理员的会话状态短缓存，保证禁用/删除/降权/改密秒级生效。
+pub async fn invalidate_admin_subject_state(redis: &RedisClient, user_id: uuid::Uuid) {
+    if let Err(error) = redis.del(&admin_subject_state_key(user_id)).await {
+        tracing::warn!(
+            user_id = %user_id,
+            error = %error,
+            "Failed to delete admin subject state cache key"
+        );
+    }
+}
+
+#[must_use]
+pub fn evaluate_access_subject_state(
+    state: &CachedAdminSubjectState,
+    claims: &AdminClaims,
+    now_ts: i64,
+) -> bool {
+    if !state.is_active {
+        return false;
+    }
+    if state.role != ROLE_SUPER_ADMIN && state.locked_until_ts.is_some_and(|until| until > now_ts) {
+        return false;
+    }
+    if state.force_password_reset {
+        return false;
+    }
+    if state.auth_epoch != claims.auth_epoch {
+        return false;
+    }
+    state.role == claims.role
+}
+
+async fn load_or_fetch_subject_state(
+    pool: &PgPool,
+    redis: &RedisClient,
+    user_id: uuid::Uuid,
+) -> Result<Option<CachedAdminSubjectState>, sqlx::Error> {
+    let key = admin_subject_state_key(user_id);
+    if let Ok(Some(bytes)) = redis.get_bytes(&key).await
+        && let Ok(cached) = serde_json::from_slice::<CachedAdminSubjectState>(&bytes)
+    {
+        return Ok(Some(cached));
+    }
+    let Some(row) = crate::repositories::admin::get_admin_subject_state(pool, user_id).await?
+    else {
+        return Ok(None);
+    };
+    let state = CachedAdminSubjectState {
+        role: row.role,
+        is_active: row.is_active,
+        locked_until_ts: row.locked_until.map(|dt| dt.timestamp()),
+        force_password_reset: row.force_password_reset,
+        auth_epoch: row.auth_epoch,
+    };
+    if let Ok(encoded) = serde_json::to_vec(&state)
+        && let Err(error) = redis
+            .set_ex_bytes(&key, &encoded, SUBJECT_STATE_CACHE_TTL_SECS)
+            .await
+    {
+        tracing::warn!(
+            user_id = %user_id,
+            error = %error,
+            "Failed to populate admin subject state cache; serving from PostgreSQL"
+        );
+    }
+    Ok(Some(state))
+}
+
+fn session_stale_response() -> Response {
+    let message = "会话已失效或权限已变更，请重新登录";
+    crate::audit::set_failure_reason("session_stale");
+    crate::audit::mark_security_event();
+    let mut response = (
+        StatusCode::UNAUTHORIZED,
+        axum::Json(serde_json::json!({
+            "success": false,
+            "code": "SESSION_STALE",
+            "error": "session_stale",
+            "message": message,
+        })),
+    )
+        .into_response();
+    AuditErrorInfo::attach(&mut response, "SESSION_STALE", message);
+    response
+}
+
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
@@ -52,13 +159,14 @@ pub async fn create_auth_state_from_db(
     admin_db: Arc<PgPool>,
     redis: Arc<RedisClient>,
 ) -> Result<AdminAuthState, String> {
-    let manager = JwtKeyManager::new(admin_db, mazbri_core::ServiceName::Mgmt.as_str());
+    let manager = JwtKeyManager::new(admin_db.clone(), mazbri_core::ServiceName::Mgmt.as_str());
     match manager.get_jwt_secret().await {
         Ok(secret) => {
             info!("JWT 密钥已从数据库加载（HKDF 派生）");
             Ok(AdminAuthState {
                 jwt_secret: secret,
                 redis,
+                admin_db: Some(admin_db),
             })
         }
         Err(e) => Err(format!("Failed to load JWT secret from database: {e}")),
@@ -198,6 +306,37 @@ pub async fn admin_auth_middleware(
     };
     match authenticate(&auth_state, &token, kind).await {
         Ok(claims) => {
+            if kind == TokenKind::Access
+                && let Some(pool) = &auth_state.admin_db
+            {
+                let Some(uid) = uuid::Uuid::parse_str(&claims.user_id)
+                    .ok()
+                    .filter(|id| !id.is_nil())
+                else {
+                    return session_stale_response();
+                };
+                match load_or_fetch_subject_state(pool, &auth_state.redis, uid).await {
+                    Ok(Some(subject_state)) => {
+                        let now_ts = chrono::Utc::now().timestamp();
+                        if !evaluate_access_subject_state(&subject_state, &claims, now_ts) {
+                            return session_stale_response();
+                        }
+                    }
+                    Ok(None) => return session_stale_response(),
+                    Err(error) => {
+                        tracing::error!(
+                            user_id = %uid,
+                            error = %error,
+                            "Failed to verify admin subject state from PostgreSQL"
+                        );
+                        return rejection_response(
+                            TokenRejection::CheckUnavailable,
+                            &token,
+                            &auth_state.jwt_secret,
+                        );
+                    }
+                }
+            }
             request.extensions_mut().insert(claims);
             next.run(request).await
         }
@@ -310,7 +449,10 @@ pub fn json_with_session_cookies(
     let expires_in = data
         .get("expires_in")
         .and_then(|v| v.as_u64().or_else(|| v.as_i64().map(u64::saturating_from)))
-        .unwrap_or(3600);
+        .unwrap_or(1800);
+    let body_refresh_max_age = data
+        .get("refresh_max_age")
+        .and_then(|v| v.as_u64().or_else(|| v.as_i64().map(u64::saturating_from)));
 
     if access.is_none() && refresh.is_none() {
         return crate::response::ApiResponse::ok(data).into_response();
@@ -319,6 +461,7 @@ pub fn json_with_session_cookies(
     if let Some(obj) = data.as_object_mut() {
         obj.remove("token");
         obj.remove("refresh_token");
+        obj.remove("refresh_max_age");
         obj.insert("cookie_auth".to_string(), serde_json::json!(true));
     }
 
@@ -331,7 +474,9 @@ pub fn json_with_session_cookies(
         );
     }
     if let Some(rt) = refresh {
-        let max_age = refresh_max_age_secs.unwrap_or(DEFAULT_REFRESH_MAX_AGE_SECS);
+        let max_age = body_refresh_max_age
+            .or(refresh_max_age_secs)
+            .unwrap_or(DEFAULT_REFRESH_MAX_AGE_SECS);
         append_set_cookie(
             headers,
             &format_set_cookie(REFRESH_COOKIE, &rt, max_age, false),
@@ -625,7 +770,52 @@ mod role_helper_tests {
             token_type: None,
             sid: uuid::Uuid::nil().to_string(),
             sxp: None,
+            auth_epoch: 0,
         }
+    }
+
+    #[test]
+    fn evaluate_access_subject_state_checks_epoch_role_lock_and_super_admin_immunity() {
+        let c = claims(ROLE_ADMIN);
+        let base = CachedAdminSubjectState {
+            role: ROLE_ADMIN.to_string(),
+            is_active: true,
+            locked_until_ts: None,
+            force_password_reset: false,
+            auth_epoch: 0,
+        };
+        assert!(evaluate_access_subject_state(&base, &c, 1_000));
+
+        let mut wrong_epoch = base.clone();
+        wrong_epoch.auth_epoch = 1;
+        assert!(!evaluate_access_subject_state(&wrong_epoch, &c, 1_000));
+
+        let mut wrong_role = base.clone();
+        wrong_role.role = ROLE_VIEWER.to_string();
+        assert!(!evaluate_access_subject_state(&wrong_role, &c, 1_000));
+
+        let mut disabled = base.clone();
+        disabled.is_active = false;
+        assert!(!evaluate_access_subject_state(&disabled, &c, 1_000));
+
+        let mut locked = base.clone();
+        locked.locked_until_ts = Some(1_050);
+        assert!(!evaluate_access_subject_state(&locked, &c, 1_000));
+        assert!(evaluate_access_subject_state(&locked, &c, 1_050));
+
+        let super_claims = claims(ROLE_SUPER_ADMIN);
+        let super_state = CachedAdminSubjectState {
+            role: ROLE_SUPER_ADMIN.to_string(),
+            is_active: true,
+            locked_until_ts: Some(1_999),
+            force_password_reset: false,
+            auth_epoch: 0,
+        };
+        assert!(evaluate_access_subject_state(
+            &super_state,
+            &super_claims,
+            1_000
+        ));
     }
 
     #[test]

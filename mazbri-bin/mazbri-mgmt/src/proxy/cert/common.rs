@@ -16,6 +16,27 @@ pub(crate) async fn require_license_issuance(state: &AppState) -> Result<(), Api
     .await
 }
 
+/// 校验按 `service` 或 `subject` 查询/操作的单段名称（规范微服务名、`global` 或合法扩展标识）并做百分号编码。
+///
+/// # Errors
+///
+/// 当名称为空、包含路径分隔符/查询符、命中非规范保留前缀或字符非法时返回 `ApiError::Validation`（`400 Bad Request`）。
+pub fn encode_cert_path_segment(segment: &str) -> Result<String, ApiError> {
+    let trimmed = segment.trim();
+    if trimmed.is_empty()
+        || trimmed.contains('/')
+        || trimmed.contains('\\')
+        || trimmed.contains('?')
+        || trimmed.contains('#')
+        || trimmed.contains("..")
+    {
+        return Err(ApiError::validation("非法的服务或证书主体名称"));
+    }
+    mazbri_core::validate_config_entry_name(trimmed)
+        .map_err(|error| ApiError::validation(error.to_string()))?;
+    Ok(urlencoding::encode(trimmed).into_owned())
+}
+
 macro_rules! proxy_handler {
     (
         name = $name:ident, method = $method:expr, path = $path:literal, forbidden =
@@ -50,7 +71,7 @@ macro_rules! proxy_handler {
             State(state): State<AppState>,
             claims: axum::Extension<AdminClaims>,
             ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
-            Path($param_name): Path<String>,
+            Path($param_name): Path<uuid::Uuid>,
             request: Request,
         ) -> impl IntoResponse {
             if !can_manage_certificates(&claims) {
@@ -61,7 +82,7 @@ macro_rules! proxy_handler {
                 &state.cert_http_client,
                 &config,
                 request,
-                &$path.replace("{}", &$param_name),
+                &$path.replace("{}", &$param_name.to_string()),
                 $method,
                 Some(addr),
             )
@@ -121,7 +142,7 @@ macro_rules! proxy_handler_with_audit {
             State(state): State<AppState>,
             claims: axum::Extension<AdminClaims>,
             ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
-            Path($param_name): Path<String>,
+            Path($param_name): Path<uuid::Uuid>,
             request: Request,
         ) -> Result<Response, ApiError> {
             if !can_manage_certificates(&claims) {
@@ -136,7 +157,7 @@ macro_rules! proxy_handler_with_audit {
             }
             let client_ip = extract_client_ip(request.headers(), Some(addr));
             let config = get_cert_proxy_config(&state);
-            let resolved_path = $path.replace("{}", &$param_name);
+            let resolved_path = $path.replace("{}", &$param_name.to_string());
             let response = proxy_request(
                 &state.cert_http_client,
                 &config,

@@ -1,10 +1,10 @@
-import { ref, watch, type Ref } from "vue";
+import { ref, toValue, watch, type MaybeRefOrGetter, type Ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 export interface UseTabRouteSyncOptions<T extends string> {
   queryKey?: string;
   defaultValue: T;
-  allowedValues: T[];
+  allowedValues: MaybeRefOrGetter<readonly T[]>;
   onChange?: (value: T) => void | Promise<void>;
   resolver?: (queryVal: unknown) => T | undefined;
 }
@@ -30,6 +30,7 @@ export function useTabRouteSync<T extends string>(
   };
 
   const resolveTab = (): T => {
+    const allowed = toValue(allowedValues);
     const queryVal = normalizeQueryTab(route.query[queryKey]);
 
     if (resolver) {
@@ -39,7 +40,7 @@ export function useTabRouteSync<T extends string>(
       }
     }
 
-    if (queryVal && allowedValues.includes(queryVal as T)) {
+    if (queryVal && allowed.includes(queryVal as T)) {
       return queryVal as T;
     }
     return defaultValue;
@@ -48,19 +49,20 @@ export function useTabRouteSync<T extends string>(
   const activeTab = ref<T>(resolveTab()) as Ref<T>;
 
   const handleTabChange = async (value: unknown) => {
-    if (!allowedValues.includes(value as T)) {
+    const allowed = toValue(allowedValues);
+    if (!allowed.includes(value as T)) {
       return;
     }
     await router.replace({
       query: {
         ...route.query,
         [queryKey]: value,
-      } as any,
+      } as Record<string, string | null | (string | null)[]>,
     });
   };
 
   watch(
-    () => route.fullPath,
+    () => [route.fullPath, toValue(allowedValues)] as const,
     async () => {
       const nextTab = resolveTab();
       if (activeTab.value !== nextTab) {

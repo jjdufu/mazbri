@@ -19,6 +19,7 @@ fn subject() -> TokenSubject<'static> {
         username: "alice",
         user_id: "6b0f8c56-3c8e-4d7a-9d55-1d7c0d3f7a11",
         role: "R_ADMIN",
+        auth_epoch: 0,
         binding: binding(),
     }
 }
@@ -42,6 +43,7 @@ fn claims_with(
         token_type: token_type.map(str::to_string),
         sid: binding().sid.clone(),
         sxp: Some(now + exp_offset),
+        auth_epoch: 0,
     }
 }
 
@@ -334,6 +336,7 @@ fn issue_bound(kind: TokenKind, binding: &SessionBinding, issued_at: i64, ttl: i
             username: "alice",
             user_id: "6b0f8c56-3c8e-4d7a-9d55-1d7c0d3f7a11",
             role: "R_FINANCE",
+            auth_epoch: 0,
             binding,
         },
         SECRET,

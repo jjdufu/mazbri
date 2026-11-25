@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use sqlx::types::Decimal;
 use std::fmt;
 use uuid::Uuid;
 pub const PRODUCT_ID_PATTERN: &str = "^8\\d{9}$";
@@ -209,6 +210,29 @@ impl TenantProductConfig {
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub fn validate(&self) -> Result<(), String> {
+        if self.unit_price.is_empty()
+            || self.unit_price.trim() != self.unit_price
+            || self.unit_price.chars().any(char::is_whitespace)
+        {
+            return Err("unit_price must not be empty or contain whitespace".to_string());
+        }
+        if self.unit_price.starts_with('-') || self.unit_price.starts_with('+') {
+            return Err("unit_price must be an unsigned non-negative decimal".to_string());
+        }
+        let price = Decimal::from_str_exact(&self.unit_price)
+            .map_err(|e| format!("unit_price '{}' is not a valid fixed-point decimal: {e}", self.unit_price))?;
+        if price < Decimal::ZERO {
+            return Err("unit_price must be >= 0".to_string());
+        }
+        if price.scale() > 6 {
+            return Err("unit_price must have at most 6 decimal places".to_string());
+        }
+        if price > Decimal::from(100_000) {
+            return Err("unit_price must be <= 100000".to_string());
+        }
+        if self.currency != "CNY" {
+            return Err("currency must be CNY".to_string());
+        }
         validate_cbpro_policy_config(&self.cbpro)?;
         Ok(())
     }
@@ -429,5 +453,58 @@ mod deny_unknown_tests {
         }))
         .expect_err("unknown field must be rejected");
         assert!(err.to_string().contains("unknown field"));
+    }
+
+    #[test]
+    fn tenant_product_config_validates_unit_price_and_currency() {
+        for valid_price in ["0", "0.000001", "0.001", "1.234567", "100000", "100000.000000"] {
+            let cfg = TenantProductConfig {
+                unit_price: valid_price.to_string(),
+                currency: "CNY".to_string(),
+                ..TenantProductConfig::default()
+            };
+            assert!(
+                cfg.validate().is_ok(),
+                "expected valid unit_price '{valid_price}' to pass"
+            );
+        }
+
+        for invalid_price in [
+            "",
+            " 0.001",
+            "0.001 ",
+            " 0.001 ",
+            "-0.001",
+            "-0",
+            "+0.001",
+            "0.0000001",
+            "100000.000001",
+            "100001",
+            "1e-3",
+            "NaN",
+            "abc",
+        ] {
+            let cfg = TenantProductConfig {
+                unit_price: invalid_price.to_string(),
+                currency: "CNY".to_string(),
+                ..TenantProductConfig::default()
+            };
+            assert!(
+                cfg.validate().is_err(),
+                "expected invalid unit_price '{invalid_price}' to be rejected"
+            );
+        }
+
+        for bad_currency in ["", "USD", "cny", " CNY "] {
+            let cfg = TenantProductConfig {
+                unit_price: "0.001".to_string(),
+                currency: bad_currency.to_string(),
+                ..TenantProductConfig::default()
+            };
+            assert!(
+                cfg.validate().is_err(),
+                "expected invalid currency '{bad_currency}' to be rejected"
+            );
+        }
     }
 }

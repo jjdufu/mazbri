@@ -5,6 +5,8 @@
 //! - 握手 headers 为稳定鉴权头；`request_id` 只写入帧 `id`，不进池键。
 
 use futures_util::{SinkExt, StreamExt};
+use mazbri_core::UpstreamTlsSpec;
+use rand::Rng;
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::http_call::{append_query, join_url};
@@ -12,9 +14,30 @@ use crate::observe::{RetryKind, RetryOutcome, RuntimeEvent, WsStaleStage, warn_b
 use crate::types::{
     AuthRejectTrigger, AuthRejection, BizError, ExecuteError, OutboundResponse, RetryReason,
 };
-use crate::ws_pool::{auth_fingerprint, PoolKey};
+use crate::ws_pool::{PoolKey, auth_fingerprint};
 
 use super::{AdapterCtx, AdapterOutcome, wrap_by_name};
+
+fn generate_ws_corr_id() -> String {
+    let mut raw = [0u8; 16];
+    rand::rng().fill_bytes(&mut raw);
+    format!("mzc-{}", hex::encode(raw))
+}
+
+fn effective_ws_tls<'a>(ctx: &'a AdapterCtx<'_>) -> Option<&'a UpstreamTlsSpec> {
+    ctx.input
+        .spec
+        .tls
+        .as_ref()
+        .filter(|t| !t.is_empty())
+        .or_else(|| {
+            ctx.input
+                .config
+                .as_deref()
+                .and_then(|c| c.tls.as_ref())
+                .filter(|t| !t.is_empty())
+        })
+}
 
 pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError> {
     let spec = &*ctx.input.spec;
@@ -24,22 +47,27 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
         .ok_or_else(|| ExecuteError::SpecInvalid("ws_unary operation missing".into()))?;
     let path = ws_path(ctx);
     let url = ws_url(ctx, &path)?;
+    let tls = effective_ws_tls(ctx);
 
     // 稳定握手头：auth + spec.request；故意不注入 per-request correlation（帧 id 承担）。
     let headers_map = super::merge_request_headers(ctx.auth, spec);
     let query = super::merge_request_query(ctx.auth, spec);
     let header_pairs: Vec<(String, String)> = headers_map.into_iter().collect();
-    let auth_fp = auth_fingerprint(&header_pairs, &query);
+    let mut auth_fp = auth_fingerprint(&header_pairs, &query);
+    if let Some(tls_spec) = tls {
+        auth_fp.push(':');
+        auth_fp.push_str(&hex::encode(tls_spec.fingerprint_bytes()));
+    }
     let key = PoolKey {
         base_url: ctx.base_url.to_string(),
         path,
         auth_fp,
     };
 
+    let corr_id = generate_ws_corr_id();
     let mut frame = wrap_by_name(spec, &ctx.input.payload)?;
     if let Some(obj) = frame.as_object_mut() {
-        obj.entry("id")
-            .or_insert_with(|| serde_json::Value::String(ctx.input.request_id.clone()));
+        obj.insert("id".into(), serde_json::Value::String(corr_id.clone()));
         obj.entry("method")
             .or_insert_with(|| serde_json::Value::String(operation.to_string()));
     }
@@ -47,7 +75,7 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
         .map_err(|e| ExecuteError::SpecInvalid(format!("ws frame: {e}")))?;
 
     let wire_started = std::time::Instant::now();
-    let exchange_res = exchange(ctx, &key, &url, &header_pairs, text).await;
+    let exchange_res = exchange(ctx, &key, &url, &header_pairs, tls, &corr_id, text).await;
     let wire_duration = wire_started.elapsed();
     ctx.wire_clock.add(wire_duration);
     let json = match exchange_res? {
@@ -103,19 +131,20 @@ async fn exchange(
     key: &PoolKey,
     url: &str,
     header_pairs: &[(String, String)],
+    tls: Option<&UpstreamTlsSpec>,
+    corr_id: &str,
     text: String,
 ) -> Result<Exchange, ExecuteError> {
-    let rid = &ctx.input.request_id;
     let mut guard = ctx
         .ws_pool
-        .checkout(key.clone(), url, header_pairs, ctx.ssrf)
+        .checkout_with_tls(key.clone(), url, header_pairs, ctx.ssrf, tls)
         .await?;
     for _ in 0..guard.stale_discarded() {
         ctx.observer.on_event(RuntimeEvent::WsStale {
             stage: WsStaleStage::Checkout,
         });
     }
-    let err = match send_and_wait(&mut guard, rid, text.clone(), ctx.timeout).await {
+    let err = match send_and_wait(&mut guard, corr_id, text.clone(), ctx.timeout).await {
         Ok(json) => return Ok(Exchange::Reply(json)),
         Err(e) => e,
     };
@@ -139,7 +168,7 @@ async fn exchange(
     }
     ctx.retry_log.push(RetryReason::StaleConnection);
     // 重试路径单独装箱：不让很少走到的第二轮握手与收发撑大每次调用的 future。
-    let result = Box::pin(retry_on_fresh(ctx, key, url, header_pairs, text)).await;
+    let result = Box::pin(retry_on_fresh(ctx, key, url, header_pairs, tls, corr_id, text)).await;
     let outcome = match &result {
         Ok(Exchange::Reply(_)) => RetryOutcome::Ok,
         Ok(Exchange::Rejected(_)) | Err(_) => RetryOutcome::Failed,
@@ -179,13 +208,15 @@ async fn retry_on_fresh(
     key: &PoolKey,
     url: &str,
     header_pairs: &[(String, String)],
+    tls: Option<&UpstreamTlsSpec>,
+    corr_id: &str,
     text: String,
 ) -> Result<Exchange, ExecuteError> {
     let mut fresh = ctx
         .ws_pool
-        .checkout_fresh(key.clone(), url, header_pairs, ctx.ssrf)
+        .checkout_fresh_with_tls(key.clone(), url, header_pairs, ctx.ssrf, tls)
         .await?;
-    match send_and_wait(&mut fresh, &ctx.input.request_id, text, ctx.timeout).await {
+    match send_and_wait(&mut fresh, corr_id, text, ctx.timeout).await {
         Ok(json) => Ok(Exchange::Reply(json)),
         Err(e) => {
             fresh.mark_broken();
@@ -242,9 +273,24 @@ impl From<WsWaitError> for ExecuteError {
     }
 }
 
+fn extract_frame_corr_id(v: &serde_json::Value) -> Option<String> {
+    let id_val = v.get("id")?;
+    if let Some(s) = id_val.as_str() {
+        let trimmed = s.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
+        }
+        return None;
+    }
+    if let Some(n) = id_val.as_i64() {
+        return Some(n.to_string());
+    }
+    id_val.as_u64().map(|n| n.to_string())
+}
+
 async fn send_and_wait(
     guard: &mut crate::ws_pool::WsConnGuard,
-    request_id: &str,
+    corr_id: &str,
     text: String,
     wait_timeout: std::time::Duration,
 ) -> Result<serde_json::Value, WsWaitError> {
@@ -263,7 +309,7 @@ async fn send_and_wait(
             WsWaitError::Other(ExecuteError::UpstreamTransport(msg))
         }
     };
-    tokio::time::timeout(wait_timeout, async {
+    let reply = tokio::time::timeout(wait_timeout, async {
         loop {
             let next = {
                 let ws = guard.stream().map_err(WsWaitError::Other)?;
@@ -277,8 +323,7 @@ async fn send_and_wait(
                             "ws frame json: {e}"
                         )))
                     })?;
-                    let id = v.get("id").and_then(|x| x.as_str()).unwrap_or("");
-                    if id == request_id || id.is_empty() {
+                    if extract_frame_corr_id(&v).as_deref() == Some(corr_id) {
                         return Ok(v);
                     }
                 }
@@ -316,7 +361,9 @@ async fn send_and_wait(
         WsWaitError::Other(ExecuteError::UpstreamTransport(
             "ws wait exceeded timeout_ms".into(),
         ))
-    })?
+    })??;
+    guard.mark_clean();
+    Ok(reply)
 }
 
 /// 对端断开类错误（关闭、重置、IO 中断），区别于协议/解析错误。
@@ -1110,5 +1157,72 @@ mod tests {
                 stage: WsStaleStage::Checkout
             }]
         );
+    }
+
+    #[tokio::test]
+    async fn mid_flight_outer_cancellation_discards_socket_preventing_cross_tenant_leak() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let handshakes = Arc::new(AtomicUsize::new(0));
+        let hs = Arc::clone(&handshakes);
+        tokio::spawn(async move {
+            while let Ok((sock, _)) = listener.accept().await {
+                let conn_no = hs.fetch_add(1, Ordering::SeqCst);
+                tokio::spawn(async move {
+                    let Ok(mut ws) = accept_async(sock).await else {
+                        return;
+                    };
+                    while let Some(Ok(Message::Text(t))) = ws.next().await {
+                        let v: serde_json::Value = serde_json::from_str(&t).unwrap_or_default();
+                        let id = v.get("id").cloned().unwrap_or(serde_json::Value::Null);
+                        if conn_no == 0 {
+                            tokio::time::sleep(Duration::from_millis(120)).await;
+                            let reply = serde_json::json!({
+                                "id": id,
+                                "code": 0,
+                                "data": {"owner": "tenant-A-secret"}
+                            });
+                            let _ = ws.send(Message::Text(reply.to_string().into())).await;
+                        } else {
+                            // Also send an unauthenticated empty-id broadcast first; must be ignored!
+                            let broadcast = serde_json::json!({
+                                "id": "",
+                                "code": 0,
+                                "data": {"owner": "spoofed-broadcast"}
+                            });
+                            let _ = ws.send(Message::Text(broadcast.to_string().into())).await;
+                            let reply = serde_json::json!({
+                                "id": id,
+                                "code": 0,
+                                "data": {"owner": "tenant-B-clean"}
+                            });
+                            let _ = ws.send(Message::Text(reply.to_string().into())).await;
+                        }
+                    }
+                });
+            }
+        });
+
+        let base = format!("http://{addr}");
+        let pool = pool_with(false);
+
+        // Tenant A cancels after 25ms (while its request is already on wire).
+        let cancelled = tokio::time::timeout(
+            Duration::from_millis(25),
+            run_with(&pool, &base, "req-A", &RunOpts::plain()),
+        )
+        .await;
+        assert!(cancelled.is_err());
+
+        // Wait long enough that conn 0 would have queued Tenant A's frame if returned to pool.
+        tokio::time::sleep(Duration::from_millis(150)).await;
+
+        // Tenant B must get a fresh connection (handshakes == 2) and only its own data.
+        let out_b = run_with(&pool, &base, "req-B", &RunOpts::plain())
+            .await
+            .expect("tenant B succeeds");
+        assert_eq!(out_b.payload["owner"], "tenant-B-clean");
+        assert_eq!(handshakes.load(Ordering::SeqCst), 2);
+        assert_eq!(pool.reuses(), 0);
     }
 }

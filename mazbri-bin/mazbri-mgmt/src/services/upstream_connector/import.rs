@@ -946,6 +946,7 @@ pub async fn draft_from_supplier(
     supplier_id: Uuid,
     force_resync: bool,
     actor: &str,
+    is_super_admin: bool,
 ) -> Result<DraftDto, ApiError> {
     let row = sqlx::query(
         r"
@@ -959,15 +960,6 @@ pub async fn draft_from_supplier(
     .map_err(|e| ApiError::internal(format!("get supplier: {e}")))?
     .ok_or_else(|| ApiError::not_found("supplier".into(), supplier_id.to_string()))?;
 
-    let existing_draft = repo::find_active_draft_for_supplier(pool, supplier_id)
-        .await
-        .map_err(|e| ApiError::internal(format!("find active draft: {e}")))?;
-    if !force_resync
-        && let Some(existing) = existing_draft
-    {
-        return with_gate(pool, existing).await;
-    }
-
     let code: String = row.get("supplier_code");
     let name: String = row.get("name");
     let upstream_url: String = row.get("upstream_url");
@@ -980,10 +972,32 @@ pub async fn draft_from_supplier(
         .to_string();
     let endpoints_value = build_supplier_endpoints_value(pool, supplier_id, &upstream_url).await?;
 
+    // 真实超管权限守卫：非超管禁止反开含 mTLS 私钥或 insecure_skip_verify 的高特权供应商为可写草稿！
+    if !is_super_admin && super::has_privileged_tls_material(&config, &endpoints_value) {
+        return Err(ApiError::Forbidden);
+    }
+
+    let existing_draft = repo::find_active_draft_for_supplier(pool, supplier_id)
+        .await
+        .map_err(|e| ApiError::internal(format!("find active draft: {e}")))?;
+    if !force_resync
+        && let Some(existing) = existing_draft
+    {
+        if !is_super_admin
+            && super::has_privileged_tls_material(&existing.config, &existing.endpoints)
+        {
+            return Err(ApiError::Forbidden);
+        }
+        return with_gate(pool, existing).await;
+    }
+
     if let Some(existing) = existing_draft {
         let config_value = config_json_for_draft(&config, Some(&existing.config))?;
-        let endpoints_enc =
-            super::sanitize_and_encrypt_endpoints_tls(&endpoints_value, Some(&existing.endpoints), true)?;
+        let endpoints_enc = super::sanitize_and_encrypt_endpoints_tls(
+            &endpoints_value,
+            Some(&existing.endpoints),
+            is_super_admin,
+        )?;
         let updated = repo::update_draft(
             pool,
             repo::DraftUpdate {
@@ -1005,7 +1019,7 @@ pub async fn draft_from_supplier(
     }
 
     let draft_code = format!("from-{code}-{}", &Uuid::new_v4().to_string()[..6]);
-    let mut dto = create_draft(
+    let mut dto = super::draft::create_draft_from_internal_supplier(
         pool,
         CreateDraftRequest {
             draft_code,
@@ -1020,7 +1034,7 @@ pub async fn draft_from_supplier(
             claim_run_ids: Vec::new(),
         },
         actor,
-        true,
+        is_super_admin,
     )
     .await?;
 
@@ -1273,7 +1287,6 @@ pub async fn transform_preview(
         timeout: Duration::from_secs(5),
         mode: ExecuteMode::TransformPreview,
         options: ExecuteOptions {
-            follow_redirects: false,
             max_body_capture_bytes: 64 * 1024,
             mask_secrets: true,
             collect_trace: true,

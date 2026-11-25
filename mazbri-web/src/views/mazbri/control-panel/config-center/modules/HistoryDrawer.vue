@@ -136,6 +136,7 @@ import {
 import DiffViewer from "./DiffViewer.vue";
 import TomlEditor from "./TomlEditor.vue";
 import { getLicenseDisabledReason } from "@/composables/useLicenseGate";
+import { useLatestRequest } from "@/composables/useLatestRequest";
 import { isMfaStepUpCancelled } from "@/utils/http/mfa-dialog-service";
 import { logger } from "@/utils/sys";
 import AuthorizationTooltipButton from "@/components/common/authorization-tooltip-button/index.vue";
@@ -168,12 +169,10 @@ const authorizationDisabledReason = computed(
   () => props.authorizationDisabledReason ?? getLicenseDisabledReason(),
 );
 
-const loading = ref(false);
 const activeContent = ref("");
 const historyData = ref<ConfigHistory[]>([]);
 const selectedVersion = ref<ConfigHistory | null>(null);
 const compareTarget = ref<"current" | number>("current");
-let loadSeq = 0;
 
 const pagination = reactive({
   page: 1,
@@ -241,71 +240,67 @@ const comparedLabel = computed(() => {
   });
 });
 
-const loadInitialData = async () => {
-  const config = props.config;
-  if (!config) return;
-  const seq = ++loadSeq;
-  loading.value = true;
-  try {
-    const [detail, historyRes] = await Promise.all([
-      fetchConfig(config.service_name),
-      fetchConfigHistory({
-        service_name: config.service_name,
-        page: pagination.page,
-        page_size: pagination.page_size,
-      }),
-    ]);
-    if (seq !== loadSeq || !visible.value) {
+const historyLoader = useLatestRequest(
+  async (ctx, serviceName: string, includeActive: boolean) => {
+    if (includeActive) {
+      const [detail, historyRes] = await Promise.all([
+        fetchConfig(serviceName, ctx.signal),
+        fetchConfigHistory(
+          {
+            service_name: serviceName,
+            page: pagination.page,
+            page_size: pagination.page_size,
+          },
+          ctx.signal,
+        ),
+      ]);
+      if (!ctx.isLatest() || !visible.value) return;
+      activeContent.value = detail.content;
+      historyData.value = historyRes.history;
+      pagination.total = historyRes.total;
+      selectedVersion.value = historyRes.history[0] ?? null;
+      compareTarget.value = "current";
       return;
     }
-    activeContent.value = detail.content;
+
+    const historyRes = await fetchConfigHistory(
+      {
+        service_name: serviceName,
+        page: pagination.page,
+        page_size: pagination.page_size,
+      },
+      ctx.signal,
+    );
+    if (!ctx.isLatest() || !visible.value) return;
     historyData.value = historyRes.history;
     pagination.total = historyRes.total;
     selectedVersion.value = historyRes.history[0] ?? null;
     compareTarget.value = "current";
+  },
+);
+const { loading } = historyLoader;
+
+const loadInitialData = async () => {
+  const config = props.config;
+  if (!config) return;
+  try {
+    await historyLoader.run(config.service_name, true);
   } catch (error: unknown) {
-    if (seq !== loadSeq) {
-      return;
-    }
     if (!isMfaStepUpCancelled(error)) {
       logger.error("Failed to load config history:", error);
     }
     visible.value = false;
-  } finally {
-    if (seq === loadSeq) {
-      loading.value = false;
-    }
   }
 };
 
 const loadHistoryPage = async () => {
   const config = props.config;
   if (!config) return;
-  const seq = ++loadSeq;
-  loading.value = true;
   try {
-    const historyRes = await fetchConfigHistory({
-      service_name: config.service_name,
-      page: pagination.page,
-      page_size: pagination.page_size,
-    });
-    if (seq !== loadSeq || !visible.value) {
-      return;
-    }
-    historyData.value = historyRes.history;
-    pagination.total = historyRes.total;
-    selectedVersion.value = historyRes.history[0] ?? null;
-    compareTarget.value = "current";
+    await historyLoader.run(config.service_name, false);
   } catch (error: unknown) {
-    if (seq !== loadSeq) {
-      return;
-    }
     if (!isMfaStepUpCancelled(error)) {
       logger.error("Failed to load config history page:", error);
-    }
-  } finally {
-    if (seq === loadSeq) {
-      loading.value = false;
     }
   }
 };
@@ -367,8 +362,7 @@ watch(
   () => [props.modelValue, props.config] as const,
   ([isOpen, targetConfig]) => {
     if (!isOpen || !targetConfig) {
-      loadSeq++;
-      loading.value = false;
+      historyLoader.cancel();
       return;
     }
     pagination.page = 1;

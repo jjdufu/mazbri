@@ -156,6 +156,171 @@ pub async fn recoverable_request_middleware(
     recoverable(next.run(req)).await
 }
 
+/// 可恢复作用域内捕获到的 panic 错误摘要。
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("task panicked: {message}")]
+pub struct PanicError {
+    /// 截断后的 panic 消息文本。
+    pub message: String,
+}
+
+impl PanicError {
+    /// 从 `catch_unwind` 捕获到的载荷构造结构化错误。
+    #[must_use]
+    pub fn from_payload(payload: &(dyn std::any::Any + Send)) -> Self {
+        let raw = payload_message(payload);
+        Self {
+            message: truncate_on_char_boundary(raw, MAX_MESSAGE_BYTES).to_string(),
+        }
+    }
+
+    /// 返回截断后的 panic 文本。
+    #[must_use]
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+}
+
+/// 派生单请求附属异步子任务（如响应后落账、异步写缓存、单次通知外发）。
+///
+/// 强制要求传入请求级 [`crate::TraceContext`]，防止常驻后台守护协程误调本函数。
+/// 子任务内发生 panic 时：
+/// 1. [`panic_hook`] 因处于 [`recoverable`] 轮询范围而判定为 [`PanicDisposition::Recovered`]，
+///    将 [`RECOVERED_PANICS_TOTAL`] 精确递增 1 次且不触发 `abort()`；
+/// 2. 外层 `catch_unwind` 接住展开，记录带 `request_id` 的错误日志后返回 `None`。
+pub fn spawn_request_subtask<F>(
+    name: &'static str,
+    trace: crate::TraceContext,
+    fut: F,
+) -> tokio::task::JoinHandle<Option<F::Output>>
+where
+    F: Future + Send + 'static,
+    F::Output: Send + 'static,
+{
+    tokio::spawn(async move {
+        let scoped = crate::scope_request_trace(trace.clone(), fut);
+        match futures::FutureExt::catch_unwind(std::panic::AssertUnwindSafe(recoverable(scoped)))
+            .await
+        {
+            Ok(output) => Some(output),
+            Err(payload) => {
+                let err = PanicError::from_payload(payload.as_ref());
+                tracing::error!(
+                    subtask = name,
+                    request_id = %trace.request_id,
+                    trace_id = %trace.trace_id,
+                    panic = %err.message,
+                    "Request subtask panicked and was contained"
+                );
+                None
+            }
+        }
+    })
+}
+
+/// 在阻塞线程池中运行单请求计算闭包（如密码哈希、非对称验签、压缩包解析），隔离 panic。
+///
+/// 闭包内发生 panic 时由 [`DepthGuard`] 豁免进程级 `abort()`，[`panic_hook`] 递增
+/// [`RECOVERED_PANICS_TOTAL`] 一次，并将异常转换为 `Err(PanicError)` 返回异步调用方。
+pub fn spawn_blocking_recoverable<F, R>(f: F) -> tokio::task::JoinHandle<Result<R, PanicError>>
+where
+    F: FnOnce() -> R + Send + 'static,
+    R: Send + 'static,
+{
+    let trace = crate::current_request_trace();
+    tokio::task::spawn_blocking(move || {
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = DepthGuard::enter();
+            f()
+        }));
+        match outcome {
+            Ok(value) => Ok(value),
+            Err(payload) => {
+                let err = PanicError::from_payload(payload.as_ref());
+                if let Some(ref trace) = trace {
+                    tracing::error!(
+                        request_id = %trace.request_id,
+                        trace_id = %trace.trace_id,
+                        panic = %err.message,
+                        "Blocking request task panicked and was contained"
+                    );
+                } else {
+                    tracing::error!(
+                        panic = %err.message,
+                        "Blocking request task panicked and was contained"
+                    );
+                }
+                Err(err)
+            }
+        }
+    })
+}
+
+/// 为外层未挂载完整 `mazbri-service` 请求追踪中间件的 HTTP 路由绑定 `request_id` 作用域，
+/// 挂在 `CatchPanicLayer` 外侧以保证内层发生 panic 时 `CatchPanicLayer` 回调仍能读取 `request_id`。
+pub async fn request_id_scope_middleware(
+    mut req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    if let Some(existing) = crate::current_request_trace() {
+        let mut response = next.run(req).await;
+        if !response.headers().contains_key("x-request-id")
+            && let Ok(val) = axum::http::HeaderValue::from_str(&existing.request_id)
+        {
+            response.headers_mut().insert("x-request-id", val);
+        }
+        return response;
+    }
+    let inbound = crate::inbound_request_id(req.headers());
+    let trace = crate::TraceContext::for_span(
+        inbound.request_id,
+        &tracing::Span::current(),
+        std::sync::Arc::from(""),
+    )
+    .with_client_request_id(inbound.client_request_id);
+    if let Ok(val) = axum::http::HeaderValue::from_str(&trace.request_id) {
+        req.headers_mut().insert("x-request-id", val);
+    }
+    let mut response = crate::scope_request_trace(trace.clone(), next.run(req)).await;
+    if let Ok(val) = axum::http::HeaderValue::from_str(&trace.request_id) {
+        response.headers_mut().insert("x-request-id", val);
+    }
+    response
+}
+
+/// 供 `CatchPanicLayer::custom` 直接传入的标准 HTTP 500 JSON 响应处理函数（携带 `request_id` 与 `x-request-id` 头）。
+#[must_use]
+pub fn handle_http_panic(
+    payload: Box<dyn std::any::Any + Send + 'static>,
+) -> axum::response::Response {
+    let raw_message = match payload.downcast::<String>() {
+        Ok(owned) => *owned,
+        Err(other) => payload_message(other.as_ref()).to_string(),
+    };
+    let message = truncate_on_char_boundary(&raw_message, MAX_MESSAGE_BYTES);
+    let trace = crate::current_request_trace().unwrap_or_else(crate::TraceContext::current);
+    let request_id = trace.request_id.to_string();
+    tracing::error!(
+        request_id = %request_id,
+        trace_id = %trace.trace_id,
+        panic = %message,
+        "HTTP request handler panicked; returning 500 JSON"
+    );
+    let body = serde_json::json!({
+        "error": crate::error_codes::INTERNAL_ERROR,
+        "message": "Internal server error",
+        "request_id": request_id,
+    });
+    let mut response = axum::response::IntoResponse::into_response((
+        axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+        axum::Json(body),
+    ));
+    if let Ok(header_value) = axum::http::HeaderValue::from_str(&trace.request_id) {
+        response.headers_mut().insert("x-request-id", header_value);
+    }
+    response
+}
+
 /// 安装全局 panic hook。只有第一次调用生效，返回是否本次完成安装。
 ///
 /// `fallback_file` 为致命 panic 的 JSONL 兜底文件（追加写入）；为 `None` 时只写 stderr。

@@ -45,9 +45,12 @@ pub async fn get_gateway_route_version(
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn list_channels(
     State(state): State<AppState>,
+    Extension(claims): Extension<AdminClaims>,
     Query(params): Query<ListParams>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let data = svc::list_channels(&state.db, &params).await?;
+    let mut data = svc::list_channels(&state.db, &params).await?;
+    crate::middleware::role_projection::RoleDataProjection::for_claims(&claims)
+        .project_channel_value(&mut data);
     Ok(ApiResponse::ok(data))
 }
 /// # Errors
@@ -63,8 +66,23 @@ pub async fn create_channel(
     if !is_business_admin(&claims) {
         return Err(ApiError::Forbidden);
     }
+    crate::services::upstream_connector::reject_client_enc_in_channel_config(&payload.config)?;
+    if payload
+        .config
+        .get("egress")
+        .and_then(|e| e.get("tls"))
+        .is_some_and(|t| !t.is_null())
+    {
+        crate::services::root_package::ensure_root_material_keyring_for_write_raw(
+            &state.cert_http_client,
+            &state.cert_service.url,
+            &state.cert_service.token,
+        )
+        .await?;
+    }
     let data = svc::create_channel(
         &state.db,
+        state.connector_runtime.ssrf(),
         &state.audit,
         &payload,
         extract_user_id(&claims)?,
@@ -79,9 +97,12 @@ pub async fn create_channel(
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn get_channel(
     State(state): State<AppState>,
+    Extension(claims): Extension<AdminClaims>,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let data = svc::get_channel(&state.db, &id).await?;
+    let mut data = svc::get_channel(&state.db, &id).await?;
+    crate::middleware::role_projection::RoleDataProjection::for_claims(&claims)
+        .project_channel_value(&mut data);
     Ok(ApiResponse::ok(data))
 }
 /// # Errors
@@ -98,15 +119,31 @@ pub async fn update_channel(
     if !is_business_admin(&claims) {
         return Err(ApiError::Forbidden);
     }
-    let data = svc::update_channel(
-        &state.db,
-        &state.audit,
-        &id,
-        &payload,
-        extract_user_id(&claims)?,
-        is_admin(&claims),
-        extract_client_ip(&headers, Some(addr)),
-    )
+    if let Some(ref raw_cfg) = payload.config {
+        crate::services::upstream_connector::reject_client_enc_in_channel_config(raw_cfg)?;
+        if raw_cfg
+            .get("egress")
+            .and_then(|e| e.get("tls"))
+            .is_some_and(|t| !t.is_null())
+        {
+            crate::services::root_package::ensure_root_material_keyring_for_write_raw(
+                &state.cert_http_client,
+                &state.cert_service.url,
+                &state.cert_service.token,
+            )
+            .await?;
+        }
+    }
+    let data = svc::update_channel(svc::UpdateChannelArgs {
+        pool: &state.db,
+        ssrf_checker: state.connector_runtime.ssrf(),
+        audit: &state.audit,
+        id: &id,
+        payload: &payload,
+        user_id: extract_user_id(&claims)?,
+        is_super_admin: is_admin(&claims),
+        client_ip: extract_client_ip(&headers, Some(addr)),
+    })
     .await?;
     Ok(ApiResponse::ok(data))
 }

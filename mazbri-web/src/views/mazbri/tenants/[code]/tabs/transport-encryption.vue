@@ -323,13 +323,13 @@ import CryptoSuiteSelect, {
   type CryptoSuiteSelectValue,
 } from "@/components/crypto/CryptoSuiteSelect.vue";
 import { ROLES_ADMIN, ROLES_BIZ } from "@/utils/ops/roles";
+import { useLatestRequest } from "@/composables/useLatestRequest";
 
 const props = defineProps<{
   tenantCode: string;
 }>();
 
 const router = useRouter();
-const loading = ref(false);
 const isInitialized = ref(false);
 const saving = ref(false);
 const creating = ref(false);
@@ -487,15 +487,21 @@ const applyProfile = (profile: {
   }
 };
 
+const cryptoLoader = useLatestRequest(async (ctx, code: string) => {
+  const bundle = await fetchTenantCrypto(code, ctx.signal);
+  if (!ctx.isLatest() || props.tenantCode !== code) return;
+  applyProfile(bundle.profile);
+  keys.value = bundle.keys;
+  licenseStatus.value = bundle.license_status;
+  cryptoActions.value = bundle.actions;
+  isInitialized.value = true;
+});
+const { loading } = cryptoLoader;
+
 const loadData = async () => {
-  loading.value = true;
+  if (!props.tenantCode) return;
   try {
-    const bundle = await fetchTenantCrypto(props.tenantCode);
-    applyProfile(bundle.profile);
-    keys.value = bundle.keys;
-    licenseStatus.value = bundle.license_status;
-    cryptoActions.value = bundle.actions;
-    isInitialized.value = true;
+    await cryptoLoader.run(props.tenantCode);
   } catch (error) {
     // 加载失败不猜许可证态，保持 null，黄条不渲染。
     licenseStatus.value = null;
@@ -512,8 +518,6 @@ const loadData = async () => {
     };
     isInitialized.value = false;
     logger.error("Failed to load tenant crypto settings:", error);
-  } finally {
-    loading.value = false;
   }
 };
 
@@ -607,7 +611,15 @@ const saveProfile = async () => {
   }
 };
 
-onMounted(loadData);
+watch(
+  () => props.tenantCode,
+  (code, prev) => {
+    if (code && code !== prev) {
+      void loadData();
+    }
+  },
+);
+onMounted(() => void loadData());
 </script>
 
 <style scoped lang="scss">

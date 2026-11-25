@@ -394,7 +394,11 @@ async function request<T = any>(
     if (isMfaStepUpCancelled(error)) {
       return Promise.reject(error);
     }
-    if (error instanceof HttpError && !error.handledBySessionBoundary) {
+    if (
+      error instanceof HttpError &&
+      !error.handledBySessionBoundary &&
+      !error.cancelled
+    ) {
       const suppress401 =
         error.code === ApiStatus.unauthorized &&
         config.suppressUnauthorizedToast === true;

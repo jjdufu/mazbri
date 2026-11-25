@@ -270,6 +270,7 @@ onMounted(() => {
   document.addEventListener("keydown", handleKeydown);
   if (isLock.value) {
     visible.value = true;
+    document.body.style.overflow = "hidden";
     setTimeout(() => {
       unlockInputRef.value?.input?.focus();
     }, 100);

@@ -134,7 +134,7 @@ export const mazbriRoutes: AppRouteRecord[] = [
           title: "menus.mazbri.billsAndReconciliation",
           icon: "ri:file-list-3-line",
           keepAlive: false,
-          roles: ["R_ADMIN", "R_FINANCE", "R_VIEWER"],
+          roles: ["R_ADMIN", "R_FINANCE"],
         },
       },
     ],

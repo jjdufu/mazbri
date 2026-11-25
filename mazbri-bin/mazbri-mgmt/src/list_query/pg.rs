@@ -86,26 +86,32 @@ fn apply_string_like(
         }
         FilterOp::Contains => {
             let s = value_as_string(value, field)?;
+            let escaped = mazbri_core::config::escape_ilike_pattern(&s);
             builder.push(" AND ");
             builder.push(expr);
             builder.push(" ILIKE ");
-            builder.push_bind(format!("%{s}%"));
+            builder.push_bind(format!("%{escaped}%"));
+            builder.push(" ESCAPE '\\'");
             Ok(())
         }
         FilterOp::StartsWith => {
             let s = value_as_string(value, field)?;
+            let escaped = mazbri_core::config::escape_ilike_pattern(&s);
             builder.push(" AND ");
             builder.push(expr);
             builder.push(" ILIKE ");
-            builder.push_bind(format!("{s}%"));
+            builder.push_bind(format!("{escaped}%"));
+            builder.push(" ESCAPE '\\'");
             Ok(())
         }
         FilterOp::EndsWith => {
             let s = value_as_string(value, field)?;
+            let escaped = mazbri_core::config::escape_ilike_pattern(&s);
             builder.push(" AND ");
             builder.push(expr);
             builder.push(" ILIKE ");
-            builder.push_bind(format!("%{s}"));
+            builder.push_bind(format!("%{escaped}"));
+            builder.push(" ESCAPE '\\'");
             Ok(())
         }
         FilterOp::In => {

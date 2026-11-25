@@ -50,22 +50,37 @@ pub async fn get_metric_timeseries(
     State(state): State<AppState>,
     Query(params): Query<MetricQueryParams>,
 ) -> Response {
-    let Some(client) = metrics_client(&state) else {
-        return greptimedb_unavailable();
-    };
-    if params.start >= params.end {
+    if let Err(message) = mazbri_analytics::greptimedb::resolve_timeseries_step(
+        params.start,
+        params.end,
+        params.step,
+    ) {
         return (
             StatusCode::BAD_REQUEST,
             Json(HandlerError {
-                error: "invalid_time_range".to_string(),
-                message: "start 必须小于 end".to_string(),
+                error: "invalid_timeseries_params".to_string(),
+                message,
             }),
         )
             .into_response();
     }
+    let Some(client) = metrics_client(&state) else {
+        return greptimedb_unavailable();
+    };
     match client.query_metric_series(&params).await {
         Ok(series) => (StatusCode::OK, Json(series)).into_response(),
         Err(e) => {
+            let msg = e.to_string();
+            if msg.starts_with("配置错误:") {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(HandlerError {
+                        error: "invalid_metric_params".to_string(),
+                        message: msg,
+                    }),
+                )
+                    .into_response();
+            }
             error!("指标时序查询失败: {}", e);
             query_failed()
         }

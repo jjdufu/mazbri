@@ -185,9 +185,8 @@
           <span class="wb-panel__title">{{
             $t("upstreamConnector.sidebarEnv")
           }}</span>
-          <div class="wb-panel__head-actions">
+          <div v-if="canWrite" class="wb-panel__head-actions">
             <button
-              v-if="canWrite"
               type="button"
               class="wb-hopp-icon"
               :title="$t('upstreamConnector.importEnvJson')"
@@ -206,6 +205,7 @@
           </div>
         </div>
         <input
+          v-if="canWrite"
           ref="envImportInput"
           type="file"
           accept=".json,application/json"
@@ -277,6 +277,8 @@
               </div>
               <WorkbenchKvRows
                 v-model="activeNamedEnv.rows"
+                :secret-values="!canWrite"
+                :disabled="!canWrite"
                 :title="activeNamedEnv.name"
                 :add-title="$t('upstreamConnector.addEnv')"
                 :clear-title="$t('upstreamConnector.clearKv')"
@@ -287,6 +289,8 @@
           <div class="wb-env-sec">
             <WorkbenchKvRows
               v-model="envState.globalRows"
+              :secret-values="!canWrite"
+              :disabled="!canWrite"
               :title="$t('upstreamConnector.globalEnv')"
               :add-title="$t('upstreamConnector.addEnv')"
               :clear-title="$t('upstreamConnector.clearKv')"

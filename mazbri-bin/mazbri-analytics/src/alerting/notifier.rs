@@ -4,10 +4,16 @@ use lettre::message::header::ContentType;
 use lettre::message::{Mailbox, Message};
 use lettre::transport::smtp::authentication::Credentials;
 use lettre::{AsyncSmtpTransport, AsyncTransport, Tokio1Executor};
+use mazbri_core::net::ssrf::{SsrfChecker, build_safe_http_client};
 use serde::Deserialize;
 use std::fmt;
 use std::fmt::Write as _;
+use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::Semaphore;
+
+/// 最大并发外发通知数（Webhook + SMTP）。
+pub const MAX_CONCURRENT_NOTIFICATIONS: usize = 16;
 
 /// SMTP 连接加密方式。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -121,7 +127,9 @@ impl Mailer {
 #[derive(Clone)]
 pub struct Notifier {
     client: reqwest::Client,
+    ssrf: SsrfChecker,
     mailer: Option<Mailer>,
+    semaphore: Arc<Semaphore>,
 }
 
 impl Notifier {
@@ -129,14 +137,15 @@ impl Notifier {
     ///
     /// HTTP 客户端或 SMTP 传输构建失败时返回错误。
     pub fn new(webhook_timeout: Duration, smtp: Option<&SmtpConfig>) -> Result<Self, String> {
-        let client = reqwest::Client::builder()
-            .timeout(webhook_timeout)
-            .redirect(reqwest::redirect::Policy::none())
-            .build()
+        let ssrf = SsrfChecker::new();
+        let connect_timeout = webhook_timeout.min(Duration::from_secs(5));
+        let client = build_safe_http_client(&ssrf, connect_timeout, webhook_timeout)
             .map_err(|e| format!("webhook 客户端构建失败: {e}"))?;
         Ok(Self {
             client,
+            ssrf,
             mailer: smtp.map(Mailer::new).transpose()?,
+            semaphore: Arc::new(Semaphore::new(MAX_CONCURRENT_NOTIFICATIONS)),
         })
     }
 
@@ -150,11 +159,25 @@ impl Notifier {
             self.dispatch_email(&notify.emails, notification);
         }
         for url in &notify.webhooks {
-            let client = self.client.clone();
-            let url = url.clone();
+            let req_builder = match self.ssrf.checked_post(&self.client, url) {
+                Ok(builder) => builder,
+                Err(ssrf_err) => {
+                    tracing::warn!(
+                        target: "alerting",
+                        event_id = %notification.event_id,
+                        error = %ssrf_err,
+                        "告警 webhook 被 SSRF 策略拦截"
+                    );
+                    continue;
+                }
+            };
             let payload = notification.clone();
+            let sem = Arc::clone(&self.semaphore);
             tokio::spawn(async move {
-                match client.post(&url).json(&payload).send().await {
+                let Ok(_permit) = sem.acquire_owned().await else {
+                    return;
+                };
+                match req_builder.json(&payload).send().await {
                     Ok(resp) if resp.status().is_success() => {
                         tracing::info!(target: "alerting", event_id = %payload.event_id, status = payload.status, "告警 webhook 已送达");
                     }
@@ -174,8 +197,8 @@ impl Notifier {
             tracing::warn!(target: "alerting", event_id = %notification.event_id, "规则配置了邮件收件人但未配置 alerting.smtp，邮件未发送");
             return;
         };
-        let message = match build_message(&mailer.from, recipients, notification) {
-            Ok(message) => message,
+        let (message, count) = match build_message(&mailer.from, recipients, notification) {
+            Ok(built) => built,
             Err(error) => {
                 tracing::warn!(target: "alerting", event_id = %notification.event_id, %error, "告警邮件构建失败");
                 return;
@@ -183,8 +206,11 @@ impl Notifier {
         };
         let event_id = notification.event_id;
         let status = notification.status;
-        let count = recipients.len();
+        let sem = Arc::clone(&self.semaphore);
         tokio::spawn(async move {
+            let Ok(_permit) = sem.acquire_owned().await else {
+                return;
+            };
             match mailer.transport.send(message).await {
                 Ok(_) => {
                     tracing::info!(target: "alerting", %event_id, status, recipients = count, "告警邮件已发送");
@@ -201,20 +227,35 @@ fn build_message(
     from: &Mailbox,
     recipients: &[String],
     notification: &AlertNotification,
-) -> Result<Message, String> {
+) -> Result<(Message, usize), String> {
     let mut builder = Message::builder()
         .from(from.clone())
         .subject(email_subject(notification));
+    let mut valid_count = 0usize;
     for recipient in recipients {
-        let mailbox: Mailbox = recipient
-            .parse()
-            .map_err(|e| format!("收件人地址无法解析: {e}"))?;
-        builder = builder.to(mailbox);
+        match recipient.parse::<Mailbox>() {
+            Ok(mailbox) => {
+                builder = builder.to(mailbox);
+                valid_count += 1;
+            }
+            Err(error) => {
+                tracing::warn!(
+                    target: "alerting",
+                    event_id = %notification.event_id,
+                    %error,
+                    "跳过无法解析的告警收件人地址"
+                );
+            }
+        }
     }
-    builder
+    if valid_count == 0 {
+        return Err("没有有效的收件人地址".to_string());
+    }
+    let message = builder
         .header(ContentType::TEXT_PLAIN)
         .body(email_body(notification))
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    Ok((message, valid_count))
 }
 
 /// 邮件主题：`[告警][critical][触发] 规则名`。
@@ -317,13 +358,19 @@ mod tests {
     }
 
     #[test]
-    fn message_lists_every_recipient_and_rejects_invalid_ones() {
+    fn message_lists_every_valid_recipient_and_skips_invalid_ones() {
         let from: Mailbox = "alerts@example.com".parse().unwrap();
-        let recipients = vec!["a@example.com".to_string(), "b@example.com".to_string()];
-        let message = build_message(&from, &recipients, &notification("firing")).unwrap();
+        let recipients = vec![
+            "a@example.com".to_string(),
+            "not-an-address".to_string(),
+            "b@example.com".to_string(),
+        ];
+        let (message, count) = build_message(&from, &recipients, &notification("firing")).unwrap();
+        assert_eq!(count, 2);
         let raw = String::from_utf8(message.formatted()).unwrap();
         assert!(raw.contains("a@example.com"));
         assert!(raw.contains("b@example.com"));
+        assert!(!raw.contains("not-an-address"));
         assert!(
             build_message(
                 &from,
@@ -332,6 +379,13 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn notifier_bounds_concurrent_dispatches_to_16() {
+        let notifier = Notifier::new(Duration::from_secs(3), None).expect("notifier");
+        assert_eq!(notifier.semaphore.available_permits(), MAX_CONCURRENT_NOTIFICATIONS);
+        assert_eq!(MAX_CONCURRENT_NOTIFICATIONS, 16);
     }
 
     #[test]
@@ -352,5 +406,23 @@ mod tests {
         let mut slow = smtp();
         slow.timeout_secs = 0;
         assert!(slow.validate().is_err());
+    }
+
+    #[tokio::test]
+    async fn notifier_webhook_client_enforces_ssrf_resolver() {
+        let notifier = Notifier::new(Duration::from_secs(3), None).expect("notifier");
+        assert!(
+            notifier
+                .ssrf
+                .checked_post(&notifier.client, "http://127.0.0.1:9/hook")
+                .is_err()
+        );
+        let err = notifier
+            .client
+            .post("http://localhost:9/hook")
+            .send()
+            .await
+            .expect_err("localhost webhook must be blocked by SsrfSafeResolver");
+        assert!(mazbri_core::net::ssrf::extract_ssrf_error(&err).is_some());
     }
 }

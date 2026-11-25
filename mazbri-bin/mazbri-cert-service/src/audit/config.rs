@@ -20,12 +20,12 @@ const fn default_shutdown_drain_secs() -> u64 {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ActorMode {
-    /// 缺失/无效声明只记录（`details.actor_verification`），不拒绝。上线初期使用。
-    #[default]
+    /// 缺失/无效声明只记录（`details.actor_verification`），不拒绝。
     Lenient,
     /// mgmt 专属写接口必须携带有效声明；任何接口携带无效声明都返回 401。
     /// 唯一例外：已识别的服务不带声明续期证书时放行，但归属校验强制按 enforce 执行
     /// （只能续期自己的）。与 `[auth] scope_mode` 相互独立，可以单独打开。
+    #[default]
     Strict,
 }
 
@@ -111,10 +111,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn defaults_are_lenient_and_valid() {
+    fn defaults_are_strict_and_valid() {
         let config: CertAuditConfig = toml::from_str("").expect("empty");
-        assert_eq!(config.actor_mode, ActorMode::Lenient);
+        assert_eq!(config.actor_mode, ActorMode::Strict);
         assert!(config.validate().is_ok());
+        let lenient: CertAuditConfig = toml::from_str("actor_mode = \"lenient\"").expect("lenient");
+        assert_eq!(lenient.actor_mode, ActorMode::Lenient);
     }
 
     #[test]

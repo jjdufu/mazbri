@@ -294,7 +294,7 @@ defineExpose({
 }
 .hopp-ac-host.is-open {
   position: relative;
-  z-index: 3101;
+  z-index: 2101;
   background: var(--el-bg-color-overlay);
   border-bottom-color: var(--el-border-color) !important;
 }
@@ -323,7 +323,7 @@ defineExpose({
   --hopp-ac-bg: var(--el-bg-color-overlay);
   --hopp-ac-border: var(--el-border-color);
   position: fixed;
-  z-index: 3100;
+  z-index: 2100;
   box-sizing: border-box;
   margin: 0;
   padding: 4px 0;

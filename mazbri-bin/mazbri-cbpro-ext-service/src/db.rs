@@ -244,8 +244,8 @@ impl CbProExtRepository {
             WITH picked AS (
                 SELECT id
                 FROM mazbri_cbpro.validation_jobs
-                WHERE status = 'pending'
-                  AND (locked_until IS NULL OR locked_until < NOW())
+                WHERE (status = 'pending' AND (locked_until IS NULL OR locked_until < NOW()))
+                   OR (status = 'running' AND locked_until < NOW())
                 ORDER BY priority ASC, scheduled_at ASC
                 LIMIT $1
                 FOR UPDATE SKIP LOCKED

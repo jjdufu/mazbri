@@ -72,7 +72,9 @@ pub(crate) fn evaluate_refresh_session<'u>(
     if !user.is_active {
         return Err(RefreshDenial::AccountDisabled);
     }
-    if user.locked_until.is_some_and(|until| until > ctx.now) {
+    if user.role != crate::middleware::auth::ROLE_SUPER_ADMIN
+        && user.locked_until.is_some_and(|until| until > ctx.now)
+    {
         return Err(RefreshDenial::AccountLocked);
     }
     if user.force_password_reset {
@@ -189,6 +191,7 @@ pub async fn admin_refresh_token(
         &user.username,
         &claims.user_id,
         &user.role,
+        user.auth_epoch,
         &binding,
         params.jwt_secret,
         i64::saturating_from(jwt_expiration_secs),

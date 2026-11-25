@@ -78,7 +78,7 @@ impl ServerConfig {
         }
     }
 }
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DatabaseConfig {
     #[serde(default)]
@@ -113,6 +113,57 @@ pub struct DatabaseConfig {
     /// `pg_stat_activity.application_name`. Empty falls back to the database name.
     #[serde(default)]
     pub application_name: Option<String>,
+}
+
+impl std::fmt::Debug for DatabaseConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let masked_password = self
+            .password
+            .as_deref()
+            .map(|p| if p.is_empty() { "" } else { "[REDACTED]" });
+        f.debug_struct("DatabaseConfig")
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("name", &self.name)
+            .field("username", &self.username)
+            .field("password", &masked_password)
+            .field("credentials_file", &self.credentials_file)
+            .field("ssl_mode", &self.ssl_mode)
+            .field("min_connections", &self.min_connections)
+            .field("max_connections", &self.max_connections)
+            .field("acquire_timeout_secs", &self.acquire_timeout_secs)
+            .field("acquire_timeout_ms", &self.acquire_timeout_ms)
+            .field("idle_timeout_secs", &self.idle_timeout_secs)
+            .field("max_lifetime_secs", &self.max_lifetime_secs)
+            .field("application_name", &self.application_name)
+            .finish()
+    }
+}
+
+/// Maximum character count accepted for `ILIKE` search inputs before truncation.
+pub const MAX_ILIKE_QUERY_LEN: usize = 128;
+
+/// Truncates `raw.trim()` to [`MAX_ILIKE_QUERY_LEN`] Unicode scalar values and escapes
+/// `\`, `%`, and `_` for PostgreSQL `ILIKE ... ESCAPE '\\'`.
+#[must_use]
+pub fn escape_ilike_pattern(raw: &str) -> String {
+    let trimmed = raw.trim();
+    let mut out = String::with_capacity(trimmed.len().min(MAX_ILIKE_QUERY_LEN * 2));
+    for ch in trimmed.chars().take(MAX_ILIKE_QUERY_LEN) {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '%' => out.push_str("\\%"),
+            '_' => out.push_str("\\_"),
+            other => out.push(other),
+        }
+    }
+    out
+}
+
+/// Builds `%{escaped}%` for PostgreSQL `ILIKE ... ESCAPE '\\'`.
+#[must_use]
+pub fn contains_ilike_pattern(raw: &str) -> String {
+    format!("%{}%", escape_ilike_pattern(raw))
 }
 fn default_database_port() -> u16 {
     5432
@@ -222,5 +273,36 @@ mod tests {
         assert_eq!(config.max_connections, 10);
         assert_eq!(config.idle_timeout_secs, 120);
         assert!(config.application_name.is_none());
+    }
+
+    #[test]
+    fn debug_redacts_database_and_pg_credentials() {
+        let config: DatabaseConfig = toml::from_str(
+            r#"
+            host = "127.0.0.1"
+            username = "mazbri"
+            password = "super-secret-db-password"
+            "#,
+        )
+        .expect("parse db config");
+        let rendered = format!("{config:?}");
+        assert!(!rendered.contains("super-secret-db-password"));
+        assert!(rendered.contains("[REDACTED]"));
+
+        let cred = crate::config::PgCredential {
+            username: "mazbri".into(),
+            password: "raw-pg-password".into(),
+        };
+        let cred_dbg = format!("{cred:?}");
+        assert!(!cred_dbg.contains("raw-pg-password"));
+        assert!(cred_dbg.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn escape_ilike_escapes_wildcards_and_caps_length() {
+        assert_eq!(escape_ilike_pattern("  a%b_c\\d  "), "a\\%b\\_c\\\\d");
+        assert_eq!(contains_ilike_pattern("100%_ok"), "%100\\%\\_ok%");
+        let long = "x".repeat(200);
+        assert_eq!(escape_ilike_pattern(&long).chars().count(), MAX_ILIKE_QUERY_LEN);
     }
 }

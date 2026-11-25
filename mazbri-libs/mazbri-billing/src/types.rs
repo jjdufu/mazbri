@@ -1,3 +1,4 @@
+use crate::error::{BillingError, BillingResult};
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -40,6 +41,104 @@ impl std::str::FromStr for ChargeStatus {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum AdjustmentDirection {
+    Credit,
+    Debit,
+}
+
+impl AdjustmentDirection {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Credit => "CREDIT",
+            Self::Debit => "DEBIT",
+        }
+    }
+}
+
+impl std::fmt::Display for AdjustmentDirection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl std::str::FromStr for AdjustmentDirection {
+    type Err = BillingError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.trim().to_ascii_uppercase().as_str() {
+            "CREDIT" => Ok(Self::Credit),
+            "DEBIT" => Ok(Self::Debit),
+            other => Err(BillingError::InvalidConfig(format!(
+                "Invalid adjustment direction '{other}': must be CREDIT or DEBIT"
+            ))),
+        }
+    }
+}
+
+pub trait IntoAdjustmentDirection {
+    /// # Errors
+    ///
+    /// 当方向字符串不是合法的 `CREDIT` 或 `DEBIT` 时返回校验错误。
+    fn into_adjustment_direction(self) -> BillingResult<AdjustmentDirection>;
+}
+
+impl IntoAdjustmentDirection for AdjustmentDirection {
+    fn into_adjustment_direction(self) -> BillingResult<AdjustmentDirection> {
+        Ok(self)
+    }
+}
+
+impl IntoAdjustmentDirection for &AdjustmentDirection {
+    fn into_adjustment_direction(self) -> BillingResult<AdjustmentDirection> {
+        Ok(*self)
+    }
+}
+
+impl IntoAdjustmentDirection for &str {
+    fn into_adjustment_direction(self) -> BillingResult<AdjustmentDirection> {
+        self.parse()
+    }
+}
+
+impl IntoAdjustmentDirection for &String {
+    fn into_adjustment_direction(self) -> BillingResult<AdjustmentDirection> {
+        self.as_str().parse()
+    }
+}
+
+impl IntoAdjustmentDirection for String {
+    fn into_adjustment_direction(self) -> BillingResult<AdjustmentDirection> {
+        self.as_str().parse()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FencedChargeItem {
+    pub queue_id: Uuid,
+    pub lease_seq: i64,
+    pub usage_record_id: i64,
+    pub amount: Decimal,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RecordUsageOutcome {
+    Queued {
+        usage_record_id: i64,
+        queue_id: Uuid,
+    },
+    SyncCharged {
+        usage_record_id: i64,
+        charge_id: Option<Uuid>,
+        charged: Decimal,
+        new_balance: Decimal,
+    },
+    NoCharge {
+        usage_record_id: i64,
+    },
+}
+
 #[derive(Debug, Clone, sqlx::FromRow, Serialize, Deserialize)]
 pub struct ChargeQueueItem {
     pub id: Uuid,
@@ -49,6 +148,8 @@ pub struct ChargeQueueItem {
     pub amount: Decimal,
     pub payload: Option<serde_json::Value>,
     pub status: ChargeStatus,
+    #[serde(default)]
+    pub lease_seq: i64,
     pub retry_count: i32,
     pub max_retries: i32,
     pub error_message: Option<String>,
@@ -125,5 +226,32 @@ impl QueueConfig {
             self.retry_interval_secs = 1;
         }
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{AdjustmentDirection, IntoAdjustmentDirection};
+
+    #[test]
+    fn adjustment_direction_parses_strictly() {
+        assert_eq!(
+            "CREDIT".into_adjustment_direction().expect("CREDIT"),
+            AdjustmentDirection::Credit
+        );
+        assert_eq!(
+            "credit".into_adjustment_direction().expect("credit"),
+            AdjustmentDirection::Credit
+        );
+        assert_eq!(
+            "DEBIT".into_adjustment_direction().expect("DEBIT"),
+            AdjustmentDirection::Debit
+        );
+        assert_eq!(
+            "debit".into_adjustment_direction().expect("debit"),
+            AdjustmentDirection::Debit
+        );
+        assert!("UNKNOWN".into_adjustment_direction().is_err());
+        assert!("".into_adjustment_direction().is_err());
     }
 }

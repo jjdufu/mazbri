@@ -72,23 +72,8 @@ async fn main() -> Result<()> {
     info!("Server configuration: {:?}", config.server);
     register_all_metrics()?;
     mazbri_core::metrics::init_service_metrics("mazbri-gateway");
-    info!("Initializing mTLS for Gateway...");
-    let cert_manager = mazbri_tls::CertManager::new(tls_config.clone());
-    let cert = cert_manager
-        .initialize()
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to initialize TLS certificate: {e}"))?;
-    let renewal_task = cert_manager.spawn_renewal_task_managed();
-    info!(
-        service_identity = % tls_config.service_identity,
-        "mTLS enabled for gateway client connections"
-    );
-    info!(
-        subject = % cert.subject, expires_at = % cert.expires_at,
-        "TLS certificate initialized"
-    );
-    let tls_ca_cert = cert.ca_cert_pem.clone();
-    info!("mTLS initialized successfully");
+    let (cert, cert_handle, renewal_task, tls_ca_cert) =
+        init_gateway_mtls(&tls_config, admin_handle.as_ref()).await?;
     let db = create_pool(&config.database, None).await?;
     if let Some(ref handle) = admin_handle {
         handle.set_db_pool(Arc::clone(&db));
@@ -103,17 +88,18 @@ async fn main() -> Result<()> {
     info!("Using log-based request logging (tracing output)");
     let service_health_cache =
         Some(init_service_health_cache(&bootstrap, &tls_config.cert_service_token));
-    let app = router::create_router(router::RouterInit {
+    let app = Box::pin(router::create_router(router::RouterInit {
         service_name: service_name.clone(),
         config: config.clone(),
         db,
         tls_ca_cert,
         client_cert: cert,
+        cert_handle,
         tls_config: &tls_config,
         jwt_secret,
         admin_state: admin_state.clone(),
         service_health_cache,
-    })
+    }))
     .await?;
     let _shutdown_handle = create_shutdown_manager();
     let registry = start_registry(&bootstrap, service, &service_name, &config).await?;
@@ -149,6 +135,36 @@ async fn main() -> Result<()> {
 
 /// Upper bound for flushing deferred usage charges at shutdown.
 const USAGE_CHARGE_DRAIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(8);
+
+async fn init_gateway_mtls(
+    tls_config: &mazbri_tls::TlsConfig,
+    admin_handle: Option<&mazbri_service::SimpleAdminHandle>,
+) -> Result<(
+    mazbri_tls::ManagedCertificate,
+    mazbri_tls::ManagedCertHandle,
+    mazbri_tls::RenewalTaskHandle,
+    String,
+)> {
+    info!("Initializing mTLS for Gateway...");
+    let cert_manager = mazbri_tls::CertManager::new(tls_config.clone());
+    let cert = cert_manager
+        .initialize()
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to initialize TLS certificate: {e}"))?;
+    let cert_handle = cert_manager.cert_handle();
+    if let Some(handle) = admin_handle {
+        handle.set_cert_handle(cert_handle.clone());
+    }
+    let renewal_task = cert_manager.spawn_renewal_task_managed();
+    info!(
+        service_identity = %tls_config.service_identity,
+        subject = %cert.subject,
+        expires_at = %cert.expires_at,
+        "mTLS initialized successfully"
+    );
+    let tls_ca_cert = cert.ca_cert_pem.clone();
+    Ok((cert, cert_handle, renewal_task, tls_ca_cert))
+}
 
 fn init_service_health_cache(
     bootstrap: &PureBootstrap,

@@ -1,5 +1,6 @@
 use super::claims::MazbriClaims;
 use super::jwt_keys::JwtHs256Keyring;
+use super::tenant_security::{ActualRequestBytes, TenantAccessError};
 use crate::gateway::GatewayRequestTiming;
 use crate::gateway::request_binding::{
     GatewayHttpPath, RequestBindingInput, enforce_request_binding, record_jwt_kid,
@@ -22,12 +23,14 @@ use mazbri_auth::{
 use mazbri_core::crypto::transport::TransportEnvelope;
 use mazbri_core::metrics::{REGISTRY, register_collector_once};
 use mazbri_core::num::SaturatingFrom;
-use mazbri_core::{parse_trace_context, resolve_client_ip, validate_tenant_id};
+use mazbri_core::rate_limited_log::RateLimitedLog;
+use mazbri_core::{parse_trace_context, validate_tenant_id};
 use prometheus::{IntCounterVec, Opts};
 use std::net::SocketAddr;
 use std::sync::LazyLock;
-use std::time::Instant;
-use tracing::warn;
+use std::time::{Duration, Instant};
+use tracing::{error, warn};
+
 pub static RATELIMIT_FAIL_CLOSED_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
     IntCounterVec::new(
         Opts::new(
@@ -38,34 +41,43 @@ pub static RATELIMIT_FAIL_CLOSED_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(
     )
     .expect("valid metric definition for gateway ratelimit fail-closed counter")
 });
+
+static UNTRUSTED_FORWARDED_HEADER_LOG: LazyLock<RateLimitedLog> =
+    LazyLock::new(|| RateLimitedLog::new(Duration::from_secs(60)));
+
 /// # Errors
 ///
-/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+/// 指标注册失败时返回错误。
 pub fn register_auth_middleware_metrics() -> Result<(), prometheus::Error> {
     register_collector_once(&REGISTRY, Box::new(RATELIMIT_FAIL_CLOSED_TOTAL.clone()))
 }
+
 #[derive(Debug)]
 pub enum JwtAuthError {
     InvalidToken,
     InvalidRequestBody,
     InsufficientScope,
+    AccessDenied,
 }
+
 impl std::fmt::Display for JwtAuthError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            JwtAuthError::InsufficientScope => write!(f, "权限不足：缺少 api:write 作用域"),
-            JwtAuthError::InvalidToken | JwtAuthError::InvalidRequestBody => {
+            Self::InsufficientScope => write!(f, "权限不足：缺少 api:write 作用域"),
+            Self::AccessDenied => write!(f, "访问被拒绝"),
+            Self::InvalidToken | Self::InvalidRequestBody => {
                 write!(f, "Token 验证失败")
             }
         }
     }
 }
+
 impl IntoResponse for JwtAuthError {
     fn into_response(self) -> Response {
         let status = match self {
-            JwtAuthError::InvalidRequestBody => StatusCode::BAD_REQUEST,
-            JwtAuthError::InsufficientScope => StatusCode::FORBIDDEN,
-            JwtAuthError::InvalidToken => StatusCode::UNAUTHORIZED,
+            Self::InvalidRequestBody => StatusCode::BAD_REQUEST,
+            Self::InsufficientScope | Self::AccessDenied => StatusCode::FORBIDDEN,
+            Self::InvalidToken => StatusCode::UNAUTHORIZED,
         };
         let body = serde_json::json!({
             "success": false,
@@ -91,33 +103,40 @@ impl IntoResponse for JwtAuthError {
         response
     }
 }
+
 #[derive(Clone)]
 pub struct AuthState {
     pub keyring: JwtHs256Keyring,
 }
+
 #[derive(Debug, Clone)]
 pub struct ProxyExecutionContext {
     pub api_endpoint: String,
 }
+
 impl AuthState {
     #[must_use]
     pub fn new(keyring: JwtHs256Keyring) -> Self {
         Self { keyring }
     }
 }
+
 /// 中间件的拒绝响应。只把 `Response` 装箱以缩小 `Result` 的 Err 体积，
 /// `into_response` 原样取回内部响应，状态码、响应头和响应体都不变。
 pub struct MiddlewareRejection(Box<Response>);
+
 impl From<Response> for MiddlewareRejection {
     fn from(response: Response) -> Self {
         Self(Box::new(response))
     }
 }
+
 impl IntoResponse for MiddlewareRejection {
     fn into_response(self) -> Response {
         *self.0
     }
 }
+
 fn reject_jwt(reason: AuthFailureReason) -> Response {
     record_auth_failure(reason);
     JwtAuthError::InvalidToken.into_response()
@@ -160,7 +179,7 @@ fn verify_bearer_jwt(
     validation.set_issuer(&["mazbri.com"]);
     let claims = decode::<MazbriClaims>(token, &decoding_key, &validation)
         .map_err(|e| {
-            warn!(error = % e, error_kind = ? e.kind(), kid = %kid, "JWT verification failed");
+            warn!(error = %e, error_kind = ?e.kind(), kid = %kid, "JWT verification failed");
             record_jwt_kid(&kid, "reject");
             reject_jwt(jwt_failure_reason(e.kind()))
         })?
@@ -169,6 +188,7 @@ fn verify_bearer_jwt(
     TokenRecorder::new("jwt").record_validated();
     Ok((claims, kid))
 }
+
 /// auth 阶段：补记 span（全量）并按采样输出 stage 日志。
 fn log_auth_stage(
     started_at: Instant,
@@ -202,9 +222,105 @@ fn log_auth_stage(
     }
 }
 
+async fn enforce_gateway_tenant_security(
+    state: &AppState,
+    extensions: &axum::http::Extensions,
+    claims: &MazbriClaims,
+    tenant_uuid: uuid::Uuid,
+    client_ip: Option<std::net::IpAddr>,
+) -> Result<(), MiddlewareRejection> {
+    let Err(access_err) = state
+        .tenant_security
+        .verify_tenant_and_ip(tenant_uuid, client_ip)
+        .await
+    else {
+        return Ok(());
+    };
+    record_caller_rejection_scope(extensions, claims);
+    match access_err {
+        TenantAccessError::NotFound
+        | TenantAccessError::Suspended
+        | TenantAccessError::IpForbidden(_) => {
+            warn!(
+                tenant_id = %tenant_uuid,
+                client_ip = ?client_ip,
+                reason = ?access_err,
+                "Gateway rejected request due to tenant status or IP whitelist"
+            );
+            Err(JwtAuthError::AccessDenied.into_response().into())
+        }
+        TenantAccessError::Internal(err) => {
+            error!(
+                tenant_id = %tenant_uuid,
+                error = %err,
+                "Gateway tenant security lookup failed (fail-closed)"
+            );
+            Err(crate::gateway::response::ProxyError::ServiceUnavailable(
+                "Tenant security verification unavailable".to_string(),
+            )
+            .into_response()
+            .into())
+        }
+    }
+}
+
+async fn bind_gateway_invoke_request(
+    state: &AppState,
+    parts: &mut axum::http::request::Parts,
+    claims: &MazbriClaims,
+    tenant_context: TenantContext,
+    path_and_query: &str,
+    body_bytes: &[u8],
+    default_kid: String,
+) -> Result<crate::gateway::request_binding::RequestBindingOutcome, MiddlewareRejection> {
+    if !claims.can_invoke() {
+        record_caller_rejection_scope_with_bytes(
+            &parts.extensions,
+            claims,
+            Some(body_bytes.len() as u64),
+        );
+        warn!(
+            tenant_id = %claims.tenant_id,
+            scopes = ?claims.scopes,
+            "Gateway invoke denied: JWT missing api:write scope"
+        );
+        return Err(JwtAuthError::InsufficientScope.into_response().into());
+    }
+    let tenant_uuid = tenant_context.tenant_id;
+    prepare_gateway_invoke_extensions(parts, claims, tenant_context, body_bytes)?;
+    let envelope_nonce = match parts.extensions.get::<GatewayRequestPayload>() {
+        Some(GatewayRequestPayload::Encrypted(env)) => {
+            Some((env.key_version.as_str(), env.nonce.as_str()))
+        }
+        _ => None,
+    };
+    let mut binding_outcome = enforce_request_binding(RequestBindingInput {
+        crypto: &state.proxy_state.crypto_state,
+        tenant_id: tenant_uuid,
+        require: state.request_binding.require_request_binding,
+        nonce_prefix: &state.request_binding.nonce_redis_prefix,
+        method: "POST",
+        path_and_query,
+        headers: &parts.headers,
+        body: body_bytes,
+        envelope_nonce,
+    })
+    .await
+    .map_err(IntoResponse::into_response)?;
+    if binding_outcome.envelope_nonce_prechecked {
+        parts
+            .extensions
+            .insert(crate::crypto::EnvelopeNoncePrechecked);
+    }
+    if binding_outcome.kid.is_none() {
+        binding_outcome.kid = Some(default_kid);
+    }
+    Ok(binding_outcome)
+}
+
 /// # Errors
 ///
-/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+/// 鉴权、租户活性/IP 白名单或请求体校验失败时返回拒绝响应。
 pub async fn jwt_auth_middleware(
     State(state): State<AppState>,
     req: Request,
@@ -212,10 +328,24 @@ pub async fn jwt_auth_middleware(
 ) -> Result<Response, MiddlewareRejection> {
     let started_at = Instant::now();
     let request_id = current_request_id(req.headers());
+    let peer_addr = req
+        .extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|ci| ci.0);
+    let client_ip = state.ip_extractor.extract(req.headers(), peer_addr);
     let (claims, kid) = verify_bearer_jwt(&state, req.headers())?;
-    let tenant_context = validate_tenant_id(&claims.tenant_id)
-        .ok()
-        .map(|tenant_id| TenantContext::new(tenant_id, CredentialType::Jwt));
+    let tenant_uuid = validate_tenant_id(&claims.tenant_id).map_err(|err| {
+        warn!(
+            tenant_id = %claims.tenant_id,
+            error = %err,
+            "JWT rejected: invalid tenant_id UUID"
+        );
+        JwtAuthError::AccessDenied.into_response()
+    })?;
+    enforce_gateway_tenant_security(&state, req.extensions(), &claims, tenant_uuid, client_ip)
+        .await?;
+
+    let tenant_context = TenantContext::new(tenant_uuid, CredentialType::Jwt);
     let (mut parts, body) = req.into_parts();
     parts.extensions.insert(claims.clone());
     parts
@@ -224,6 +354,9 @@ pub async fn jwt_auth_middleware(
     let body_bytes = body::to_bytes(body, MAX_BODY_SIZE)
         .await
         .map_err(|_| JwtAuthError::InvalidRequestBody.into_response())?;
+    parts
+        .extensions
+        .insert(ActualRequestBytes(body_bytes.len()));
     let path_and_query = parts.uri.path_and_query().map_or_else(
         || parts.uri.path().to_string(),
         |value| value.as_str().to_string(),
@@ -231,59 +364,29 @@ pub async fn jwt_auth_middleware(
     parts
         .extensions
         .insert(GatewayHttpPath(path_and_query.clone()));
-    let mut binding_outcome = crate::gateway::request_binding::RequestBindingOutcome {
-        auth_mode: "bearer",
-        kid: Some(kid.clone()),
-        nonce_trunc: None,
-        sig_ok: None,
-        key_lookup_ms: None,
-        verify_ms: None,
-        envelope_nonce_prechecked: false,
+    let binding_outcome = if parts.uri.path() == "/api/v1/gateway" {
+        bind_gateway_invoke_request(
+            &state,
+            &mut parts,
+            &claims,
+            tenant_context,
+            &path_and_query,
+            &body_bytes,
+            kid,
+        )
+        .await?
+    } else {
+        parts.extensions.insert(tenant_context);
+        crate::gateway::request_binding::RequestBindingOutcome {
+            auth_mode: "bearer",
+            kid: Some(kid),
+            nonce_trunc: None,
+            sig_ok: None,
+            key_lookup_ms: None,
+            verify_ms: None,
+            envelope_nonce_prechecked: false,
+        }
     };
-    if parts.uri.path() == "/api/v1/gateway" {
-        if !claims.can_invoke() {
-            warn!(
-                tenant_id = %claims.tenant_id,
-                scopes = ?claims.scopes,
-                "Gateway invoke denied: JWT missing api:write scope"
-            );
-            return Err(JwtAuthError::InsufficientScope.into_response().into());
-        }
-        if let Some(ctx) = tenant_context.clone() {
-            prepare_gateway_invoke_extensions(&mut parts, &claims, ctx, &body_bytes)?;
-        }
-        if let Some(tenant_id) = tenant_context.as_ref().map(|ctx| ctx.tenant_id) {
-            let envelope_nonce = match parts.extensions.get::<GatewayRequestPayload>() {
-                Some(GatewayRequestPayload::Encrypted(env)) => {
-                    Some((env.key_version.as_str(), env.nonce.as_str()))
-                }
-                _ => None,
-            };
-            binding_outcome = enforce_request_binding(RequestBindingInput {
-                crypto: &state.proxy_state.crypto_state,
-                tenant_id,
-                require: state.request_binding.require_request_binding,
-                nonce_prefix: &state.request_binding.nonce_redis_prefix,
-                method: "POST",
-                path_and_query: &path_and_query,
-                headers: &parts.headers,
-                body: &body_bytes,
-                envelope_nonce,
-            })
-            .await
-            .map_err(IntoResponse::into_response)?;
-            if binding_outcome.envelope_nonce_prechecked {
-                parts
-                    .extensions
-                    .insert(crate::crypto::EnvelopeNoncePrechecked);
-            }
-            if binding_outcome.kid.is_none() {
-                binding_outcome.kid = Some(kid.clone());
-            }
-        }
-    } else if let Some(ctx) = tenant_context {
-        parts.extensions.insert(ctx);
-    }
     if let Some(timing) = parts.extensions.get_mut::<GatewayRequestTiming>() {
         timing.auth_ms = mazbri_core::num::millis_u64(started_at.elapsed());
     }
@@ -302,14 +405,22 @@ pub async fn jwt_auth_middleware(
         .run(Request::from_parts(parts, Body::from(body_bytes)))
         .await)
 }
+
 fn prepare_gateway_invoke_extensions(
     parts: &mut axum::http::request::Parts,
     claims: &MazbriClaims,
     ctx: TenantContext,
     body_bytes: &[u8],
 ) -> Result<(), MiddlewareRejection> {
-    let payload = parse_gateway_request_payload(body_bytes).map_err(IntoResponse::into_response)?;
-    record_rejection_scope(&parts.extensions, claims, &payload);
+    let payload = parse_gateway_request_payload(body_bytes).map_err(|err| {
+        record_caller_rejection_scope_with_bytes(
+            &parts.extensions,
+            claims,
+            Some(body_bytes.len() as u64),
+        );
+        err.into_response()
+    })?;
+    record_rejection_scope(&parts.extensions, claims, &payload, body_bytes.len() as u64);
     match &payload {
         GatewayRequestPayload::Plain(gateway_req) => {
             parts
@@ -347,7 +458,7 @@ fn require_tenant_context(req: &Request) -> Result<TenantContext, MiddlewareReje
 
 /// # Errors
 ///
-/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+/// 触发限流时返回 `429` 拒绝响应。
 pub async fn ratelimit_middleware(
     State(state): State<AppState>,
     ConnectInfo(peer_addr): ConnectInfo<SocketAddr>,
@@ -359,9 +470,14 @@ pub async fn ratelimit_middleware(
         || req.uri().path().to_string(),
         |ctx| ctx.api_endpoint.clone(),
     );
-    let client_ip = resolve_client_ip(req.headers(), Some(peer_addr));
+    let client_ip = state
+        .ip_extractor
+        .extract_or_unknown(req.headers(), Some(peer_addr));
     let request_id = current_request_id(req.headers());
-    let request_bytes = content_length_header(req.headers());
+    let request_bytes = req
+        .extensions()
+        .get::<ActualRequestBytes>()
+        .map_or_else(|| content_length_header(req.headers()), |b| b.0 as u64);
     let stage_start = Instant::now();
     let mut timing = req
         .extensions()
@@ -371,7 +487,7 @@ pub async fn ratelimit_middleware(
     let decision = state
         .proxy_state
         .local_ratelimiter
-        .check(&LocalRateLimitInput {
+        .check_outer_admission(&LocalRateLimitInput {
             tenant_id: tenant_context.tenant_id,
             product_id: tenant_context.product_id.clone(),
             api_endpoint: api_endpoint.clone(),
@@ -388,27 +504,23 @@ pub async fn ratelimit_middleware(
             bandwidth_enabled,
             quota,
         } => {
-            timing.bandwidth_prepaid = Some(BandwidthPrepaid {
+            let prepaid = BandwidthPrepaid {
                 policy_version,
                 snapshot_age_ms,
                 degraded,
                 prepaid_request_bytes,
                 bandwidth_enabled,
-            });
+            };
+            timing.bandwidth_prepaid = Some(prepaid);
             req.extensions_mut().insert(timing);
-            let rl_elapsed = stage_start.elapsed();
-            let rl_ms = mazbri_core::num::millis_u64(rl_elapsed);
-            let stage_ids = ratelimit_stage_span(&tenant_context, rl_elapsed).record();
-            if crate::gateway::stage_log::should_log_stage_info(rl_ms) {
-                stage_log!(
-                    info, "gateway.stage",
-                    &StageCtx::from_extensions(req.extensions(), &request_id, &tenant_context.tenant_id, tenant_context.product_id.as_deref()),
-                    &stage_ids, "ratelimit", rl_ms,
-                    api_endpoint = % api_endpoint, policy_version, snapshot_age_ms, degraded,
-                    source = "local", decision = "allow", prepaid_request_bytes, bandwidth_enabled,
-                    message = "Gateway rate limit stage completed",
-                );
-            }
+            log_ratelimit_allow_stage(
+                &req,
+                &tenant_context,
+                &request_id,
+                &api_endpoint,
+                stage_start.elapsed(),
+                prepaid,
+            );
             Ok(with_ratelimit_headers(next.run(req).await, quota))
         }
         LocalRateLimitDecision::Deny {
@@ -418,28 +530,125 @@ pub async fn ratelimit_middleware(
             snapshot_age_ms,
             degraded,
             quota,
-        } => {
-            let rl_elapsed = stage_start.elapsed();
-            let rl_ms = mazbri_core::num::millis_u64(rl_elapsed);
-            let stage_ids = ratelimit_stage_span(&tenant_context, rl_elapsed)
-                .failed()
-                .record();
-            stage_log!(
-                warn, "gateway.stage",
-                &StageCtx::from_extensions(req.extensions(), &request_id, &tenant_context.tenant_id, tenant_context.product_id.as_deref()),
-                &stage_ids, "ratelimit", rl_ms,
-                api_endpoint = % api_endpoint, policy_version, retry_after_ms, reason = % reason,
-                snapshot_age_ms, degraded, source = "local", decision = "deny",
-                message = "Gateway rate limit stage rejected request",
-            );
-            Err(rate_limit_error_response(
-                i32::saturating_from((retry_after_ms / 1000).max(1)),
-                &reason,
+        } => Err(build_ratelimit_deny_rejection(
+            &state,
+            &req,
+            &tenant_context,
+            &RateLimitDenyMeta {
+                peer_addr,
+                request_id: &request_id,
+                api_endpoint: &api_endpoint,
+                rl_elapsed: stage_start.elapsed(),
+                policy_version,
+                retry_after_ms,
+                reason: &reason,
+                snapshot_age_ms,
+                degraded,
                 quota,
-            )
-            .into())
-        }
+            },
+        )),
     }
+}
+
+fn log_ratelimit_allow_stage(
+    req: &Request,
+    tenant_context: &TenantContext,
+    request_id: &str,
+    api_endpoint: &str,
+    rl_elapsed: std::time::Duration,
+    prepaid: BandwidthPrepaid,
+) {
+    let rl_ms = mazbri_core::num::millis_u64(rl_elapsed);
+    let stage_ids = ratelimit_stage_span(tenant_context, rl_elapsed).record();
+    if crate::gateway::stage_log::should_log_stage_info(rl_ms) {
+        stage_log!(
+            info,
+            "gateway.stage",
+            &StageCtx::from_extensions(
+                req.extensions(),
+                &request_id,
+                &tenant_context.tenant_id,
+                tenant_context.product_id.as_deref(),
+            ),
+            &stage_ids,
+            "ratelimit",
+            rl_ms,
+            api_endpoint = %api_endpoint,
+            policy_version = prepaid.policy_version,
+            snapshot_age_ms = prepaid.snapshot_age_ms,
+            degraded = prepaid.degraded,
+            source = "local",
+            decision = "allow",
+            prepaid_request_bytes = prepaid.prepaid_request_bytes,
+            bandwidth_enabled = prepaid.bandwidth_enabled,
+            message = "Gateway rate limit stage completed",
+        );
+    }
+}
+
+struct RateLimitDenyMeta<'a> {
+    peer_addr: SocketAddr,
+    request_id: &'a str,
+    api_endpoint: &'a str,
+    rl_elapsed: std::time::Duration,
+    policy_version: i64,
+    retry_after_ms: u64,
+    reason: &'a str,
+    snapshot_age_ms: u64,
+    degraded: bool,
+    quota: Option<crate::ratelimit::QuotaState>,
+}
+
+fn build_ratelimit_deny_rejection(
+    state: &AppState,
+    req: &Request,
+    tenant_context: &TenantContext,
+    deny: &RateLimitDenyMeta<'_>,
+) -> MiddlewareRejection {
+    if deny.reason == "client_ip_qps"
+        && state
+            .ip_extractor
+            .has_untrusted_forwarded_header(req.headers(), Some(deny.peer_addr))
+        && UNTRUSTED_FORWARDED_HEADER_LOG.allow(&deny.peer_addr.ip().to_string())
+    {
+        warn!(
+            peer_ip = %deny.peer_addr.ip(),
+            tenant_id = %tenant_context.tenant_id,
+            "Client IP rate limit triggered on untrusted proxy peer carrying X-Forwarded-For/X-Real-IP; configure server.trusted_proxies if behind a reverse proxy"
+        );
+    }
+    let rl_ms = mazbri_core::num::millis_u64(deny.rl_elapsed);
+    let stage_ids = ratelimit_stage_span(tenant_context, deny.rl_elapsed)
+        .failed()
+        .record();
+    stage_log!(
+        warn,
+        "gateway.stage",
+        &StageCtx::from_extensions(
+            req.extensions(),
+            &deny.request_id,
+            &tenant_context.tenant_id,
+            tenant_context.product_id.as_deref(),
+        ),
+        &stage_ids,
+        "ratelimit",
+        rl_ms,
+        api_endpoint = %deny.api_endpoint,
+        policy_version = deny.policy_version,
+        retry_after_ms = deny.retry_after_ms,
+        reason = %deny.reason,
+        snapshot_age_ms = deny.snapshot_age_ms,
+        degraded = deny.degraded,
+        source = "local",
+        decision = "deny",
+        message = "Gateway rate limit stage rejected request",
+    );
+    rate_limit_error_response(
+        i32::saturating_from((deny.retry_after_ms / 1000).max(1)),
+        deny.reason,
+        deny.quota,
+    )
+    .into()
 }
 
 fn ratelimit_stage_span(
@@ -461,11 +670,35 @@ fn content_length_header(headers: &axum::http::HeaderMap) -> u64 {
         .unwrap_or(0)
 }
 
+fn record_caller_rejection_scope(extensions: &axum::http::Extensions, claims: &MazbriClaims) {
+    record_caller_rejection_scope_with_bytes(extensions, claims, None);
+}
+
+fn record_caller_rejection_scope_with_bytes(
+    extensions: &axum::http::Extensions,
+    claims: &MazbriClaims,
+    request_bytes: Option<u64>,
+) {
+    let Some(slot) = extensions.get::<crate::gateway::rejection_log::RejectionSlot>() else {
+        return;
+    };
+    slot.set(crate::gateway::rejection_log::RejectionScope {
+        tenant_id: Some(claims.tenant_id.clone()),
+        tenant_code: Some(claims.tenant_code.clone()),
+        api_key_id: Some(claims.api_key_id.clone()).filter(|id| !id.is_empty()),
+        product_id: None,
+        method: None,
+        path: None,
+        request_bytes,
+    });
+}
+
 /// Hands caller and payload to the rejection access log (no-op outside its layer).
 fn record_rejection_scope(
     extensions: &axum::http::Extensions,
     claims: &MazbriClaims,
     payload: &GatewayRequestPayload,
+    request_bytes: u64,
 ) {
     let Some(slot) = extensions.get::<crate::gateway::rejection_log::RejectionSlot>() else {
         return;
@@ -485,11 +718,11 @@ fn record_rejection_scope(
         product_id,
         method,
         path,
+        request_bytes: Some(request_bytes),
     });
 }
 
-/// 按 IETF draft-ietf-httpapi-ratelimit-headers 回写租户请求配额：
-/// `RateLimit-Policy: "tenant";q=<桶容量>;w=<补满秒数>`、`RateLimit: "tenant";r=<剩余>;t=<补满还需秒数>`。
+/// 按 IETF draft-ietf-httpapi-ratelimit-headers 回写租户请求配额。
 fn with_ratelimit_headers(
     mut response: Response,
     quota: Option<crate::ratelimit::QuotaState>,
@@ -509,7 +742,7 @@ fn with_ratelimit_headers(
     response
 }
 
-fn rate_limit_error_response(
+pub(crate) fn rate_limit_error_response(
     retry_after: i32,
     reason: &str,
     quota: Option<crate::ratelimit::QuotaState>,
@@ -542,6 +775,7 @@ fn rate_limit_error_response(
         ));
     with_ratelimit_headers(response, quota)
 }
+
 fn current_request_id(headers: &axum::http::HeaderMap) -> String {
     parse_trace_context(headers).request_id.to_string()
 }

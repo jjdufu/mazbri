@@ -38,7 +38,9 @@ pub async fn list_bills(
     let search = search
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty());
-    let search_pattern = search.as_ref().map(|value| format!("%{value}%"));
+    let search_pattern = search
+        .as_deref()
+        .map(mazbri_core::config::contains_ilike_pattern);
     let search_ref = search_pattern.as_deref();
     let filters = crate::list_query::parse_and_validate_filters(
         filters_json.as_deref(),

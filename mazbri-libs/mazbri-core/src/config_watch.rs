@@ -14,6 +14,7 @@ pub const CONFIG_CHANGED_CHANNEL: &str = "mazbri_config_changed";
 pub const PRODUCT_DETAIL_VERSION_KEY: &str = "product_detail_version";
 pub const AUTH_WHITELIST_VERSION_KEY: &str = "auth_whitelist_version";
 pub const AUTH_API_KEY_VERSION_KEY: &str = "auth_api_key_version";
+pub const CACHE_L1_VERSION_KEY: &str = "cache_l1_version";
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -97,18 +98,19 @@ pub async fn fetch_config_version(pool: &PgPool, key: &str) -> Result<Option<i64
     Ok(row.map(|row| row.get("version")))
 }
 
-/// 递增已由 `init-dbs` 初始化的配置版本号并发送 `pg_notify` 广播唤醒监听进程。
+/// 幂等写入或递增配置版本号并发送 `pg_notify` 广播唤醒监听进程。
 ///
 /// # Errors
 ///
-/// 数据库写入、目标版本键缺失或通知发送失败时返回错误。
+/// 数据库写入或通知发送失败时返回错误。
 pub async fn bump_config_version_and_notify(pool: &PgPool, key: &str) -> Result<i64, sqlx::Error> {
     let version: i64 = sqlx::query_scalar(
         r"
-        UPDATE route_sync_metadata
-        SET version = version + 1,
+        INSERT INTO route_sync_metadata (key, version, updated_at)
+        VALUES ($1, 1, CURRENT_TIMESTAMP)
+        ON CONFLICT (key) DO UPDATE
+        SET version = route_sync_metadata.version + 1,
             updated_at = CURRENT_TIMESTAMP
-        WHERE key = $1
         RETURNING version
         ",
     )
@@ -197,7 +199,8 @@ async fn run_config_watch<F, Fut>(
         initial_config_version(&pool, version_key, label, interval_secs, cfg.listen_notify).await;
 
     let (notify_tx, mut notify_rx) = tokio::sync::mpsc::channel::<()>(8);
-    if cfg.listen_notify {
+    let mut listen_active = cfg.listen_notify;
+    if listen_active {
         let channel = cfg.notify_channel.clone();
         let listen_label = label;
         tokio::spawn(async move {
@@ -213,8 +216,9 @@ async fn run_config_watch<F, Fut>(
     loop {
         tokio::select! {
             _ = ticker.tick() => {}
-            maybe = notify_rx.recv(), if cfg.listen_notify => {
+            maybe = notify_rx.recv(), if listen_active => {
                 if maybe.is_none() {
+                    listen_active = false;
                     tracing::warn!(label, "Config watch notify channel closed; continuing with poll only");
                 }
             }
@@ -288,6 +292,7 @@ async fn run_listen_notify_loop(
                 }
                 tracing::info!(label, channel = %channel, "Listening for config change notifications");
                 backoff_secs = 1;
+                let _ = notify_tx.try_send(());
                 loop {
                     match listener.recv().await {
                         Ok(_notification) => {

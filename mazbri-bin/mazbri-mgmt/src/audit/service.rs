@@ -317,49 +317,49 @@ const STATUS_LABEL_SQL: &str = "CASE status WHEN 'success' THEN '成功' WHEN 'f
 const CREATED_AT_SEARCH_SQL: &str =
     "to_char(created_at AT TIME ZONE 'Asia/Shanghai', 'YYYY/FMMM/FMDD HH24:MI:SS')";
 fn push_audit_keyword_filter(builder: &mut QueryBuilder<Postgres>, keyword: &str) {
-    let pattern = format!("%{keyword}%");
+    let pattern = mazbri_core::config::contains_ilike_pattern(keyword);
     builder.push(" AND (username ILIKE ");
     builder.push_bind(pattern.clone());
-    builder.push(" OR action ILIKE ");
+    builder.push(" ESCAPE '\\' OR action ILIKE ");
     builder.push_bind(pattern.clone());
-    builder.push(" OR ");
+    builder.push(" ESCAPE '\\' OR ");
     // Safety: ACTION_LABEL_SQL 由编译期常量 ACTION_LABELS 构造（label_tests::labels_are_sql_safe 守卫无引号注入），无任何外部输入。
     builder.push(ACTION_LABEL_SQL.as_str());
     builder.push(" ILIKE ");
     builder.push_bind(pattern.clone());
-    builder.push(" OR resource_type ILIKE ");
+    builder.push(" ESCAPE '\\' OR resource_type ILIKE ");
     builder.push_bind(pattern.clone());
-    builder.push(" OR ");
+    builder.push(" ESCAPE '\\' OR ");
     // Safety: RESOURCE_TYPE_LABEL_SQL 由编译期常量 RESOURCE_TYPE_LABELS 构造（label_tests::labels_are_sql_safe 守卫无引号注入），无任何外部输入。
     builder.push(RESOURCE_TYPE_LABEL_SQL.as_str());
     builder.push(" ILIKE ");
     builder.push_bind(pattern.clone());
     builder
         .push(
-            " OR COALESCE(ip_address, details->>'ip_address', details->>'client_ip', details->>'actor_ip') ILIKE ",
+            " ESCAPE '\\' OR COALESCE(ip_address, details->>'ip_address', details->>'client_ip', details->>'actor_ip') ILIKE ",
         );
     builder.push_bind(pattern.clone());
-    builder.push(" OR ");
+    builder.push(" ESCAPE '\\' OR ");
     builder.push(CREATED_AT_SEARCH_SQL);
     builder.push(" ILIKE ");
     builder.push_bind(pattern.clone());
-    builder.push(" OR replace(");
+    builder.push(" ESCAPE '\\' OR replace(");
     builder.push(CREATED_AT_SEARCH_SQL);
     builder.push(", '/', '-') ILIKE ");
     builder.push_bind(pattern.clone());
-    builder.push(" OR failure_reason ILIKE ");
+    builder.push(" ESCAPE '\\' OR failure_reason ILIKE ");
     builder.push_bind(pattern.clone());
-    builder.push(" OR request_id ILIKE ");
+    builder.push(" ESCAPE '\\' OR request_id ILIKE ");
     builder.push_bind(pattern.clone());
-    builder.push(" OR path ILIKE ");
+    builder.push(" ESCAPE '\\' OR path ILIKE ");
     builder.push_bind(pattern.clone());
-    builder.push(" OR status ILIKE ");
+    builder.push(" ESCAPE '\\' OR status ILIKE ");
     builder.push_bind(pattern.clone());
-    builder.push(" OR ");
+    builder.push(" ESCAPE '\\' OR ");
     builder.push(STATUS_LABEL_SQL);
     builder.push(" ILIKE ");
     builder.push_bind(pattern);
-    builder.push(")");
+    builder.push(" ESCAPE '\\')");
 }
 
 macro_rules! select_columns {

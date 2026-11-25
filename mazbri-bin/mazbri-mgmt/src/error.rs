@@ -29,6 +29,9 @@ pub enum ApiError {
     /// 发布草稿时路由优先级或同产品活跃路由与其他规则冲突。
     #[error("{0}")]
     RouteConflict(String),
+    /// 配置中心乐观锁版本哈希冲突。
+    #[error("{0}")]
+    ConfigConflict(String),
 }
 impl ApiError {
     pub fn internal(msg: impl Into<String>) -> Self {
@@ -36,6 +39,13 @@ impl ApiError {
     }
     pub fn validation(msg: impl Into<String>) -> Self {
         Self::Core(CoreError::Validation(msg.into()))
+    }
+    pub fn auth_failed(msg: impl Into<String>) -> Self {
+        Self::Core(CoreError::Auth(msg.into()))
+    }
+    #[must_use]
+    pub fn rate_limited(retry_after_secs: u64) -> Self {
+        Self::Core(CoreError::RateLimited { retry_after_secs })
     }
     #[must_use]
     pub fn not_found(resource: String, id: String) -> Self {
@@ -57,7 +67,8 @@ impl ErrorResponse for ApiError {
             ApiError::CoreServiceConfigProtected
             | ApiError::ConfigInUse
             | ApiError::ChannelCodeOwnedByOtherSupplier(_)
-            | ApiError::RouteConflict(_) => StatusCode::CONFLICT,
+            | ApiError::RouteConflict(_)
+            | ApiError::ConfigConflict(_) => StatusCode::CONFLICT,
         }
     }
     fn error_code(&self) -> &'static str {
@@ -71,6 +82,7 @@ impl ErrorResponse for ApiError {
             ApiError::ConfigInUse => "CONFIG_IN_USE",
             ApiError::ChannelCodeOwnedByOtherSupplier(_) => "CHANNEL_CODE_OWNED_BY_OTHER_SUPPLIER",
             ApiError::RouteConflict(_) => "ROUTE_CONFLICT",
+            ApiError::ConfigConflict(_) => "CONFIG_CONFLICT",
         }
     }
     fn detail(&self) -> Option<String> {
@@ -92,7 +104,7 @@ impl ErrorResponse for ApiError {
             ApiError::ChannelCodeOwnedByOtherSupplier(code) => Some(format!(
                 "通道编码 '{code}' 已归属其他供应商，请更换通道编码后再发布"
             )),
-            ApiError::RouteConflict(msg) => Some(msg.clone()),
+            ApiError::RouteConflict(msg) | ApiError::ConfigConflict(msg) => Some(msg.clone()),
             _ => None,
         }
     }

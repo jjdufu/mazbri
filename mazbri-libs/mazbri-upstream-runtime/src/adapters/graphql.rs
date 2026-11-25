@@ -62,6 +62,9 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
         },
     )
     .await?;
+    if ctx.is_reject_status(response.status) {
+        return Ok(AdapterOutcome::raw(response));
+    }
     let json = parse_json_body(&response.body)?;
     if let Some(errors) = json.get("errors").and_then(|v| v.as_array())
         && let Some(first) = errors.first()

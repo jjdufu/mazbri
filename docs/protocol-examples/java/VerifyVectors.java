@@ -28,15 +28,29 @@ public final class VerifyVectors {
         Map<String, Object> asym = obj(keys.get("asymmetric"));
         List<String> skipped = new ArrayList<>();
 
+        byte[] masterKey = Base64.getDecoder().decode((String) keys.get("tenant_secret_key_b64"));
         int nt = 0;
         for (Object o : (List<?>) doc.get("transport")) {
             Map<String, Object> t = obj(o);
             String alg = (String) t.get("data_alg"), macAlg = (String) t.get("mac_alg");
+            String dir = t.get("direction") != null ? (String) t.get("direction") : "c2g";
             Map<String, Object> e = obj(t.get("expected"));
             byte[] key = hex((String) t.get("data_key_hex")), iv = hex((String) t.get("iv_hex"));
+            byte[] derivedEnc = hkdfSha256(
+                    ((String) common.get("key_version")).getBytes(StandardCharsets.UTF_8),
+                    masterKey,
+                    ("mazbri-transport-v1|" + common.get("tenant_id") + "|" + dir + "|enc").getBytes(StandardCharsets.UTF_8),
+                    key.length);
+            check(Arrays.equals(key, derivedEnc), t.get("name") + " hkdf enc");
+            Map<String, Object> env = obj(new Json((String) e.get("envelope_json")).value());
+            String expectedAad = String.join("\n", "v1", dir, (String) common.get("tenant_id"),
+                    (String) common.get("http_path"), (String) env.get("keyVersion"), alg,
+                    macAlg != null ? macAlg : "", String.valueOf(((Number) env.get("timestamp")).longValue()),
+                    (String) env.get("nonce"), (String) env.get("iv"));
             byte[] pt = ((String) t.get("plaintext_utf8")).getBytes(StandardCharsets.UTF_8);
             String ct, tag = "";
             if (alg.startsWith("aes-") && alg.endsWith("-gcm")) {
+                check(expectedAad.equals(t.get("aad_utf8")), t.get("name") + " aad");
                 Cipher c = Cipher.getInstance("AES/GCM/NoPadding");
                 c.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(key, "AES"), new GCMParameterSpec(128, iv));
                 c.updateAAD(((String) t.get("aad_utf8")).getBytes(StandardCharsets.UTF_8));
@@ -52,14 +66,17 @@ public final class VerifyVectors {
                 continue;
             }
             check(ct.equals(e.get("ciphertext_b64")) && tag.equals(e.get("tag_b64")), t.get("name") + " cipher");
-            Map<String, Object> env = obj(new Json((String) e.get("envelope_json")).value());
             String sig = "";
             if (macAlg != null) {
-                String canon = String.join("\n", (String) common.get("tenant_id"), (String) common.get("http_path"),
-                        (String) env.get("keyVersion"), String.valueOf(((Number) env.get("timestamp")).longValue()),
-                        (String) env.get("nonce"), (String) env.get("iv"), (String) env.get("ciphertext"), (String) env.get("tag"));
+                byte[] derivedMac = hkdfSha256(
+                        ((String) common.get("key_version")).getBytes(StandardCharsets.UTF_8),
+                        masterKey,
+                        ("mazbri-transport-v1|" + common.get("tenant_id") + "|" + dir + "|mac").getBytes(StandardCharsets.UTF_8),
+                        32);
+                check(Arrays.equals(hex((String) t.get("mac_key_hex")), derivedMac), t.get("name") + " hkdf mac");
+                String canon = String.join("\n", expectedAad, (String) env.get("ciphertext"), (String) env.get("tag"));
                 check(canon.equals(e.get("mac_canonical_string")), t.get("name") + " canonical");
-                sig = toHex(hmac(macAlg, hex((String) t.get("mac_key_hex")), canon.getBytes(StandardCharsets.UTF_8)));
+                sig = toHex(hmac(macAlg, derivedMac, canon.getBytes(StandardCharsets.UTF_8)));
             }
             check(sig.equals(e.get("signature_hex")), t.get("name") + " signature");
             System.out.println("  ok transport " + t.get("name"));
@@ -111,6 +128,25 @@ public final class VerifyVectors {
         check(cbSig.equals(obj(ce.get("headers")).get("X-Mazbri-Signature")), "callback");
         System.out.println("  ok callback");
         System.out.printf("PASS transport=%d binding=%d callback=1 skipped=%s%n", nt, nb, skipped);
+    }
+
+    static byte[] hkdfSha256(byte[] salt, byte[] ikm, byte[] info, int length) throws Exception {
+        byte[] prk = hmac("hmac-sha256", salt, ikm);
+        byte[] out = new byte[length];
+        byte[] prev = new byte[0];
+        int offset = 0;
+        for (int counter = 1; offset < length; counter++) {
+            Mac m = Mac.getInstance("HmacSHA256");
+            m.init(new SecretKeySpec(prk, "HmacSHA256"));
+            m.update(prev);
+            m.update(info);
+            m.update((byte) counter);
+            prev = m.doFinal();
+            int copy = Math.min(prev.length, length - offset);
+            System.arraycopy(prev, 0, out, offset, copy);
+            offset += copy;
+        }
+        return out;
     }
 
     static byte[] hmac(String alg, byte[] key, byte[] msg) throws Exception {

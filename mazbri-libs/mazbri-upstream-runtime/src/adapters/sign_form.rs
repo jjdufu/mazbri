@@ -10,7 +10,7 @@ use serde_json::Value;
 
 use super::crypto_wire::{
     encode_merged_form, ensure_profile_slots, prefer_sorted_kv_for_sign_form, seal_body,
-    soft_verify_signed_object,
+    verify_signed_object_strict,
 };
 use super::{AdapterCtx, AdapterOutcome, parse_json_body};
 
@@ -82,16 +82,22 @@ fn outcome_from_json(
     response: OutboundResponse,
     profile: &UpstreamCryptoProfile,
     ctx: &AdapterCtx<'_>,
-) -> AdapterOutcome {
+) -> Result<AdapterOutcome, ExecuteError> {
     if let Some(err) = json.get("error_response") {
-        soft_verify_signed_object(err, profile, ctx.pipeline_keys, ctx.registry);
+        verify_signed_object_strict(
+            err,
+            &response.headers,
+            profile,
+            ctx.pipeline_keys,
+            ctx.registry,
+        )?;
         let message = err
             .get("sub_msg")
             .or_else(|| err.get("msg"))
             .and_then(|v| v.as_str())
             .unwrap_or("sign_form error")
             .to_string();
-        return AdapterOutcome {
+        return Ok(AdapterOutcome {
             auth_rejection: None,
             payload: Value::Null,
             raw_payload_json: None,
@@ -101,7 +107,7 @@ fn outcome_from_json(
                 details: Some(err.clone()),
             }),
             response,
-        };
+        });
     }
     let inner = json
         .as_object()
@@ -111,18 +117,24 @@ fn outcome_from_json(
                 .map(|(_, v)| v.clone())
         })
         .unwrap_or(json);
-    soft_verify_signed_object(&inner, profile, ctx.pipeline_keys, ctx.registry);
+    verify_signed_object_strict(
+        &inner,
+        &response.headers,
+        profile,
+        ctx.pipeline_keys,
+        ctx.registry,
+    )?;
     let payload = match ctx.input.spec.response.as_ref().and_then(|r| r.unwrap.as_deref()) {
         Some(path) => mazbri_core::json_path::extract_by_path(&inner, path).unwrap_or(inner),
         None => inner,
     };
-    AdapterOutcome {
+    Ok(AdapterOutcome {
         auth_rejection: None,
         response,
         payload,
         raw_payload_json: None,
         biz_error: None,
-    }
+    })
 }
 
 pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError> {
@@ -184,6 +196,9 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
     let q: Vec<_> = sealed.slots.query.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
 
     let response = post_form(ctx, form, &hdrs, &q).await?;
+    if ctx.is_reject_status(response.status) {
+        return Ok(AdapterOutcome::raw(response));
+    }
     let json = parse_json_body(&response.body)?;
-    Ok(outcome_from_json(json, response, &profile, ctx))
+    outcome_from_json(json, response, &profile, ctx)
 }

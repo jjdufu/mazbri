@@ -155,23 +155,31 @@ pub struct StageLookupResponse {
     pub stages: Vec<StageLogEntry>,
 }
 
-/// 仅接受 `request_id` 或 `trace_id` 之一，取值只允许安全字符。
+/// 仅接受 `request_id` 或 `trace_id` 之一，取值只允许安全字符（`trace_id` 严格按 W3C 32-hex 校验）。
 fn stage_lookup_key(
     lookup: &StageLookup,
 ) -> Result<(Option<String>, Option<String>), HandlerError> {
-    let clean = |v: &Option<String>| {
-        v.as_deref()
-            .map(str::trim)
-            .filter(|v| !v.is_empty())
-            .map(|v| {
-                validate_like_param(v)
-                    .map_err(|e| invalid("invalid_id", e.to_string()))
-                    .map(|_| v.to_string())
-            })
-            .transpose()
-    };
-    let request_id = clean(&lookup.request_id)?;
-    let trace_id = clean(&lookup.trace_id)?;
+    let request_id = lookup
+        .request_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(|v| {
+            validate_like_param(v)
+                .map_err(|e| invalid("invalid_id", e.to_string()))
+                .map(|_| v.to_string())
+        })
+        .transpose()?;
+    let trace_id = lookup
+        .trace_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(|v| {
+            mazbri_analytics::greptimedb::traces::validate_trace_id(v)
+                .map_err(|e| invalid("invalid_trace_id", e))
+        })
+        .transpose()?;
     match (&request_id, &trace_id) {
         (None, None) => Err(invalid("missing_id", "需要 request_id 或 trace_id")),
         (Some(_), Some(_)) => Err(invalid("ambiguous_id", "request_id 与 trace_id 只能二选一")),

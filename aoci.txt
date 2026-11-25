@@ -1,0 +1,7 @@
+#AOCI-ROOT-MANIFEST: 1
+#Format-Version: cognition-volumes/v1
+#Locale: zh-CN
+#Project: 多租户密码学API网关与统一控制面平台，由共享库mazbri-libs、微服务群mazbri-bin（gateway/bypass/auth/cert/billing/cache/ratelimit/analytics/cbpro/mgmt）与Vue3前端mazbri-web组成，提供租户鉴权、密码套件协商、上游供给调度、计费对账与全链路可观测治理。
+#Global-Invariants: 1.禁留兼容层与死代码，分页/过滤/枚举/结构改动须前后端(视图/TS/Handler/Service/SQL/权限/审计)彻底同步，大列表强制真服务端分页；2.构建必先mazbri-web执行pnpm build再cargo(build.rs嵌入dist，禁MAZBRI_SKIP_FRONTEND_EMBED)，双工作区须过--release --locked严格clippy(-D warnings)与全仓单测，严禁#[allow]/@ts-ignore压制告警；3.ts-rs生成绑定须零diff，VERSION与release-please配置一致，增删服务同步detect.py；4.UI禁重复主标题与计数标签，强制复用[不可更改]公共壳与弹窗(OpsPage/ControlPanelPageShell/ResourceTableShell/EditDialog/CenteredDialog/AdaptiveDrawer)，工具栏统一32px，禁壳套壳与硬编码Hex色值；5.容器经/tmp原子mv热替换(注意-service后缀)并restart，禁docker compose up -d回退镜像层，须经9223双分辨率/双主题/三角色实测零缺陷闭环，未获指令禁git push或手改发版文件。
+#Volume: id=meta kind=meta path=aoci.meta.txt format=meta-v1 depends=- state=enabled
+#Volume: id=code kind=code path=aoci.code.txt format=object-fras-v2 depends=meta state=enabled

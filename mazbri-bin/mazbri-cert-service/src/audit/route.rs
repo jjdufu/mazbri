@@ -78,7 +78,7 @@ pub fn classify(method: &Method, path: &str) -> Option<(RouteSpec, Option<String
     let segments: Vec<&str> = path.trim_matches('/').split('/').collect();
     let id = |value: &str| Some(value.to_string());
     let found = match (method.as_str(), segments.as_slice()) {
-        ("POST", ["issue"]) => (spec("certificate.issue", CERT, false), None),
+        ("POST", ["issue"]) => (spec("certificate.issue", CERT, true), None),
         ("POST", ["renew", cert_id]) => (
             owner_checked(spec("certificate.renew", CERT, true)),
             id(cert_id),
@@ -108,7 +108,11 @@ pub fn classify(method: &Method, path: &str) -> Option<(RouteSpec, Option<String
         ("POST", ["authorizations", "license", "import"]) => {
             (critical(spec("authorization.import", AUTHZ, true)), None)
         }
-        ("GET", ["authorizations", "root", "current", "materials"]) => {
+        (
+            "GET",
+            ["authorizations", "root", "current", "materials"]
+            | ["authorizations", "root", "materials", "keyring"],
+        ) => {
             let mut s = spec("authorization.root_material_read", AUTHZ, false);
             s.failures_only = true;
             (s, None)
@@ -184,8 +188,9 @@ mod tests {
 
     #[test]
     fn shared_routes_are_not_mgmt_only() {
+        let (issue, _) = classify(&Method::POST, "/issue").expect("issue");
+        assert!(issue.mgmt_only(), "/issue must be mgmt_only");
         for (method, path) in [
-            (Method::POST, "/issue"),
             (Method::POST, "/verify"),
             (Method::GET, "/authorizations/root/current/materials"),
         ] {
@@ -228,6 +233,7 @@ mod tests {
         ("POST", "/authorizations/license/request"),
         ("POST", "/authorizations/license/import"),
         ("GET", "/authorizations/root/current/materials"),
+        ("GET", "/authorizations/root/materials/keyring"),
         ("POST", "/configs/batch/update"),
         ("PUT", "/configs/s"),
         ("DELETE", "/configs/s"),

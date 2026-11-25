@@ -14,6 +14,7 @@ use mazbri_rpc::{ObservationRequest, RuntimeDecision};
 use sqlx::PgPool;
 use std::sync::Arc;
 use std::time::Instant;
+use uuid::Uuid;
 
 #[derive(Debug, Clone)]
 pub struct GatewayRequestTiming {
@@ -61,6 +62,7 @@ impl GatewayRequestTiming {
 pub struct ProxyStateInit<'a> {
     pub service_name: String,
     pub product_service: Arc<ProductService>,
+    pub cache_policy_lookup: Arc<super::response_cache::TenantCachePolicyLookup>,
     pub tarpc_pool: TarpcClientPool,
     pub upstream_http2_pool: UpstreamHttp2ClientPool,
     pub circuit_breaker_config: crate::config::CircuitBreakerCacheConfig,
@@ -79,6 +81,7 @@ pub struct ProxyStateInit<'a> {
 pub struct ProxyState {
     pub service_name: Arc<str>,
     pub product_service: Arc<ProductService>,
+    pub cache_policy_lookup: Arc<super::response_cache::TenantCachePolicyLookup>,
     pub circuit_breakers: moka::sync::Cache<String, Arc<CircuitBreaker>>,
     pub circuit_breaker_config: crate::config::CircuitBreakerCacheConfig,
     pub tarpc_pool: TarpcClientPool,
@@ -90,6 +93,8 @@ pub struct ProxyState {
     pub cbpro_observation_tx: Option<tokio::sync::mpsc::Sender<ObservationRequest>>,
     pub route_engine: Arc<arc_swap::ArcSwap<GatewayRouteEngine>>,
     pub db: Arc<PgPool>,
+    pub redis: mazbri_core::redis::RedisClient,
+    pub idempotency: super::idempotency::IdempotencyManager,
     pub local_ratelimiter: Arc<LocalRateLimitEngine>,
     pub channel_ratelimiter: Arc<ChannelRateLimitEngine>,
     pub crypto_state: TenantCryptoState,
@@ -109,9 +114,11 @@ impl ProxyState {
             .max_capacity(10_000)
             .time_to_live(std::time::Duration::from_secs(3))
             .build();
+        let redis = init.redis;
+        let idempotency = super::idempotency::IdempotencyManager::new(redis.clone());
         let crypto_state = TenantCryptoState::new(
             init.db.clone(),
-            init.redis,
+            redis.clone(),
             init.cert_service_url,
             init.cert_service_token,
         )?;
@@ -126,6 +133,7 @@ impl ProxyState {
         let state = Self {
             service_name: service_name.into(),
             product_service: init.product_service,
+            cache_policy_lookup: init.cache_policy_lookup,
             circuit_breakers,
             circuit_breaker_config: init.circuit_breaker_config,
             tarpc_pool: init.tarpc_pool,
@@ -137,11 +145,14 @@ impl ProxyState {
             cbpro_observation_tx,
             route_engine: init.route_engine,
             db: init.db,
+            redis,
+            idempotency,
             local_ratelimiter,
             channel_ratelimiter,
             crypto_state,
             services_config: init.services_config,
         };
+        spawn_l1_invalidation_listener(&state);
         if let Err(error) = state.crypto_state.warm_start().await {
             tracing::warn!(error = %error, "Gateway tenant crypto warmup failed");
         } else {
@@ -158,29 +169,55 @@ impl ProxyState {
             .clone()
             .spawn_background_tasks(&state.tarpc_pool.clone(), &state.ratelimit_endpoint.clone());
         let _channel_rl_janitor = state.channel_ratelimiter.clone().spawn_background_tasks();
-        if let (Some(client), Some(mut rx)) = (state.cbpro_ext_client.clone(), cbpro_observation_rx)
-        {
-            tokio::spawn(async move {
-                let mut batch = Vec::with_capacity(32);
-                loop {
-                    let Some(first) = rx.recv().await else {
-                        break;
-                    };
-                    batch.push(first);
-                    while batch.len() < 32 {
-                        match rx.try_recv() {
-                            Ok(next) => batch.push(next),
-                            Err(
-                                tokio::sync::mpsc::error::TryRecvError::Empty
-                                | tokio::sync::mpsc::error::TryRecvError::Disconnected,
-                            ) => break,
-                        }
-                    }
-                    let observations = std::mem::take(&mut batch);
-                    client.record_observations(observations).await;
-                }
-            });
+        if let (Some(client), Some(rx)) = (state.cbpro_ext_client.clone(), cbpro_observation_rx) {
+            spawn_cbpro_observation_flusher(client, rx);
         }
         Ok(state)
     }
+}
+
+fn spawn_l1_invalidation_listener(state: &ProxyState) {
+    let inv_channel = state.redis.cache_l1_invalidation_channel();
+    let product_service = Arc::clone(&state.product_service);
+    let cache_policy = Arc::clone(&state.cache_policy_lookup);
+    drop(state.redis.spawn_pubsub_listener(
+        inv_channel,
+        "gateway-cache-l1-inv",
+        move |payload: String| {
+            let trimmed = payload.trim();
+            if trimmed == "*" || trimmed.is_empty() {
+                product_service.clear_cache();
+                cache_policy.invalidate_all();
+            } else if let Ok(tenant_uuid) = Uuid::parse_str(trimmed) {
+                product_service.clear_cache();
+                cache_policy.invalidate(tenant_uuid);
+            }
+        },
+    ));
+}
+
+fn spawn_cbpro_observation_flusher(
+    client: CBProExtClient,
+    mut rx: tokio::sync::mpsc::Receiver<ObservationRequest>,
+) {
+    tokio::spawn(async move {
+        let mut batch = Vec::with_capacity(32);
+        loop {
+            let Some(first) = rx.recv().await else {
+                break;
+            };
+            batch.push(first);
+            while batch.len() < 32 {
+                match rx.try_recv() {
+                    Ok(next) => batch.push(next),
+                    Err(
+                        tokio::sync::mpsc::error::TryRecvError::Empty
+                        | tokio::sync::mpsc::error::TryRecvError::Disconnected,
+                    ) => break,
+                }
+            }
+            let observations = std::mem::take(&mut batch);
+            client.record_observations(observations).await;
+        }
+    });
 }

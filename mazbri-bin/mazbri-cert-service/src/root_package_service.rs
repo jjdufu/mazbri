@@ -10,9 +10,11 @@ use mazbri_cert::root_package::{
     COMMERCIAL_ROOT_PROTECTION_INTEGRITY_MATERIAL_TYPE,
     COMMERCIAL_ROOT_PROTECTION_MASTER_MATERIAL_TYPE, RootPackageSummary,
     derive_root_package_status, is_root_package_expired, is_root_package_renewable,
-    unwrap_root_material,
+    material_digest, unwrap_root_material,
 };
-use mazbri_core::crypto::tenant_key::RootProtectionMaterialBundle;
+use mazbri_core::crypto::tenant_key::{RootProtectionKeyring, RootProtectionMaterialBundle};
+use std::collections::BTreeMap;
+use zeroize::Zeroizing;
 
 #[derive(Debug, Clone, serde::Serialize, sqlx::FromRow)]
 pub struct RootPackageRow {
@@ -136,8 +138,14 @@ async fn load_active_material_bundle_inner(
         .iter()
         .find(|row| row.material_type == COMMERCIAL_ROOT_PROTECTION_INTEGRITY_MATERIAL_TYPE)
         .ok_or_else(|| CertError::NotFound("commercial root protection material".to_string()))?;
-    let master_key = unwrap_root_material(storage_password, &master_row.encrypted_secret)?;
-    let integrity_key = unwrap_root_material(storage_password, &integrity_row.encrypted_secret)?;
+    let master_key = Zeroizing::new(unwrap_root_material(
+        storage_password,
+        &master_row.encrypted_secret,
+    )?);
+    let integrity_key = Zeroizing::new(unwrap_root_material(
+        storage_password,
+        &integrity_row.encrypted_secret,
+    )?);
     Ok(Some(RootProtectionMaterialBundle {
         current_key_version: summary
             .current_key_version
@@ -145,9 +153,106 @@ async fn load_active_material_bundle_inner(
         wrapping_key_id: summary
             .wrapping_key_id
             .unwrap_or_else(|| master_row.wrapping_key_id.clone()),
-        master_key: BASE64.encode(master_key),
-        integrity_key: BASE64.encode(integrity_key),
+        master_key: BASE64.encode(&*master_key),
+        integrity_key: BASE64.encode(&*integrity_key),
     }))
+}
+
+/// 加载全部有效版本（`active` + `deprecated`）根保护材料密钥环，支持许可证 `Rekey` 后新旧密文并存解密。
+///
+/// # Errors
+///
+/// 数据库查询、存储密钥解封或摘要完整性校验失败时返回错误。
+pub async fn load_material_keyring(
+    pool: &PgPool,
+    storage_password: &str,
+    issuance_allowed: bool,
+) -> CertResult<RootProtectionKeyring> {
+    let rows = sqlx::query_as::<_, RootMaterialRow>(
+        r"
+        SELECT id, package_id, material_type, key_version, wrapping_key_id, encrypted_secret,
+            secret_digest, status, created_by, created_at, activated_at, disabled_at, metadata
+        FROM commercial_root_materials
+        WHERE status IN ('active', 'deprecated')
+        ORDER BY CASE WHEN status = 'active' THEN 0 ELSE 1 END, created_at DESC
+        ",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    let mut active_version: Option<String> = None;
+    let mut grouped: BTreeMap<String, (Option<RootMaterialRow>, Option<RootMaterialRow>)> =
+        BTreeMap::new();
+    for row in rows {
+        if row.status == "active" && active_version.is_none() {
+            active_version = Some(row.key_version.clone());
+        }
+        let entry = grouped
+            .entry(row.key_version.clone())
+            .or_insert((None, None));
+        if row.material_type == COMMERCIAL_ROOT_PROTECTION_MASTER_MATERIAL_TYPE && entry.0.is_none()
+        {
+            entry.0 = Some(row);
+        } else if row.material_type == COMMERCIAL_ROOT_PROTECTION_INTEGRITY_MATERIAL_TYPE
+            && entry.1.is_none()
+        {
+            entry.1 = Some(row);
+        }
+    }
+
+    let mut materials = Vec::new();
+    for (ver, (master_opt, integrity_opt)) in grouped {
+        let (Some(master_row), Some(integrity_row)) = (master_opt, integrity_opt) else {
+            continue;
+        };
+        let master_plain = Zeroizing::new(unwrap_root_material(
+            storage_password,
+            &master_row.encrypted_secret,
+        )?);
+        let integrity_plain = Zeroizing::new(unwrap_root_material(
+            storage_password,
+            &integrity_row.encrypted_secret,
+        )?);
+        if material_digest(
+            master_row.package_id,
+            &master_row.material_type,
+            &master_row.key_version,
+            &master_plain,
+        ) != master_row.secret_digest
+            || material_digest(
+                integrity_row.package_id,
+                &integrity_row.material_type,
+                &integrity_row.key_version,
+                &integrity_plain,
+            ) != integrity_row.secret_digest
+        {
+            return Err(CertError::KeyEncryption(format!(
+                "commercial root material digest mismatch for key_version '{ver}'"
+            )));
+        }
+        materials.push(RootProtectionMaterialBundle {
+            current_key_version: ver,
+            wrapping_key_id: master_row.wrapping_key_id,
+            master_key: BASE64.encode(&*master_plain),
+            integrity_key: BASE64.encode(&*integrity_plain),
+        });
+    }
+
+    if materials.is_empty() {
+        return Err(CertError::NotFound(
+            "commercial root protection material".to_string(),
+        ));
+    }
+
+    Ok(RootProtectionKeyring {
+        current_key_version: if issuance_allowed {
+            active_version
+        } else {
+            None
+        },
+        issuance_allowed,
+        materials,
+    })
 }
 
 /// # Errors

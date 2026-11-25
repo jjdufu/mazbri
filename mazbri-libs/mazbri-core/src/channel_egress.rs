@@ -6,8 +6,8 @@
 //! live in the gateway.
 
 use crate::crypto::supplier_secrets::{
-    SupplierSecretsError, decrypt_secret, encrypt_secret, is_encrypted_secret,
-    supplier_secrets_key,
+    KeyringRef, SupplierSecretsError, decrypt_secret_with_aad, encrypt_secret_with_aad,
+    is_encrypted_secret, supplier_secrets_key,
 };
 use mazbri_crypto::profile::UpstreamCryptoProfile;
 use mazbri_crypto::registry::AlgorithmRegistry;
@@ -830,19 +830,67 @@ impl UpstreamTlsSpec {
         Ok(())
     }
 
+    /// 写入存储前使用显式归属上下文 `(owner_kind, owner_id)` 加密 `client_key`。
+    ///
+    /// # Errors
+    ///
+    /// AEAD 加密失败时返回错误。
+    pub fn encrypt_for_storage_with_owner<'a>(
+        &mut self,
+        keyring: impl KeyringRef<'a>,
+        owner_kind: &str,
+        owner_id: &str,
+    ) -> Result<(), SupplierSecretsError> {
+        let kr = keyring.into_keyring();
+        if let Some(ref mut ck) = self.client_key {
+            let trimmed = ck.trim();
+            if !trimmed.is_empty() && !is_encrypted_secret(trimmed) {
+                *ck = encrypt_secret_with_aad(
+                    trimmed,
+                    &*kr,
+                    owner_kind,
+                    owner_id,
+                    "tls.client_key",
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    /// 数据面出站前使用显式归属上下文 `(owner_kind, owner_id)` 解密 `client_key`。
+    ///
+    /// # Errors
+    ///
+    /// 密文格式非法或解密失败时返回错误。
+    pub fn decrypt_for_runtime_with_owner<'a>(
+        &mut self,
+        keyring: impl KeyringRef<'a>,
+        owner_kind: &str,
+        owner_id: &str,
+    ) -> Result<(), SupplierSecretsError> {
+        let kr = keyring.into_keyring();
+        if let Some(ref mut ck) = self.client_key {
+            let trimmed = ck.trim();
+            if !trimmed.is_empty() {
+                *ck = decrypt_secret_with_aad(
+                    trimmed,
+                    &*kr,
+                    owner_kind,
+                    owner_id,
+                    "tls.client_key",
+                )?;
+            }
+        }
+        Ok(())
+    }
+
     /// 写入存储前加密 `client_key`（幂等，已加密密文保持不变）。
     ///
     /// # Errors
     ///
     /// AEAD 加密失败时返回错误。
-    pub fn encrypt_for_storage(&mut self, key: &[u8; 32]) -> Result<(), SupplierSecretsError> {
-        if let Some(ref mut ck) = self.client_key {
-            let trimmed = ck.trim();
-            if !trimmed.is_empty() && !is_encrypted_secret(trimmed) {
-                *ck = encrypt_secret(trimmed, key)?;
-            }
-        }
-        Ok(())
+    pub fn encrypt_for_storage<'a>(&mut self, keyring: impl KeyringRef<'a>) -> Result<(), SupplierSecretsError> {
+        self.encrypt_for_storage_with_owner(keyring, "tls", "global")
     }
 
     /// 数据面出站前解密 `client_key`。
@@ -850,14 +898,8 @@ impl UpstreamTlsSpec {
     /// # Errors
     ///
     /// 密文格式非法或解密失败时返回错误。
-    pub fn decrypt_for_runtime(&mut self, key: &[u8; 32]) -> Result<(), SupplierSecretsError> {
-        if let Some(ref mut ck) = self.client_key {
-            let trimmed = ck.trim();
-            if !trimmed.is_empty() {
-                *ck = decrypt_secret(trimmed, key)?;
-            }
-        }
-        Ok(())
+    pub fn decrypt_for_runtime<'a>(&mut self, keyring: impl KeyringRef<'a>) -> Result<(), SupplierSecretsError> {
+        self.decrypt_for_runtime_with_owner(keyring, "tls", "global")
     }
 
     /// 计算运行时连接池缓存指纹（SHA-256）。
@@ -1012,6 +1054,43 @@ impl ChannelEgressSpec {
             .as_deref()
             .filter(|s| !s.is_empty())
             .unwrap_or(WRAP_METHOD_BIZ_CONTENT)
+    }
+
+    /// 写入存储前绑定渠道 ID 加密 `tls.client_key`。
+    ///
+    /// # Errors
+    ///
+    /// 密钥环不可用或 AEAD 加密失败时返回错误。
+    pub fn encrypt_secrets_for_storage_with_owner<'a>(
+        mut self,
+        keyring: impl KeyringRef<'a>,
+        channel_id: &str,
+    ) -> Result<Self, ChannelEgressError> {
+        let kr = keyring.into_keyring();
+        self.tls = self.tls.take().and_then(UpstreamTlsSpec::normalized);
+        if let Some(ref mut tls) = self.tls {
+            tls.encrypt_for_storage_with_owner(&*kr, "channel", channel_id)
+                .map_err(|e| ChannelEgressError::new(e.to_string()))?;
+        }
+        Ok(self)
+    }
+
+    /// 数据面出站前绑定渠道 ID 解密 `tls.client_key`。
+    ///
+    /// # Errors
+    ///
+    /// 密钥环不可用或密文解密失败时返回错误。
+    pub fn decrypt_secrets_for_runtime_with_owner<'a>(
+        mut self,
+        keyring: impl KeyringRef<'a>,
+        channel_id: &str,
+    ) -> Result<Self, ChannelEgressError> {
+        let kr = keyring.into_keyring();
+        if let Some(ref mut tls) = self.tls {
+            tls.decrypt_for_runtime_with_owner(&*kr, "channel", channel_id)
+                .map_err(|e| ChannelEgressError::new(e.to_string()))?;
+        }
+        Ok(self)
     }
 
     /// 写入存储前加密 `tls.client_key`。
@@ -2216,6 +2295,7 @@ mod tests {
                 "client_key": "-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----"
             }
         });
+        let _kr = crate::crypto::supplier_secrets::install_deterministic_test_keyring();
         let spec = parse_and_validate_egress(&valid).unwrap();
         let encrypted = spec.encrypt_secrets_for_storage().unwrap();
         let stored_key = encrypted
@@ -2225,7 +2305,7 @@ mod tests {
             .client_key
             .as_deref()
             .unwrap();
-        assert!(stored_key.starts_with("enc:v2:"));
+        assert!(stored_key.starts_with("enc:v3:v1:aes-256-gcm:"));
 
         let chan_cfg = serde_json::json!({ "egress": &encrypted });
         let masked = mask_channel_config_secrets(chan_cfg.clone());

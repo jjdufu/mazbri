@@ -80,7 +80,7 @@ fn spawn_authorization_sync(state: &server::AppState) -> tokio::task::JoinHandle
     })
 }
 
-/// 提供 HTTP 服务直到收到 Ctrl+C，然后停止后台任务。
+/// 提供 HTTP 服务直到收到终止信号（`SIGINT` / `SIGTERM`），然后停止后台任务。
 async fn serve_until_shutdown(
     listener: tokio::net::TcpListener,
     app: axum::Router,
@@ -92,11 +92,7 @@ async fn serve_until_shutdown(
         app.into_make_service_with_connect_info::<SocketAddr>(),
     )
     .with_graceful_shutdown(async move {
-        if let Err(e) = tokio::signal::ctrl_c().await {
-            tracing::error!("Failed to install Ctrl+C handler: {}", e);
-        } else {
-            info!("收到关闭信号");
-        }
+        mazbri_service::wait_for_termination_signal().await;
         cleanup_handle.abort();
         sync_handle.abort();
         info!("已发送关闭信号给清理任务");

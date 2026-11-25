@@ -291,14 +291,16 @@ async fn run_route_hot_reload_loop(
         );
     }
 
+    let mut listen_active = cfg.listen_notify;
     let mut ticker = tokio::time::interval(Duration::from_secs(interval_secs));
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
     loop {
         tokio::select! {
             _ = ticker.tick() => {}
-            maybe = notify_rx.recv(), if cfg.listen_notify => {
+            maybe = notify_rx.recv(), if listen_active => {
                 if maybe.is_none() {
+                    listen_active = false;
                     tracing::warn!("Route NOTIFY channel closed; continuing with poll only");
                 }
             }
@@ -423,6 +425,7 @@ async fn run_listen_notify_loop(
                 }
                 tracing::info!(channel = %channel, "Listening for route change notifications");
                 backoff_secs = 1;
+                let _ = notify_tx.try_send(());
                 loop {
                     match listener.recv().await {
                         Ok(_notification) => {

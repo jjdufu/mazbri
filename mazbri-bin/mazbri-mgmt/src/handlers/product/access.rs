@@ -47,6 +47,7 @@ pub async fn grant_tenant_access(
         config: req.config,
     };
     service::grant_tenant_access(service::GrantTenantAccessArgs {
+        db: &state.db,
         product_service: &state.product_service,
         product_id: &product_id,
         req: product_req,
@@ -82,6 +83,7 @@ pub async fn revoke_tenant_access(
     };
     let client_ip = extract_client_ip(&headers, Some(addr));
     service::revoke_tenant_access(service::RevokeTenantAccessArgs {
+        db: &state.db,
         product_service: &state.product_service,
         product_id: &product_id,
         tenant_id,
@@ -116,6 +118,7 @@ pub async fn update_tenant_product_config(
     };
     let client_ip = extract_client_ip(&headers, Some(addr));
     service::update_tenant_product_config(service::UpdateTenantProductConfigArgs {
+        db: &state.db,
         product_service: &state.product_service,
         audit: &state.audit,
         tenant_id,

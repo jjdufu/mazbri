@@ -8,11 +8,44 @@ use serde::Deserialize as _;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Row};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 pub type GatewayCandidateChannel = CandidateChannel<PreparedChannel>;
-pub type GatewayRouteEngine = RouteEngine<PreparedChannel>;
+
+#[derive(Clone, Default)]
+pub struct GatewayRouteEngine {
+    inner: RouteEngine<PreparedChannel>,
+    tenant_overrides: HashMap<String, HashSet<String>>,
+}
+
+impl GatewayRouteEngine {
+    #[must_use]
+    pub fn from_scoped_routes(
+        routes: HashMap<RouteKey, Vec<GatewayCandidateChannel>>,
+        tenant_overrides: HashMap<String, HashSet<String>>,
+    ) -> Self {
+        Self {
+            inner: RouteEngine::with_scoped_routes(routes),
+            tenant_overrides,
+        }
+    }
+
+    #[must_use]
+    pub fn has_tenant_override(&self, tenant_id: &str, product_id: &str) -> bool {
+        self.tenant_overrides
+            .get(tenant_id)
+            .is_some_and(|products| products.contains(product_id))
+    }
+}
+
+impl std::ops::Deref for GatewayRouteEngine {
+    type Target = RouteEngine<PreparedChannel>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
 
 /// 路由加载期预解析与预计算的通道执行配置（请求热路径零反序列化、零 SHA-256）。
 #[derive(Debug, Clone)]
@@ -268,7 +301,11 @@ pub async fn load_route_engine(pool: &PgPool) -> anyhow::Result<GatewayRouteEngi
         .iter()
         .map(map_route_source_row)
         .collect::<Result<Vec<_>, sqlx::Error>>()?;
-    Ok(RouteEngine::with_scoped_routes(build_route_map(rows)))
+    let (routes, tenant_overrides) = build_route_map(rows);
+    Ok(GatewayRouteEngine::from_scoped_routes(
+        routes,
+        tenant_overrides,
+    ))
 }
 
 fn map_route_source_row(row: &sqlx::postgres::PgRow) -> Result<RouteSourceRow, sqlx::Error> {
@@ -294,11 +331,23 @@ fn map_route_source_row(row: &sqlx::postgres::PgRow) -> Result<RouteSourceRow, s
     })
 }
 
-fn build_route_map(rows: Vec<RouteSourceRow>) -> HashMap<RouteKey, Vec<GatewayCandidateChannel>> {
+fn build_route_map(
+    rows: Vec<RouteSourceRow>,
+) -> (
+    HashMap<RouteKey, Vec<GatewayCandidateChannel>>,
+    HashMap<String, HashSet<String>>,
+) {
     let mut routes: HashMap<RouteKey, Vec<GatewayCandidateChannel>> = HashMap::new();
+    let mut tenant_overrides: HashMap<String, HashSet<String>> = HashMap::new();
     for row in rows {
         let key = match row.tenant_route_key {
-            Some(tenant_route_key) => RouteKey::tenant_product(tenant_route_key, row.product_id),
+            Some(tenant_route_key) => {
+                tenant_overrides
+                    .entry(tenant_route_key.clone())
+                    .or_default()
+                    .insert(row.product_id.clone());
+                RouteKey::tenant_product(tenant_route_key, row.product_id)
+            }
             None => RouteKey::product_default(row.product_id),
         };
         let rate_limit = ChannelRateLimitOverrides::from_channel_config(&row.channel_config);
@@ -329,7 +378,7 @@ fn build_route_map(rows: Vec<RouteSourceRow>) -> HashMap<RouteKey, Vec<GatewayCa
             prepared,
         });
     }
-    routes
+    (routes, tenant_overrides)
 }
 
 fn parse_switch_condition(value: Value) -> SwitchCondition {

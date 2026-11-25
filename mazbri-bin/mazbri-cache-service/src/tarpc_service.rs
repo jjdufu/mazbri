@@ -1,4 +1,5 @@
 use mazbri_cache::{Cache, RedisCache, TtlManager};
+use mazbri_core::config_watch::{CACHE_L1_VERSION_KEY, bump_config_version_and_notify};
 use mazbri_core::num::SaturatingFrom;
 use mazbri_rpc::RpcError;
 use mazbri_rpc::cache::{
@@ -7,6 +8,7 @@ use mazbri_rpc::cache::{
     GetStatsRequest, GetStatsResponse, HealthResponse, SetMultiRequest, SetMultiResponse,
     SetRequest, SetResponse,
 };
+use sqlx::PgPool;
 use sqlx::types::chrono::Utc;
 use std::sync::Arc;
 use std::time::Duration;
@@ -15,10 +17,19 @@ use tarpc::context::Context;
 pub struct CacheTarpcService {
     cache: Arc<RedisCache>,
     ttl_manager: Arc<TtlManager>,
+    platform_db: Option<Arc<PgPool>>,
 }
 impl CacheTarpcService {
-    pub fn new(cache: Arc<RedisCache>, ttl_manager: Arc<TtlManager>) -> Self {
-        Self { cache, ttl_manager }
+    pub fn new(
+        cache: Arc<RedisCache>,
+        ttl_manager: Arc<TtlManager>,
+        platform_db: Option<Arc<PgPool>>,
+    ) -> Self {
+        Self {
+            cache,
+            ttl_manager,
+            platform_db,
+        }
     }
 }
 impl CacheService for CacheTarpcService {
@@ -109,11 +120,22 @@ impl CacheService for CacheTarpcService {
     }
     async fn clear(self, _context: Context, req: ClearRequest) -> ClearResponse {
         match self.cache.clear_tenant_with_count(&req.tenant_id).await {
-            Ok(entries_cleared) => ClearResponse {
-                success: true,
-                entries_cleared: i32::saturating_from(entries_cleared),
-                error: None,
-            },
+            Ok(entries_cleared) => {
+                if let Some(ref platform_db) = self.platform_db
+                    && let Err(err) =
+                        bump_config_version_and_notify(platform_db, CACHE_L1_VERSION_KEY).await
+                {
+                    tracing::warn!(
+                        error = %err,
+                        "Failed to bump cache_l1_version after cache clear"
+                    );
+                }
+                ClearResponse {
+                    success: true,
+                    entries_cleared: i32::saturating_from(entries_cleared),
+                    error: None,
+                }
+            }
             Err(e) => {
                 let rpc_err = RpcError::from(&e);
                 ClearResponse {

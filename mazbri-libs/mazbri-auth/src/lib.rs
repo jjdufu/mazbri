@@ -4,15 +4,13 @@ mod extractor;
 mod ip_whitelist;
 mod jwt_manager;
 mod metrics;
-mod middleware;
 mod permission_cache;
 pub use api_key::{ApiKeyAuth, ApiKeyValidator};
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 pub use error::{AuthError, AuthResult};
 pub use extractor::{CredentialType, TenantContext, TenantId};
-pub use ip_whitelist::IpWhitelist;
+pub use ip_whitelist::{IpWhitelist, WhitelistResult};
 pub use jwt_manager::{JwtKeyError, JwtKeyManager, JwtKeyMaterial};
-pub use middleware::auth_middleware;
 pub use permission_cache::{PermissionCache, PermissionEntry};
 /// # Errors
 ///

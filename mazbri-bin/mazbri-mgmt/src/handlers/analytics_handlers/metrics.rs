@@ -13,8 +13,11 @@ pub async fn get_metrics_overview(
 ) -> axum::response::Response {
     analytics::get_metrics_overview(&state.analytics_client, &claims.role, &params).await
 }
-pub async fn get_metrics_catalog(State(state): State<AppState>) -> axum::response::Response {
-    analytics::get_metrics_catalog(&state.analytics_client).await
+pub async fn get_metrics_catalog(
+    State(state): State<AppState>,
+    Extension(claims): Extension<AdminClaims>,
+) -> axum::response::Response {
+    analytics::get_metrics_catalog(&state.analytics_client, &claims).await
 }
 pub async fn get_services_health(State(state): State<AppState>) -> axum::response::Response {
     analytics::get_services_health(&state.analytics_client).await
@@ -32,11 +35,12 @@ pub async fn get_metrics_topology(
 }
 pub async fn get_metric_timeseries(
     State(state): State<AppState>,
+    Extension(claims): Extension<AdminClaims>,
     Query(params): Query<MetricsTimeseriesParams>,
 ) -> axum::response::Response {
-    analytics::get_metric_timeseries(&state.analytics_client, &params).await
+    analytics::get_metric_timeseries(&state.analytics_client, &claims, &params).await
 }
-/// `POST /stats/olap/query`：OLAP 模板查询转发；金额类模板仅 `R_ADMIN`、`R_FINANCE`。
+/// `POST /stats/olap/query`：OLAP 模板查询转发；按 24 模板穷举矩阵校验角色并投影敏感字段。
 pub async fn post_olap_query(
     State(state): State<AppState>,
     Extension(claims): Extension<AdminClaims>,
@@ -46,15 +50,31 @@ pub async fn post_olap_query(
 }
 pub async fn get_customer_call_logs(
     State(state): State<AppState>,
+    Extension(claims): Extension<AdminClaims>,
     Query(params): Query<CallMonitorParams>,
 ) -> axum::response::Response {
-    analytics::get_call_monitor_logs(&state.db, &state.analytics_client, "customer", &params).await
+    analytics::get_call_monitor_logs(
+        &state.db,
+        &state.analytics_client,
+        "customer",
+        &claims,
+        &params,
+    )
+    .await
 }
 pub async fn get_upstream_call_logs(
     State(state): State<AppState>,
+    Extension(claims): Extension<AdminClaims>,
     Query(params): Query<CallMonitorParams>,
 ) -> axum::response::Response {
-    analytics::get_call_monitor_logs(&state.db, &state.analytics_client, "upstream", &params).await
+    analytics::get_call_monitor_logs(
+        &state.db,
+        &state.analytics_client,
+        "upstream",
+        &claims,
+        &params,
+    )
+    .await
 }
 pub async fn get_customer_call_histogram(
     State(state): State<AppState>,
@@ -71,7 +91,8 @@ pub async fn get_upstream_call_histogram(
 /// `GET /stats/calls/stages`：按 `request_id` 或 `trace_id` 查阶段耗时。
 pub async fn get_call_stages(
     State(state): State<AppState>,
+    Extension(claims): Extension<AdminClaims>,
     Query(params): Query<CallStageParams>,
 ) -> axum::response::Response {
-    analytics::get_call_stages(&state.analytics_client, &params).await
+    analytics::get_call_stages(&state.analytics_client, &claims, &params).await
 }

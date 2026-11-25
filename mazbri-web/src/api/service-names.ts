@@ -10,6 +10,10 @@ export interface CanonicalServiceNames {
 
 let cache: Promise<CanonicalServiceNames> | undefined;
 
+export function resetCanonicalServiceNamesCache(): void {
+  cache = undefined;
+}
+
 /** 规范服务名 + global，来源 mgmt（mazbri-core 单一真源），会话内缓存 */
 export function fetchCanonicalServiceNames(): Promise<CanonicalServiceNames> {
   cache ??= request

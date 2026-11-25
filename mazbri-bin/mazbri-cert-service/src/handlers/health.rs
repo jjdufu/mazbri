@@ -40,30 +40,3 @@ pub async fn readiness(State(state): State<HealthState>) -> Response {
             .into_response(),
     }
 }
-pub async fn metrics(State(state): State<HealthState>) -> Response {
-    let active_count = state.repo.count_active_certificates().await.unwrap_or(0);
-    let expiring_count = state
-        .repo
-        .count_expiring_certificates(30)
-        .await
-        .unwrap_or(0);
-    let metrics = format!(
-        r"# HELP certdaemon_certificates_active Number of active (non-revoked, non-expired) certificates
-# TYPE certdaemon_certificates_active gauge
-certdaemon_certificates_active {active_count}
-
-# HELP certdaemon_certificates_expiring Number of certificates expiring within 30 days
-# TYPE certdaemon_certificates_expiring gauge
-certdaemon_certificates_expiring {expiring_count}
-"
-    );
-    (
-        StatusCode::OK,
-        [(
-            axum::http::header::CONTENT_TYPE,
-            "text/plain; charset=utf-8",
-        )],
-        metrics,
-    )
-        .into_response()
-}

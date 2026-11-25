@@ -87,8 +87,8 @@ pub async fn import_license_proxy(
     }
     let config = get_cert_proxy_config(&state);
     let url = format!(
-        "{}{}",
-        config.cert_service_url, "/authorizations/license/import"
+        "{}/authorizations/license/import",
+        config.cert_service_url.trim_end_matches('/')
     );
     let mut req = state.cert_http_client.post(url);
     if let Some(ip) = extract_client_ip(&headers, Some(addr)) {
@@ -117,6 +117,18 @@ pub async fn import_license_proxy(
                 .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
             if status.is_success() {
                 crate::services::root_package::invalidate_root_material_cache().await;
+                if let Err(err) = crate::services::root_package::refresh_root_material_keyring(
+                    &state.cert_http_client,
+                    &config.cert_service_url,
+                    &config.cert_service_token,
+                )
+                .await
+                {
+                    tracing::warn!(
+                        error = %err,
+                        "Failed to refresh root material keyring after license import"
+                    );
+                }
             }
             let body = response.text().await.unwrap_or_default();
             Ok((status, [(header::CONTENT_TYPE, "application/json")], body).into_response())

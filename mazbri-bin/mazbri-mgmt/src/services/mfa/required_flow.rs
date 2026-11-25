@@ -1,7 +1,7 @@
 use super::common::{
     MfaServiceErrorMode, authenticate_stage_token, consume_stage_token, get_mfa_service, ok_json,
-    prepare_setup_artifacts, resign_bound_session, verify_totp_for_enable, write_required_enable,
-    write_required_setup,
+    prepare_setup_artifacts_async, resign_bound_session, verify_totp_for_enable,
+    write_required_enable, write_required_setup,
 };
 use crate::audit::{AuditAction, AuditService, user_audit};
 use crate::handlers::types::AdminUser;
@@ -65,7 +65,7 @@ pub async fn required_setup(params: RequiredSetupParams<'_>) -> axum::response::
             Ok(service) => service,
             Err(response) => return *response,
         };
-    let artifacts = match prepare_setup_artifacts(&mfa_service, &claims.sub) {
+    let artifacts = match prepare_setup_artifacts_async(&mfa_service, &claims.sub).await {
         Ok(artifacts) => artifacts,
         Err(response) => return *response,
     };
@@ -74,7 +74,8 @@ pub async fn required_setup(params: RequiredSetupParams<'_>) -> axum::response::
         TokenKind::MfaSetup,
         &claims.sub,
         user_id,
-        &claims.role,
+        &state.role,
+        state.auth_epoch,
         &stage_binding,
         params.jwt_secret,
     ) else {
@@ -210,17 +211,60 @@ pub async fn required_enable(params: RequiredEnableParams<'_>) -> axum::response
     let issued_at = chrono::Utc::now().timestamp();
     let changed_at =
         chrono::DateTime::from_timestamp(issued_at, 0).unwrap_or_else(chrono::Utc::now);
-    if let Err(response) =
-        write_required_enable(params.redis, pool, consumed, user_id, step_at, changed_at).await
+    let new_epoch =
+        match write_required_enable(params.redis, pool, consumed, user_id, step_at, changed_at)
+            .await
+        {
+            Ok(epoch) => epoch,
+            Err(response) => return *response,
+        };
+    crate::middleware::auth::invalidate_admin_subject_state(params.redis, user_id).await;
+    let session_state = match crate::repositories::admin::get_admin_session_state(pool, user_id)
+        .await
     {
-        return *response;
+        Ok(Some(row)) => row,
+        Ok(None) => {
+            crate::audit::set_failure_reason("session_stale");
+            crate::audit::mark_security_event();
+            return ApiResponse::err(
+                StatusCode::UNAUTHORIZED,
+                mazbri_i18n::mfa::invalid_temp_token(),
+            );
+        }
+        Err(error) => {
+            error!("Database error rechecking account after required MFA enable: {error}");
+            return ApiResponse::err(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                mazbri_i18n::mfa::database_error(),
+            );
+        }
+    };
+    let now_dt = chrono::Utc::now();
+    let locked = session_state.role != crate::middleware::auth::ROLE_SUPER_ADMIN
+        && session_state
+            .locked_until
+            .is_some_and(|until| until > now_dt);
+    if !session_state.is_active
+        || locked
+        || session_state.force_password_reset
+        || session_state.auth_epoch != new_epoch
+    {
+        crate::audit::set_failure_reason("session_stale");
+        crate::audit::mark_security_event();
+        return ApiResponse::err(
+            StatusCode::UNAUTHORIZED,
+            mazbri_i18n::mfa::invalid_temp_token(),
+        );
     }
+    let _ = state.role;
     finish_required_enable(FinishRequiredEnable {
         params: &params,
         pool,
         claims: &claims,
         user_id,
-        role: state.role,
+        username: session_state.username,
+        role: session_state.role,
+        auth_epoch: session_state.auth_epoch,
         created_at: state.created_at,
         issued_at,
     })
@@ -232,23 +276,33 @@ struct FinishRequiredEnable<'a> {
     pool: &'a PgPool,
     claims: &'a crate::middleware::auth::AdminClaims,
     user_id: uuid::Uuid,
+    username: String,
     role: String,
+    auth_epoch: i64,
     created_at: chrono::DateTime<chrono::Utc>,
     issued_at: i64,
 }
 
 async fn finish_required_enable(args: FinishRequiredEnable<'_>) -> axum::response::Response {
-    let refresh_ttl = i64::try_from(args.params.refresh_token_expiration_secs)
+    let session_timeout_secs = crate::services::admin::resolve_session_timeout_secs(
+        args.pool,
+        args.params.refresh_token_expiration_secs,
+    )
+    .await;
+    let refresh_ttl = i64::try_from(session_timeout_secs)
         .unwrap_or(i64::MAX)
         .max(1);
     let sxp = args.issued_at.saturating_add(refresh_ttl);
     let session_claims = crate::middleware::auth::AdminClaims {
+        sub: args.username.clone(),
         role: args.role.clone(),
+        auth_epoch: args.auth_epoch,
         ..args.claims.clone()
     };
     let resigned = match resign_bound_session(
         args.pool,
         &session_claims,
+        args.auth_epoch,
         args.params.jwt_secret,
         args.params.jwt_expiration_secs,
         sxp,
@@ -270,14 +324,14 @@ async fn finish_required_enable(args: FinishRequiredEnable<'_>) -> axum::respons
         AuditAction::MfaRequiredEnable,
         Some(serde_json::json!({
             "action": "mfa_required_enabled",
-            "username": args.claims.sub,
+            "username": args.username,
         })),
         args.params.client_ip.clone(),
     ));
-    info!("MFA required enabled for user: {}", args.claims.sub);
+    info!("MFA required enabled for user: {}", args.username);
     let user = AdminUser {
         id: args.claims.user_id.clone(),
-        username: args.claims.sub.clone(),
+        username: args.username,
         role: args.role,
         created_at: args.created_at.to_rfc3339(),
     };

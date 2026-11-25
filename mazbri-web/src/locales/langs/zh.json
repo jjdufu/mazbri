@@ -94,7 +94,7 @@
       "logout": "退出登录"
     },
     "guide": {
-      "title": "点击这里查看",
+      "title": "界面设置",
       "theme": "主题风格",
       "menu": "开启顶栏菜单",
       "description": "等更多配置"
@@ -2624,7 +2624,8 @@
       "codeRequired": "请输入供应商编码",
       "nameRequired": "请输入供应商名称",
       "accessAddressRequired": "请输入接入地址",
-      "contractIdRequired": "微服务模式必须填写 contract_id"
+      "contractIdRequired": "微服务模式必须填写 contract_id",
+      "credentialRequiredOnOriginChange": "地址已变更，须重新录入凭据"
     },
     "messages": {
       "deleteConfirm": "确认删除供应商 {name}？"
@@ -4131,6 +4132,11 @@
     "cryptoSlotRole": "字段用途",
     "cryptoSlotName": "字段名",
     "cryptoResponseCrypt": "响应侧解密（可选）",
+    "cryptoDirection": "响应处理方向",
+    "cryptoVerifyResponse": "响应验签",
+    "cryptoDecryptResponse": "响应解密",
+    "cryptoReuseRequestCipher": "默认复用请求加密算法",
+    "originChangedCredRequired": "目标地址已变更，须重新录入凭据",
     "cryptoAllowInsecure": "允许兼容旧版算法",
     "cryptoAllowInsecureHint": "仅在对接旧系统时开启；将允许 ECB / HMAC-MD5 等传统算法。",
     "cryptoAllowInsecureAdminOnly": "仅超级管理员可开启旧版算法兼容开关。",

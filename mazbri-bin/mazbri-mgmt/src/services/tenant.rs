@@ -4,6 +4,33 @@ use crate::handlers::types::{CreateTenantRequest, ListParams, SetTenantEnabledRe
 use crate::repositories::tenant as repo;
 use sqlx::PgPool;
 use tracing::info;
+pub const MIN_TENANT_TOKEN_EXPIRATION_SECS: i32 = 60;
+pub const MAX_TENANT_TOKEN_EXPIRATION_SECS: i32 = 86_400;
+pub const DEFAULT_TENANT_TOKEN_EXPIRATION_SECS: i32 = 1_800;
+
+fn validate_token_expiration_secs(secs: i32) -> Result<i32, ApiError> {
+    if !(MIN_TENANT_TOKEN_EXPIRATION_SECS..=MAX_TENANT_TOKEN_EXPIRATION_SECS).contains(&secs) {
+        return Err(ApiError::validation(format!(
+            "token_expiration_secs must be between {MIN_TENANT_TOKEN_EXPIRATION_SECS} and {MAX_TENANT_TOKEN_EXPIRATION_SECS} seconds"
+        )));
+    }
+    Ok(secs)
+}
+
+async fn notify_tenant_auth_invalidation(pool: &PgPool) {
+    if let Err(error) = mazbri_core::config_watch::bump_config_version_and_notify(
+        pool,
+        mazbri_core::config_watch::AUTH_API_KEY_VERSION_KEY,
+    )
+    .await
+    {
+        tracing::warn!(
+            error = %error,
+            "Failed to bump auth_api_key_version after tenant mutation"
+        );
+    }
+}
+
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct UpdateTenantRequest {
@@ -38,16 +65,7 @@ impl UpdateTenantRequest {
             ));
         }
         if let Some(secs) = self.token_expiration_secs {
-            if secs < 60 {
-                return Err(ApiError::validation(
-                    "token_expiration_secs must be at least 60 seconds".to_string(),
-                ));
-            }
-            if secs > 31_536_000 {
-                return Err(ApiError::validation(
-                    "token_expiration_secs must not exceed 31536000 seconds (1 year)".to_string(),
-                ));
-            }
+            validate_token_expiration_secs(secs)?;
         }
         Ok(())
     }
@@ -67,7 +85,7 @@ pub async fn list_tenants(
         .as_ref()
         .map(|s| s.trim())
         .filter(|s| !s.is_empty())
-        .map(|s| format!("%{s}%"));
+        .map(mazbri_core::config::contains_ilike_pattern);
     let search_ref = search_pattern.as_deref();
     let filters = crate::list_query::parse_and_validate_filters(
         params.filters.as_deref(),
@@ -142,6 +160,10 @@ pub async fn create_tenant(
             payload.tenant_id
         )));
     }
+    let token_expiration_secs = match payload.token_expiration_secs {
+        Some(secs) => Some(validate_token_expiration_secs(secs)?),
+        None => Some(DEFAULT_TENANT_TOKEN_EXPIRATION_SECS),
+    };
     let row = repo::insert_tenant(
         pool,
         repo::InsertTenantParams {
@@ -151,7 +173,7 @@ pub async fn create_tenant(
             contact_person: payload.contact_person.as_deref(),
             contact_phone: payload.contact_phone.as_deref(),
             contact_email: payload.contact_email.as_deref(),
-            token_expiration_secs: payload.token_expiration_secs,
+            token_expiration_secs,
         },
     )
     .await
@@ -238,6 +260,7 @@ pub async fn update_tenant(
     .await
     .map_err(|e| ApiError::internal(format!("Failed to update tenant: {e}")))?
     .ok_or_else(|| ApiError::not_found("tenant".to_string(), tenant_id.to_string()))?;
+    notify_tenant_auth_invalidation(pool).await;
     audit.log(tenant_audit(
         user_id,
         AuditAction::TenantUpdate,
@@ -250,21 +273,41 @@ pub async fn update_tenant(
     ));
     tenant_json(&row)
 }
-/// Hard-delete tenant (`R_ADMIN` only at handler). Cleans platform row (CASCADE children)
-/// and auth credentials for the same tenant UUID.
+
+pub struct DeleteTenantParams<'a> {
+    pub pool: &'a PgPool,
+    pub auth_db: &'a PgPool,
+    pub ratelimit_db: &'a PgPool,
+    pub cache_db: &'a PgPool,
+    pub audit: &'a AuditService,
+    pub id_or_code: &'a str,
+    pub user_id: uuid::Uuid,
+    pub username: &'a str,
+    pub client_ip: Option<String>,
+}
+
+/// Hard-delete tenant (`R_ADMIN` only at handler).
+///
+/// Order of operations (cross-DB consistency):
+/// 1. Soft-disable (`enabled = false`) in platform DB + bump `AUTH_API_KEY_VERSION_KEY` to cut traffic immediately.
+/// 2. Idempotently clean `auth_db`, `ratelimit_db`, and `cache_db` rows for this `tenant_id`.
+/// 3. Delete the platform `tenants` row (CASCADE child tables).
 ///
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub async fn delete_tenant(
-    pool: &PgPool,
-    auth_db: &PgPool,
-    audit: &AuditService,
-    id_or_code: &str,
-    user_id: uuid::Uuid,
-    username: &str,
-    client_ip: Option<String>,
-) -> Result<serde_json::Value, ApiError> {
+pub async fn delete_tenant(params: DeleteTenantParams<'_>) -> Result<serde_json::Value, ApiError> {
+    let DeleteTenantParams {
+        pool,
+        auth_db,
+        ratelimit_db,
+        cache_db,
+        audit,
+        id_or_code,
+        user_id,
+        username,
+        client_ip,
+    } = params;
     info!("Hard-deleting tenant: {} (by {})", id_or_code, username);
     let tenant_id = resolve_tenant_id(pool, id_or_code).await?;
     let row = repo::get_identity_row(pool, tenant_id)
@@ -272,13 +315,45 @@ pub async fn delete_tenant(
         .map_err(|e| ApiError::internal(format!("Failed to load tenant: {e}")))?
         .ok_or_else(|| ApiError::not_found("tenant".to_string(), tenant_id.to_string()))?;
 
-    // Auth DB: credentials (api_keys CASCADE on credential_id)
+    // Step 1: Soft-disable tenant + notify gateway/auth immediately so in-flight requests fail closed.
+    let _ = repo::set_enabled(pool, tenant_id, false)
+        .await
+        .map_err(|e| ApiError::internal(format!("Failed to soft-disable tenant before delete: {e}")))?;
+    notify_tenant_auth_invalidation(pool).await;
+
+    // Step 2a: Auth DB credentials (api_keys CASCADE on credential_id).
     sqlx::query("DELETE FROM auth_credentials WHERE tenant_id = $1")
         .bind(tenant_id)
         .execute(auth_db)
         .await
         .map_err(|e| ApiError::internal(format!("Failed to delete auth credentials: {e}")))?;
 
+    // Step 2b: Ratelimit DB commands & policies (idempotent).
+    sqlx::query("DELETE FROM rate_limit_control_commands WHERE tenant_id = $1")
+        .bind(tenant_id)
+        .execute(ratelimit_db)
+        .await
+        .map_err(|e| {
+            ApiError::internal(format!(
+                "Failed to delete tenant rate-limit control commands: {e}"
+            ))
+        })?;
+    sqlx::query("DELETE FROM rate_limit_tenant_policies WHERE tenant_id = $1")
+        .bind(tenant_id)
+        .execute(ratelimit_db)
+        .await
+        .map_err(|e| {
+            ApiError::internal(format!("Failed to delete tenant rate-limit policies: {e}"))
+        })?;
+
+    // Step 2c: Cache DB tenant cache configs (idempotent).
+    sqlx::query("DELETE FROM cache_configs WHERE tenant_id = $1")
+        .bind(tenant_id)
+        .execute(cache_db)
+        .await
+        .map_err(|e| ApiError::internal(format!("Failed to delete tenant cache configs: {e}")))?;
+
+    // Step 3: Physical delete on platform DB.
     let affected = repo::delete_by_id(pool, tenant_id)
         .await
         .map_err(|e| ApiError::internal(format!("Failed to delete tenant: {e}")))?;
@@ -288,6 +363,7 @@ pub async fn delete_tenant(
             tenant_id.to_string(),
         ));
     }
+    notify_tenant_auth_invalidation(pool).await;
 
     info!(
         "Deleted tenant: [{}] {} ({})",
@@ -335,6 +411,7 @@ pub async fn set_tenant_enabled(
         .await
         .map_err(|e| ApiError::internal(format!("Failed to update tenant enabled: {e}")))?
         .ok_or_else(|| ApiError::not_found("tenant".to_string(), tenant_id.to_string()))?;
+    notify_tenant_auth_invalidation(pool).await;
     info!(
         "Tenant [{}] {} enabled={}",
         row.tenant_code, row.name, row.enabled

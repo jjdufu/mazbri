@@ -31,11 +31,11 @@ fn push_supplier_scope(
         let pat = p.to_string();
         builder.push(" AND (name ILIKE ");
         builder.push_bind(pat.clone());
-        builder.push(" OR supplier_code ILIKE ");
+        builder.push(" ESCAPE '\\' OR supplier_code ILIKE ");
         builder.push_bind(pat.clone());
-        builder.push(" OR upstream_url ILIKE ");
+        builder.push(" ESCAPE '\\' OR upstream_url ILIKE ");
         builder.push_bind(pat);
-        builder.push(")");
+        builder.push(" ESCAPE '\\')");
     }
     crate::list_query::apply_pg_filters(builder, filters)
 }

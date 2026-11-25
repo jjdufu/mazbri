@@ -302,6 +302,7 @@ impl super::super::ConfigRepository {
         if let Some(ref service_name) = query.service_name {
             builder.push(" AND ce.service_name ILIKE ");
             builder.push_bind(contains_pattern(service_name));
+            builder.push(" ESCAPE '\\'");
         }
         if let Some(ref service_name_eq) = query.service_name_eq {
             builder.push(" AND ce.service_name = ");
@@ -310,6 +311,7 @@ impl super::super::ConfigRepository {
         if let Some(ref updated_by) = query.updated_by {
             builder.push(" AND ce.updated_by ILIKE ");
             builder.push_bind(contains_pattern(updated_by));
+            builder.push(" ESCAPE '\\'");
         }
         if let Some(ref gte) = query.updated_at_gte {
             builder.push(" AND ce.updated_at >= ");
@@ -325,9 +327,9 @@ impl super::super::ConfigRepository {
             let pat = contains_pattern(q);
             builder.push(" AND (ce.service_name ILIKE ");
             builder.push_bind(pat.clone());
-            builder.push(" OR ce.updated_by ILIKE ");
+            builder.push(" ESCAPE '\\' OR ce.updated_by ILIKE ");
             builder.push_bind(pat);
-            builder.push(")");
+            builder.push(" ESCAPE '\\')");
         }
         if let Some(ref category_name) = query.category {
             builder.push(" AND cc.name = ");
@@ -401,13 +403,9 @@ fn row_to_entry_with_meta(row: &sqlx::postgres::PgRow) -> ConfigEntryWithMeta {
     }
 }
 
-/// 未含通配符时包成 `%value%`（ILIKE 包含匹配）。
+/// 转义通配符并包成 `%value%`（ILIKE 包含匹配，检索词最长 128 字符）。
 fn contains_pattern(value: &str) -> String {
-    if value.contains('%') {
-        value.to_string()
-    } else {
-        format!("%{value}%")
-    }
+    mazbri_core::config::contains_ilike_pattern(value)
 }
 
 const MAX_CATEGORY_DEPTH: usize = 10;

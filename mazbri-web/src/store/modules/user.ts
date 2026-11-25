@@ -10,9 +10,13 @@ import { setPageTitle } from "@/utils/router";
 import { resetRouterState } from "@/router/guards/beforeEach";
 import { useMenuStore } from "./menu";
 import { StorageConfig } from "@/utils/storage/storage-config";
-import type { AdminUser, AdminRole } from "@/types/api";
+import type { AdminUser } from "@/types/api";
 import { logout as apiLogout } from "@/api/auth";
+import { resetCaCertificateCache } from "@/api/certificate";
+import { resetCanonicalServiceNamesCache } from "@/api/service-names";
+import { resetSystemSettingsCache } from "@/api/settings";
 import { useMfaStepUpStore } from "./mfa-step-up";
+import { usePersonalSecurityStore } from "./personal-security";
 export const useUserStore = defineStore(
   "userStore",
   () => {
@@ -110,10 +114,16 @@ export const useUserStore = defineStore(
       isLogin.value = false;
       isLock.value = false;
       lockPassword.value = "";
+      searchHistory.value = [];
       accessToken.value = "";
       refreshToken.value = "";
       tokenExpiresAt.value = 0;
       sessionStorage.removeItem("iframeRoutes");
+      useWorktabStore().clearAll();
+      usePersonalSecurityStore().closeDrawer();
+      resetCanonicalServiceNamesCache();
+      resetCaCertificateCache();
+      resetSystemSettingsCache();
       useMenuStore().setHomePath("");
     };
     const logOut = async (options?: { skipRemote?: boolean }) => {
@@ -194,7 +204,14 @@ export const useUserStore = defineStore(
       key: "user",
       storage: localStorage,
 
-      pick: ["isLogin", "language", "info", "tokenExpiresAt"],
+      pick: [
+        "isLogin",
+        "language",
+        "info",
+        "tokenExpiresAt",
+        "isLock",
+        "lockPassword",
+      ],
     },
   },
 );

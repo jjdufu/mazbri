@@ -37,7 +37,7 @@ pub struct CircuitBreakerCacheConfig {
     pub request_timeout_secs: u64,
 }
 fn default_max_cache_size() -> usize {
-    1000
+    10_000
 }
 fn default_failure_threshold() -> u32 {
     5

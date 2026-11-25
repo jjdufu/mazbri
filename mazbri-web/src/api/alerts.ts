@@ -33,8 +33,15 @@ export function deleteAlertRule(id: string) {
   return request.del<{ id: string }>({ url: `${BASE_PATH}/rules/${id}` });
 }
 
-export function fetchAlertEvents(params: AlertEventQuery) {
-  return request.get<AlertEventPage>({ url: `${BASE_PATH}/events`, params });
+export function fetchAlertEvents(
+  params: AlertEventQuery,
+  signal?: AbortSignal,
+) {
+  return request.get<AlertEventPage>({
+    url: `${BASE_PATH}/events`,
+    params,
+    signal,
+  });
 }
 
 export function fetchAlertSummary() {

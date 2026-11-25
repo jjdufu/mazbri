@@ -34,6 +34,7 @@ fn healthy_user() -> AdminSessionStateRow {
         password_changed_at: now() - Duration::days(10),
         mfa_enabled: false,
         mfa_changed_at: None,
+        auth_epoch: 0,
     }
 }
 

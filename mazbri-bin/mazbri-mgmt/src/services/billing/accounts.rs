@@ -2,6 +2,78 @@ use super::{
     AccountListResponse, BillingError, PgPool, decode_cursor, encode_cursor, error,
     normalize_account_status, repo, validate_limit,
 };
+use tracing::{debug, warn};
+
+/// Build the Redis key `{prefix}:billing:bal:{tenant_id}` holding a tenant's cached L2 balance.
+#[must_use]
+pub fn tenant_balance_cache_key(prefix: &str, tenant_id: uuid::Uuid) -> String {
+    let trimmed = prefix.trim_end_matches(':');
+    if trimmed.is_empty() {
+        format!("billing:bal:{tenant_id}")
+    } else {
+        format!("{trimmed}:billing:bal:{tenant_id}")
+    }
+}
+
+/// Build the Redis Pub/Sub channel `{prefix}:billing:bal_inv` for single-tenant L1 cache invalidation.
+#[must_use]
+pub fn tenant_balance_invalidation_channel(prefix: &str) -> String {
+    let trimmed = prefix.trim_end_matches(':');
+    if trimmed.is_empty() {
+        "billing:bal_inv".to_string()
+    } else {
+        format!("{trimmed}:billing:bal_inv")
+    }
+}
+
+/// Delete `{prefix}:billing:bal:{tenant_id}` in Redis and publish `tenant_id` on
+/// `{prefix}:billing:bal_inv` so gateway replicas evict only this tenant's L1 balance entry.
+///
+/// Intended to be invoked by `mazbri-mgmt` right after committed recharge, refund,
+/// account adjustment, or credit-limit updates.
+pub async fn invalidate_tenant_balance_cache(
+    redis: &mazbri_core::redis::RedisClient,
+    tenant_id: uuid::Uuid,
+) {
+    let prefix = redis.key_prefix();
+    let bal_key = tenant_balance_cache_key(prefix, tenant_id);
+    let channel = tenant_balance_invalidation_channel(prefix);
+    let payload = tenant_id.to_string();
+
+    if let Err(err) = redis.del(&bal_key).await {
+        warn!(
+            %tenant_id,
+            key = %bal_key,
+            error = %err,
+            "failed to delete tenant L2 balance cache key"
+        );
+    }
+    match redis
+        .eval_i64(
+            "return redis.call('PUBLISH', ARGV[1], ARGV[2])",
+            &[],
+            &[channel.clone(), payload],
+        )
+        .await
+    {
+        Ok(subscribers) => {
+            debug!(
+                %tenant_id,
+                %channel,
+                subscribers,
+                "published tenant balance cache invalidation"
+            );
+        }
+        Err(err) => {
+            warn!(
+                %tenant_id,
+                %channel,
+                error = %err,
+                "failed to publish tenant balance cache invalidation"
+            );
+        }
+    }
+}
 
 /// # Errors
 ///
@@ -43,4 +115,28 @@ pub async fn list_accounts(
         next_cursor,
         has_more,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{tenant_balance_cache_key, tenant_balance_invalidation_channel};
+    use uuid::Uuid;
+
+    #[test]
+    fn balance_cache_keys_and_channels_respect_prefix() {
+        let tid = Uuid::parse_str("fc391546-7925-4139-b06e-6cfe9f3c8a70").expect("uuid");
+        assert_eq!(
+            tenant_balance_cache_key("mazbri", tid),
+            "mazbri:billing:bal:fc391546-7925-4139-b06e-6cfe9f3c8a70"
+        );
+        assert_eq!(
+            tenant_balance_invalidation_channel("mazbri:"),
+            "mazbri:billing:bal_inv"
+        );
+        assert_eq!(
+            tenant_balance_cache_key("", tid),
+            "billing:bal:fc391546-7925-4139-b06e-6cfe9f3c8a70"
+        );
+        assert_eq!(tenant_balance_invalidation_channel(""), "billing:bal_inv");
+    }
 }

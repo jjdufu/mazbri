@@ -168,7 +168,24 @@ pub(super) async fn cert_service_request(
             )
         })
 }
+pub(super) fn reject_raw_enc_ciphertext(
+    content: &str,
+    request_id: &str,
+    trace_id: &str,
+) -> Result<(), ApiError> {
+    if content.trim_start().starts_with("enc:") {
+        return Err(validation_error(
+            "config_center_raw_ciphertext_rejected",
+            "配置内容禁止直接提交 enc: 密文",
+            request_id,
+            trace_id,
+        ));
+    }
+    Ok(())
+}
+
 fn ensure_toml(content: &str, request_id: &str, trace_id: &str) -> Result<(), ApiError> {
+    reject_raw_enc_ciphertext(content, request_id, trace_id)?;
     validate_toml(content).map_err(|_| {
         validation_error(
             "config_center_toml_validation_failed",

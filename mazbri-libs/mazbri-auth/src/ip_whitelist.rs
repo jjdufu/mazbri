@@ -38,16 +38,64 @@ impl IpWhitelist {
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
     pub async fn check(&self, tenant_id: Uuid, ip_addr: IpAddr) -> AuthResult<WhitelistResult> {
+        self.check_optional(tenant_id, Some(ip_addr)).await
+    }
+
+    /// Checks optional client IP against tenant's active IP whitelist.
+    /// If the tenant has no active whitelist entries, returns `NotConfigured`.
+    /// If the tenant has active whitelist entries and `ip_addr` is `None`, fails closed (`Denied`).
+    ///
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+    pub async fn check_optional(
+        &self,
+        tenant_id: Uuid,
+        ip_addr: Option<IpAddr>,
+    ) -> AuthResult<WhitelistResult> {
         let whitelist = self.load_whitelist(tenant_id).await?;
         if whitelist.is_empty() {
             return Ok(WhitelistResult::NotConfigured);
         }
-        for allowed_ip in &whitelist {
-            if Self::ip_matches(ip_addr, allowed_ip)? {
+        let Some(ip_addr) = ip_addr else {
+            return Ok(WhitelistResult::Denied("missing_client_ip".to_string()));
+        };
+        Self::evaluate_entries(ip_addr, &whitelist)
+    }
+
+    /// Evaluates a pre-loaded list of `"ip/cidr"` rules against `ip_addr` (Fail-Closed when `ip_addr` is `None`).
+    ///
+    /// # Errors
+    ///
+    /// CIDR 格式不合法时返回错误。
+    pub fn evaluate_optional(
+        ip_addr: Option<IpAddr>,
+        whitelist: &[String],
+    ) -> AuthResult<WhitelistResult> {
+        if whitelist.is_empty() {
+            return Ok(WhitelistResult::NotConfigured);
+        }
+        let Some(ip_addr) = ip_addr else {
+            return Ok(WhitelistResult::Denied("missing_client_ip".to_string()));
+        };
+        Self::evaluate_entries(ip_addr, whitelist)
+    }
+
+    fn evaluate_entries(ip_addr: IpAddr, whitelist: &[String]) -> AuthResult<WhitelistResult> {
+        let normalized_ip = Self::normalize_ip(ip_addr);
+        for allowed_ip in whitelist {
+            if Self::ip_matches(normalized_ip, allowed_ip)? {
                 return Ok(WhitelistResult::Allowed);
             }
         }
-        Ok(WhitelistResult::Denied(ip_addr.to_string()))
+        Ok(WhitelistResult::Denied(normalized_ip.to_string()))
+    }
+
+    fn normalize_ip(ip: IpAddr) -> IpAddr {
+        match ip {
+            IpAddr::V4(v4) => IpAddr::V4(v4),
+            IpAddr::V6(v6) => v6.to_ipv4_mapped().map_or(IpAddr::V6(v6), IpAddr::V4),
+        }
     }
     async fn load_whitelist(&self, tenant_id: Uuid) -> AuthResult<Vec<String>> {
         if let Some(cached) = self.cache.get(&tenant_id).await {
@@ -55,7 +103,7 @@ impl IpWhitelist {
         }
         let rows = sqlx::query(
             r"
-            SELECT ip_address, cidr
+            SELECT host(ip_address) AS ip_address, cidr
             FROM ip_whitelist
             WHERE tenant_id = $1 AND is_active = true
             ",
@@ -85,7 +133,7 @@ impl IpWhitelist {
         sqlx::query(
             r"
             INSERT INTO ip_whitelist (tenant_id, ip_address, cidr, description)
-            VALUES ($1, $2, $3, $4)
+            VALUES ($1, $2::inet, $3, $4)
             ON CONFLICT (tenant_id, ip_address, cidr) DO UPDATE
             SET description = COALESCE($4, ip_whitelist.description),
                 updated_at = NOW(),
@@ -109,7 +157,7 @@ impl IpWhitelist {
             r"
             UPDATE ip_whitelist
             SET is_active = false, updated_at = NOW()
-            WHERE tenant_id = $1 AND ip_address = $2 AND cidr = $3
+            WHERE tenant_id = $1 AND ip_address = $2::inet AND cidr = $3
             ",
         )
         .bind(tenant_id)
@@ -139,12 +187,13 @@ impl IpWhitelist {
                 "Invalid CIDR format: {cidr}"
             ))));
         }
-        let allowed_ip: IpAddr = parts[0].parse().map_err(|e| {
+        let allowed_ip = Self::normalize_ip(parts[0].parse().map_err(|e| {
             AuthError::Core(mazbri_core::CoreError::Internal(format!(
                 "Invalid IP address '{}': {}",
                 parts[0], e
             )))
-        })?;
+        })?);
+        let ip_addr = Self::normalize_ip(ip_addr);
         let prefix_len: u8 = parts[1].parse().map_err(|e| {
             AuthError::Core(mazbri_core::CoreError::Internal(format!(
                 "Invalid prefix length '{}': {}",
@@ -202,5 +251,29 @@ impl IpWhitelist {
             }
         }
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn evaluate_optional_fails_closed_when_whitelist_configured_and_ip_missing() {
+        let empty: Vec<String> = Vec::new();
+        assert_eq!(
+            IpWhitelist::evaluate_optional(None, &empty).expect("empty"),
+            WhitelistResult::NotConfigured
+        );
+        let rules = vec!["203.0.113.0/24".to_string()];
+        assert_eq!(
+            IpWhitelist::evaluate_optional(None, &rules).expect("missing ip"),
+            WhitelistResult::Denied("missing_client_ip".to_string())
+        );
+        let mapped: IpAddr = "::ffff:203.0.113.42".parse().expect("mapped v6");
+        assert_eq!(
+            IpWhitelist::evaluate_optional(Some(mapped), &rules).expect("mapped match"),
+            WhitelistResult::Allowed
+        );
     }
 }

@@ -29,9 +29,13 @@ pub async fn list_tenant_products(
 }
 pub async fn list_tenant_transactions(
     State(state): State<AppState>,
+    Extension(claims): Extension<AdminClaims>,
     Path(code): Path<String>,
     Query(query): Query<super::TransactionListQuery>,
 ) -> axum::response::Response {
+    if !is_business_admin(&claims) {
+        return ApiResponse::err(StatusCode::FORBIDDEN, "只有超级管理员或管理员可以查看交易流水");
+    }
     let tenant_id = match crate::services::tenant::resolve_tenant_id(&state.db, &code).await {
         Ok(uuid) => uuid,
         Err(e) => return ApiResponse::err(StatusCode::BAD_REQUEST, e.to_string()),

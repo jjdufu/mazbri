@@ -21,7 +21,10 @@ pub async fn list_slos(State(state): State<AppState>) -> axum::response::Respons
 }
 
 /// `GET /stats/ops/slos/status`
-pub async fn list_slo_status(State(state): State<AppState>) -> axum::response::Response {
+pub async fn list_slo_status(
+    State(state): State<AppState>,
+    axum::Extension(claims): axum::Extension<crate::middleware::auth::AdminClaims>,
+) -> axum::response::Response {
     let defs = match svc::list_definitions(&state.admin_db).await {
         Ok(v) => v,
         Err(e) => {
@@ -35,8 +38,11 @@ pub async fn list_slo_status(State(state): State<AppState>) -> axum::response::R
         Ok(v) => v,
         Err(e) => return e.into_response("SLO 状态查询"),
     };
+    let mut definitions = defs.get("items").cloned().unwrap_or(json!([]));
+    crate::middleware::role_projection::RoleDataProjection::for_claims(&claims)
+        .project_slo_definitions(&mut definitions);
     ApiResponse::ok(json!({
-        "definitions": defs.get("items").cloned().unwrap_or(json!([])),
+        "definitions": definitions,
         "status": status.get("items").cloned().unwrap_or(json!([])),
     }))
     .into_response()

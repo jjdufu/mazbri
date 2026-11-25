@@ -27,11 +27,25 @@ pub struct ServiceMetadata {
     pub health_check_url: Option<String>,
     pub labels: HashMap<String, String>,
 }
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PgCredential {
     pub username: String,
     pub password: String,
+}
+
+impl std::fmt::Debug for PgCredential {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let masked = if self.password.is_empty() {
+            ""
+        } else {
+            "[REDACTED]"
+        };
+        f.debug_struct("PgCredential")
+            .field("username", &self.username)
+            .field("password", &masked)
+            .finish()
+    }
 }
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(deny_unknown_fields)]

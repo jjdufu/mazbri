@@ -477,6 +477,261 @@ pub async fn delete_crypto_key(
     .await
 }
 
+/// 在单事务内锁定租户行（防并发密钥创建/切换竞态）。
+///
+/// # Errors
+///
+/// 底层数据库查询失败时返回错误。
+pub async fn lock_tenant_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: uuid::Uuid,
+) -> Result<Option<uuid::Uuid>, sqlx::Error> {
+    sqlx::query_scalar::<_, uuid::Uuid>("SELECT id FROM tenants WHERE id = $1 FOR UPDATE")
+        .bind(tenant_id)
+        .fetch_optional(&mut **tx)
+        .await
+}
+
+/// 在单事务内读取或初始化租户加密 Profile。
+///
+/// # Errors
+///
+/// 底层数据库查询失败时返回错误。
+pub async fn upsert_profile_defaults_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: uuid::Uuid,
+) -> Result<TenantCryptoProfileRow, sqlx::Error> {
+    sqlx::query_as::<_, TenantCryptoProfileRow>(concat!(
+        "WITH inserted AS ( \
+            INSERT INTO tenant_crypto_profiles (tenant_id) \
+            VALUES ($1) \
+            ON CONFLICT (tenant_id) DO NOTHING \
+            RETURNING ",
+        profile_returning!(),
+        ") \
+         SELECT ",
+        profile_returning!(),
+        " FROM inserted \
+         UNION ALL \
+         SELECT ",
+        profile_returning!(),
+        " FROM tenant_crypto_profiles \
+         WHERE tenant_id = $1 AND NOT EXISTS (SELECT 1 FROM inserted)"
+    ))
+    .bind(tenant_id)
+    .fetch_one(&mut **tx)
+    .await
+}
+
+/// 在单事务内列出租户密钥。
+///
+/// # Errors
+///
+/// 底层数据库查询失败时返回错误。
+pub async fn list_keys_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: uuid::Uuid,
+) -> Result<Vec<TenantCryptoKeyRow>, sqlx::Error> {
+    sqlx::query_as::<_, TenantCryptoKeyRow>(
+        r"
+        SELECT id, tenant_id, key_version, encrypted_secret_key, secret_key_digest, wrapping_key_id,
+            wrapping_algorithm, data_algorithm, signature_algorithm, status, not_before, expires_at,
+            activated_at, deprecated_at, disabled_at, last_used_at, created_at, updated_at, metadata
+        FROM tenant_crypto_keys
+        WHERE tenant_id = $1
+        ORDER BY created_at DESC
+        ",
+    )
+    .bind(tenant_id)
+    .fetch_all(&mut **tx)
+    .await
+}
+
+/// 在单事务内查找指定版本密钥。
+///
+/// # Errors
+///
+/// 底层数据库查询失败时返回错误。
+pub async fn find_key_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: uuid::Uuid,
+    key_version: &str,
+) -> Result<Option<TenantCryptoKeyRow>, sqlx::Error> {
+    sqlx::query_as::<_, TenantCryptoKeyRow>(
+        r"
+        SELECT id, tenant_id, key_version, encrypted_secret_key, secret_key_digest, wrapping_key_id,
+            wrapping_algorithm, data_algorithm, signature_algorithm, status, not_before, expires_at,
+            activated_at, deprecated_at, disabled_at, last_used_at, created_at, updated_at, metadata
+        FROM tenant_crypto_keys
+        WHERE tenant_id = $1 AND key_version = $2
+        ",
+    )
+    .bind(tenant_id)
+    .bind(key_version)
+    .fetch_optional(&mut **tx)
+    .await
+}
+
+/// 在单事务内插入新租户密钥。
+///
+/// # Errors
+///
+/// 底层数据库查询失败时返回错误。
+pub async fn insert_key_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    params: InsertCryptoKeyParams<'_>,
+) -> Result<TenantCryptoKeyRow, sqlx::Error> {
+    sqlx::query_as::<_, TenantCryptoKeyRow>(
+        r"
+        INSERT INTO tenant_crypto_keys (
+            tenant_id, key_version, encrypted_secret_key, secret_key_digest, wrapping_key_id,
+            data_algorithm, signature_algorithm,
+            status, activated_at, created_by, updated_by, metadata
+        )
+        VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8,
+            CASE WHEN $8 = 'active' THEN NOW() ELSE NULL END,
+            $9, $9, $10
+        )
+        RETURNING id, tenant_id, key_version, encrypted_secret_key, secret_key_digest, wrapping_key_id,
+            wrapping_algorithm, data_algorithm, signature_algorithm, status, not_before, expires_at,
+            activated_at, deprecated_at, disabled_at, last_used_at, created_at, updated_at, metadata
+        ",
+    )
+    .bind(params.tenant_id)
+    .bind(params.key_version)
+    .bind(params.encrypted_secret_key)
+    .bind(params.secret_key_digest)
+    .bind(params.wrapping_key_id)
+    .bind(params.data_algorithm)
+    .bind(params.signature_algorithm)
+    .bind(params.status)
+    .bind(params.actor_id)
+    .bind(params.metadata)
+    .fetch_one(&mut **tx)
+    .await
+}
+
+/// 在单事务内更新密钥状态。
+///
+/// # Errors
+///
+/// 底层数据库查询失败时返回错误。
+pub async fn update_key_status_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: uuid::Uuid,
+    key_version: &str,
+    status: &str,
+    actor_id: uuid::Uuid,
+) -> Result<Option<TenantCryptoKeyRow>, sqlx::Error> {
+    macro_rules! key_returning {
+        () => {
+            " WHERE tenant_id = $3 AND key_version = $4 \
+             RETURNING id, tenant_id, key_version, encrypted_secret_key, secret_key_digest, wrapping_key_id, \
+                 wrapping_algorithm, data_algorithm, signature_algorithm, status, not_before, expires_at, \
+                 activated_at, deprecated_at, disabled_at, last_used_at, created_at, updated_at, metadata"
+        };
+    }
+    let sql = match status {
+        "active" => concat!(
+            "UPDATE tenant_crypto_keys SET status = $1, updated_by = $2, updated_at = NOW(), activated_at = NOW()",
+            key_returning!()
+        ),
+        "deprecated" => concat!(
+            "UPDATE tenant_crypto_keys SET status = $1, updated_by = $2, updated_at = NOW(), deprecated_at = NOW()",
+            key_returning!()
+        ),
+        "disabled" => concat!(
+            "UPDATE tenant_crypto_keys SET status = $1, updated_by = $2, updated_at = NOW(), disabled_at = NOW()",
+            key_returning!()
+        ),
+        _ => concat!(
+            "UPDATE tenant_crypto_keys SET status = $1, updated_by = $2, updated_at = NOW()",
+            key_returning!()
+        ),
+    };
+    sqlx::query_as::<_, TenantCryptoKeyRow>(sql)
+        .bind(status)
+        .bind(actor_id)
+        .bind(tenant_id)
+        .bind(key_version)
+        .fetch_optional(&mut **tx)
+        .await
+}
+
+/// 在单事务内将其他激活密钥降级为 `deprecated`。
+///
+/// # Errors
+///
+/// 底层数据库查询失败时返回错误。
+pub async fn deprecate_other_active_keys_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: uuid::Uuid,
+    except_version: &str,
+    actor_id: uuid::Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r"
+        UPDATE tenant_crypto_keys
+        SET status = 'deprecated', deprecated_at = COALESCE(deprecated_at, NOW()),
+            updated_at = NOW(), updated_by = $3
+        WHERE tenant_id = $1 AND key_version <> $2 AND status = 'active'
+        ",
+    )
+    .bind(tenant_id)
+    .bind(except_version)
+    .bind(actor_id)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+/// 在单事务内更新当前激活密钥版本。
+///
+/// # Errors
+///
+/// 底层数据库查询失败时返回错误。
+pub async fn set_current_key_version_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: uuid::Uuid,
+    key_version: Option<&str>,
+    actor_id: uuid::Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r"
+        INSERT INTO tenant_crypto_profiles (tenant_id, current_key_version, created_by, updated_by)
+        VALUES ($1, $2, $3, $3)
+        ON CONFLICT (tenant_id) DO UPDATE SET
+            current_key_version = EXCLUDED.current_key_version,
+            updated_by = EXCLUDED.updated_by,
+            updated_at = NOW()
+        ",
+    )
+    .bind(tenant_id)
+    .bind(key_version)
+    .bind(actor_id)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+/// 在单事务内统计激活密钥数量。
+///
+/// # Errors
+///
+/// 底层数据库查询失败时返回错误。
+pub async fn active_key_count_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tenant_id: uuid::Uuid,
+) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM tenant_crypto_keys WHERE tenant_id = $1 AND status = 'active'",
+    )
+    .bind(tenant_id)
+    .fetch_one(&mut **tx)
+    .await
+}
+
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。

@@ -2,7 +2,7 @@ use crate::http_call::{HttpCall, append_query, join_url};
 use crate::types::{BodyKind, ExecuteError};
 use mazbri_core::BodyEncoding;
 
-use super::crypto_wire::{apply_parts, maybe_open_json_body, profile_with_slots, seal_body};
+use super::crypto_wire::{apply_parts, open_response_body_strict, profile_with_slots, seal_body};
 use super::{
     AdapterCtx, AdapterOutcome, apply_ok_and_unwrap, can_passthrough_raw_json, parse_json_body,
     try_take_valid_raw_json, wrap_by_name,
@@ -86,19 +86,20 @@ pub async fn invoke(ctx: &AdapterCtx<'_>) -> Result<AdapterOutcome, ExecuteError
 
     let decrypted;
     let body_slice: &[u8] = if let Some(profile) = spec.crypto.as_ref() {
-        decrypted = maybe_open_json_body(
+        decrypted = open_response_body_strict(
             &response.body,
+            &response.headers,
             profile,
             ctx.pipeline_keys,
             ctx.registry,
             &[],
             skip_validate,
-        );
+        )?;
         &decrypted
     } else {
         &response.body
     };
-    let json = parse_json_body(body_slice).or_else(|_| parse_json_body(&response.body))?;
+    let json = parse_json_body(body_slice)?;
     let (payload, biz_error) = apply_ok_and_unwrap(&json, spec)?;
     Ok(AdapterOutcome {
         auth_rejection: None,

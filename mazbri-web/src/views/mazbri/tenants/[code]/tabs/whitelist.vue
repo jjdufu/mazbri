@@ -191,6 +191,7 @@ import StatusIndicator from "@/components/common/StatusIndicator.vue";
 import TableDeleteDropdown from "@/components/table/TableDeleteDropdown.vue";
 import TableExportDropdown from "@/components/table/TableExportDropdown.vue";
 import { runWithLoading } from "@/composables/useAsyncState";
+import { useLatestRequest } from "@/composables/useLatestRequest";
 import { useTableSelection } from "@/composables/useTableSelection";
 import { logger } from "@/utils/sys";
 import { formatDateTime as formatDate } from "@/utils/format";
@@ -206,7 +207,6 @@ type WhitelistExportRow = Record<string, unknown> & {
 const props = defineProps<{
   tenantCode: string;
 }>();
-const loading = ref(false);
 const adding = ref(false);
 const entries = ref<WhitelistEntry[]>([]);
 const addVisible = ref(false);
@@ -386,12 +386,17 @@ const getCidrTagType = (cidr: number): "success" | "warning" | "info" => {
   if (cidr >= 24) return "warning";
   return "info";
 };
+const whitelistLoader = useLatestRequest(async (ctx, code: string) => {
+  const res = await fetchTenantWhitelist(code, ctx.signal);
+  if (!ctx.isLatest() || props.tenantCode !== code) return;
+  entries.value = res.entries;
+});
+const { loading } = whitelistLoader;
+
 const loadData = async () => {
+  if (!props.tenantCode) return;
   try {
-    await runWithLoading(loading, async () => {
-      const res = await fetchTenantWhitelist(props.tenantCode);
-      entries.value = res.entries;
-    });
+    await whitelistLoader.run(props.tenantCode);
   } catch (error) {
     logger.error("Failed to load whitelist:", error);
   }
@@ -580,8 +585,16 @@ const handleDelete = async (row: WhitelistEntry) => {
     }
   }
 };
+watch(
+  () => props.tenantCode,
+  (code, prev) => {
+    if (code && code !== prev) {
+      void loadData();
+    }
+  },
+);
 onMounted(() => {
-  loadData();
+  void loadData();
 });
 </script>
 

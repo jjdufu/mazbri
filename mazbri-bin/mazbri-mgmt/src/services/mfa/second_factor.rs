@@ -193,10 +193,27 @@ async fn verify_backup(
 ) -> Result<FactorSuccess, FactorError> {
     let normalized = code.to_ascii_uppercase();
     let hashed = backup_codes(state.mfa_backup_codes.as_ref());
-    let index = match service.verify_backup_code(&normalized, &hashed) {
-        Ok(Some(index)) => index,
-        Ok(None) => return Err(record_invalid(pool, service, user_id).await?),
-        Err(_) => return Err(FactorError::Unavailable),
+    let hashed_for_verify = hashed.clone();
+    let normalized_for_verify = normalized.clone();
+    let verify_outcome = mazbri_core::panic_policy::spawn_blocking_recoverable(move || {
+        use argon2::PasswordVerifier;
+        let mut found_idx: Option<usize> = None;
+        for (idx, item) in hashed_for_verify.iter().enumerate() {
+            if let Ok(parsed) = argon2::PasswordHash::new(item)
+                && argon2::Argon2::default()
+                    .verify_password(normalized_for_verify.as_bytes(), &parsed)
+                    .is_ok()
+            {
+                found_idx = Some(idx);
+            }
+        }
+        found_idx
+    })
+    .await
+    .map_err(|_| FactorError::Unavailable)?
+    .map_err(|_| FactorError::Unavailable)?;
+    let Some(index) = verify_outcome else {
+        return Err(record_invalid(pool, service, user_id).await?);
     };
     let removed = hashed.get(index).cloned().ok_or(FactorError::Unavailable)?;
     let mut remaining = hashed.clone();

@@ -290,12 +290,14 @@ fn spawn_connector_run_cleanup(db: &PgArc, probe: &config::ConnectorProbeConfig)
     });
 }
 
-/// 执行一次定时对账；flagged 时按配置推送告警 webhook。
+/// 执行一次定时对账；flagged 时按配置经防 SSRF 安全客户端推送告警 webhook。
 async fn run_scheduled_reconciliation(
     billing_db: &sqlx::PgPool,
     analytics: &mazbri_mgmt::analytics_client::AnalyticsHttpClient,
     settings_cache: &mazbri_mgmt::services::BillingReconciliationSettingsCache,
     audit: &audit::AuditService,
+    ssrf: &mazbri_core::net::ssrf::SsrfChecker,
+    webhook_client: &reqwest::Client,
 ) {
     let settings = settings_cache.get().await;
     let day = if settings.schedule.use_previous_day {
@@ -345,11 +347,13 @@ async fn run_scheduled_reconciliation(
                     "loss_ratio": result.loss_ratio.to_string(),
                     "status": result.status,
                 });
-                let sent = reqwest::Client::new()
-                    .post(settings.alert.webhook_url.trim())
-                    .json(&body)
-                    .send()
-                    .await;
+                let sent = mazbri_mgmt::services::billing::send_reconciliation_alert_webhook(
+                    ssrf,
+                    webhook_client,
+                    settings.alert.webhook_url.trim(),
+                    &body,
+                )
+                .await;
                 if let Err(e) = &sent {
                     tracing::warn!("reconciliation alert webhook failed: {e}");
                 }
@@ -392,6 +396,8 @@ fn spawn_reconciliation_supervisor(
     analytics: Arc<mazbri_mgmt::analytics_client::AnalyticsHttpClient>,
     settings_cache: Arc<mazbri_mgmt::services::BillingReconciliationSettingsCache>,
     audit: audit::AuditService,
+    ssrf: mazbri_core::net::ssrf::SsrfChecker,
+    webhook_client: reqwest::Client,
 ) {
     info!(
         "billing reconciliation settings supervisor started (reads runtime settings from admin DB)"
@@ -419,6 +425,8 @@ fn spawn_reconciliation_supervisor(
                 analytics.as_ref(),
                 &settings_cache,
                 &audit,
+                &ssrf,
+                &webhook_client,
             )
             .await;
             // Advance even on error to avoid tight error loops every 30s.
@@ -570,7 +578,8 @@ async fn main() -> Result<()> {
         &analytics_client,
         &billing_reconciliation_settings,
         &audit,
-    );
+        config.ssrf.checker().into(),
+    )?;
     let app_state = handlers::AppState {
         config: config.clone(),
         cert_service,
@@ -609,12 +618,18 @@ fn spawn_billing_background_jobs(
     analytics_client: &Arc<mazbri_mgmt::analytics_client::AnalyticsHttpClient>,
     reconcile_settings: &Arc<mazbri_mgmt::services::BillingReconciliationSettingsCache>,
     audit: &audit::AuditService,
-) {
+    recon_ssrf: mazbri_core::net::ssrf::SsrfChecker,
+) -> Result<()> {
+    let recon_webhook_client = recon_ssrf
+        .build_safe_http_client(Duration::from_secs(5), Duration::from_secs(10))
+        .map_err(|e| anyhow::anyhow!("Failed to build reconciliation webhook safe client: {e}"))?;
     spawn_reconciliation_supervisor(
         Arc::clone(billing_db),
         Arc::clone(analytics_client),
         Arc::clone(reconcile_settings),
         audit.clone(),
+        recon_ssrf,
+        recon_webhook_client,
     );
     mazbri_mgmt::services::finance_ops::spawn_mv_refresh(Arc::clone(billing_db));
     mazbri_mgmt::services::billing::spawn_upstream_cost_settlement_sync(
@@ -622,6 +637,7 @@ fn spawn_billing_background_jobs(
         Arc::clone(platform_db),
         Arc::clone(analytics_client),
     );
+    Ok(())
 }
 
 fn build_mgmt_cors_layer() -> CorsLayer {

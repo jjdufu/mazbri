@@ -54,10 +54,18 @@ pub enum StoreError {
 }
 
 type StoreFuture<'a> = Pin<Box<dyn Future<Output = Result<(), StoreError>> + Send + 'a>>;
+type MissingUsersFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<std::collections::HashSet<uuid::Uuid>, StoreError>> + Send + 'a>>;
 
 /// 审计存储抽象（生产为 Postgres，测试可替换为内存实现）。
 pub trait AuditStore: Send + Sync + 'static {
     fn insert_batch<'a>(&'a self, records: &'a [AuditRecord]) -> StoreFuture<'a>;
+
+    /// 返回 `user_ids` 中在 `admin_users` 表里已不存在的 UUID 集合。
+    fn filter_missing_users<'a>(&'a self, user_ids: &'a [uuid::Uuid]) -> MissingUsersFuture<'a> {
+        let all: std::collections::HashSet<uuid::Uuid> = user_ids.iter().copied().collect();
+        Box::pin(async move { Ok(all) })
+    }
 }
 
 /// `mazbri_admin.audit_logs` 存储。
@@ -122,6 +130,27 @@ impl AuditStore for PgAuditStore {
                 })
         })
     }
+
+    fn filter_missing_users<'a>(&'a self, user_ids: &'a [uuid::Uuid]) -> MissingUsersFuture<'a> {
+        Box::pin(async move {
+            if user_ids.is_empty() {
+                return Ok(std::collections::HashSet::new());
+            }
+            let existing: Vec<uuid::Uuid> =
+                sqlx::query_scalar("SELECT id FROM admin_users WHERE id = ANY($1)")
+                    .bind(user_ids)
+                    .fetch_all(&*self.db)
+                    .await
+                    .map_err(|error| StoreError::Other(error.to_string()))?;
+            let existing_set: std::collections::HashSet<uuid::Uuid> =
+                existing.into_iter().collect();
+            Ok(user_ids
+                .iter()
+                .copied()
+                .filter(|id| !existing_set.contains(id))
+                .collect())
+        })
+    }
 }
 
 /// 本地 JSONL 兜底文件（记录已脱敏）。
@@ -177,10 +206,19 @@ impl FallbackWriter {
         {
             std::fs::create_dir_all(parent)?;
         }
-        let mut file = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(path)?;
+        let mut open_options = std::fs::OpenOptions::new();
+        open_options.create(true).append(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt as _;
+            open_options.mode(0o600);
+        }
+        let mut file = open_options.open(path)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+        }
         let mut buffer = Vec::new();
         for record in records {
             serde_json::to_writer(&mut buffer, record).map_err(std::io::Error::other)?;
@@ -226,23 +264,24 @@ pub struct AuditSink {
 
 /// 写线程句柄：停机时关闭队列并等待排空。
 pub struct AuditWriterHandle {
-    shutdown: Option<oneshot::Sender<()>>,
+    shutdown: Option<oneshot::Sender<Duration>>,
     join: JoinHandle<()>,
 }
 
 impl AuditWriterHandle {
-    /// 关闭队列、写完已入队记录；超时后放弃等待（剩余记录随进程退出丢失并告警）。
+    /// 关闭队列、写完已入队记录；超时前由写线程将未提交批次与通道残余刷入兜底文件。
     pub async fn shutdown(mut self, timeout: Duration) {
         if let Some(tx) = self.shutdown.take() {
-            let _ = tx.send(());
+            let _ = tx.send(timeout);
         }
-        match tokio::time::timeout(timeout, &mut self.join).await {
+        let join_budget = timeout.saturating_add(Duration::from_millis(500));
+        match tokio::time::timeout(join_budget, &mut self.join).await {
             Ok(Ok(())) => tracing::info!("审计写入队列已排空"),
             Ok(Err(error)) => tracing::error!(error = %error, "审计写线程异常退出"),
             Err(_) => {
                 tracing::error!(
                     pending = AUDIT_QUEUE_DEPTH.get(),
-                    "审计写入队列排空超时，剩余记录未落库"
+                    "审计写入队列排空等待超时"
                 );
                 self.join.abort();
             }
@@ -320,7 +359,7 @@ impl AuditSink {
     }
 }
 
-/// 插入；外键冲突时清空 `user_id`（保留 `actor_username`）再试一次。
+/// 插入；外键冲突时精确识别并仅对已不存在于 `admin_users` 的记录清空 `user_id`（保留 `actor_username`）。
 async fn insert_fixing_fk(
     store: &dyn AuditStore,
     records: &mut [AuditRecord],
@@ -328,16 +367,45 @@ async fn insert_fixing_fk(
     match store.insert_batch(records).await {
         Ok(()) => Ok(()),
         Err(StoreError::ForeignKey) => {
-            for record in records.iter_mut() {
-                record.user_id = None;
+            let mut candidate_ids: Vec<uuid::Uuid> = Vec::new();
+            for record in records.iter() {
+                if let Some(uid) = record.user_id
+                    && !candidate_ids.contains(&uid)
+                {
+                    candidate_ids.push(uid);
+                }
             }
-            store
-                .insert_batch(records)
+            let missing = store
+                .filter_missing_users(&candidate_ids)
                 .await
-                .map_err(|error| match error {
-                    StoreError::ForeignKey => "foreign key violation".to_string(),
-                    StoreError::Other(message) => message,
-                })
+                .unwrap_or_default();
+            if missing.is_empty() {
+                for record in records.iter_mut() {
+                    record.user_id = None;
+                }
+            } else {
+                for record in records.iter_mut() {
+                    if record.user_id.is_some_and(|uid| missing.contains(&uid)) {
+                        record.user_id = None;
+                    }
+                }
+            }
+            match store.insert_batch(records).await {
+                Ok(()) => Ok(()),
+                Err(StoreError::ForeignKey) => {
+                    for record in records.iter_mut() {
+                        record.user_id = None;
+                    }
+                    store
+                        .insert_batch(records)
+                        .await
+                        .map_err(|error| match error {
+                            StoreError::ForeignKey => "foreign key violation".to_string(),
+                            StoreError::Other(message) => message,
+                        })
+                }
+                Err(StoreError::Other(message)) => Err(message),
+            }
         }
         Err(StoreError::Other(message)) => Err(message),
     }
@@ -350,20 +418,22 @@ struct Writer {
 }
 
 impl Writer {
-    async fn run(self, mut rx: mpsc::Receiver<AuditRecord>, shutdown: oneshot::Receiver<()>) {
+    async fn run(self, mut rx: mpsc::Receiver<AuditRecord>, shutdown: oneshot::Receiver<Duration>) {
         let mut shutdown = Some(shutdown);
+        let mut shutdown_deadline: Option<tokio::time::Instant> = None;
         let mut batch = Vec::with_capacity(self.options.batch_size);
         loop {
             let first = if let Some(signal) = shutdown.as_mut() {
                 tokio::select! {
                     biased;
-                    record = rx.recv() => record,
-                    _ = signal => {
-                        // 停止接收新记录，继续排空已入队的记录。
+                    res = signal => {
                         rx.close();
                         shutdown = None;
+                        let drain_timeout = res.unwrap_or(Duration::ZERO);
+                        shutdown_deadline = Some(tokio::time::Instant::now() + drain_timeout);
                         continue;
                     }
+                    record = rx.recv() => record,
                 }
             } else {
                 rx.recv().await
@@ -373,27 +443,94 @@ impl Writer {
             };
             AUDIT_QUEUE_DEPTH.dec();
             batch.push(first);
-            let deadline = tokio::time::Instant::now() + self.options.flush_interval;
+            let collect_deadline = if let Some(dl) = shutdown_deadline {
+                dl.min(tokio::time::Instant::now() + self.options.flush_interval)
+            } else {
+                tokio::time::Instant::now() + self.options.flush_interval
+            };
             while batch.len() < self.options.batch_size {
-                match tokio::time::timeout_at(deadline, rx.recv()).await {
-                    Ok(Some(record)) => {
-                        AUDIT_QUEUE_DEPTH.dec();
-                        batch.push(record);
+                if shutdown_deadline.is_some() {
+                    match rx.try_recv() {
+                        Ok(record) => {
+                            AUDIT_QUEUE_DEPTH.dec();
+                            batch.push(record);
+                        }
+                        Err(_) => break,
                     }
-                    Ok(None) | Err(_) => break,
+                } else {
+                    match tokio::time::timeout_at(collect_deadline, rx.recv()).await {
+                        Ok(Some(record)) => {
+                            AUDIT_QUEUE_DEPTH.dec();
+                            batch.push(record);
+                        }
+                        Ok(None) | Err(_) => break,
+                    }
                 }
             }
-            self.flush(&mut batch).await;
+            if self.flush(&mut batch, &mut shutdown, &mut shutdown_deadline, &mut rx).await {
+                self.spill_remaining_to_fallback(&mut batch, &mut rx);
+                break;
+            }
         }
     }
 
-    async fn flush(&self, batch: &mut Vec<AuditRecord>) {
+    fn spill_remaining_to_fallback(
+        &self,
+        batch: &mut Vec<AuditRecord>,
+        rx: &mut mpsc::Receiver<AuditRecord>,
+    ) {
+        while let Ok(record) = rx.try_recv() {
+            AUDIT_QUEUE_DEPTH.dec();
+            batch.push(record);
+        }
+        if !batch.is_empty() {
+            self.fallback.write(batch, "shutdown_timeout");
+            batch.clear();
+        }
+    }
+
+    /// 返回 `true` 表示停机截止时间已耗尽，调用方应将剩余记录刷入兜底文件后退出。
+    async fn flush(
+        &self,
+        batch: &mut Vec<AuditRecord>,
+        shutdown: &mut Option<oneshot::Receiver<Duration>>,
+        shutdown_deadline: &mut Option<tokio::time::Instant>,
+        rx: &mut mpsc::Receiver<AuditRecord>,
+    ) -> bool {
         let mut backoff = self.options.retry_backoff;
         for attempt in 1..=self.options.max_attempts.max(1) {
-            match insert_fixing_fk(self.store.as_ref(), batch).await {
+            if let Some(dl) = *shutdown_deadline
+                && tokio::time::Instant::now() >= dl
+            {
+                return true;
+            }
+            let write_outcome = if let Some(dl) = *shutdown_deadline {
+                match tokio::time::timeout_at(dl, insert_fixing_fk(self.store.as_ref(), batch)).await
+                {
+                    Ok(res) => res,
+                    Err(_) => return true,
+                }
+            } else if let Some(sig) = shutdown.as_mut() {
+                tokio::select! {
+                    res = insert_fixing_fk(self.store.as_ref(), batch) => res,
+                    drain = sig => {
+                        rx.close();
+                        *shutdown = None;
+                        let dl = tokio::time::Instant::now() + drain.unwrap_or(Duration::ZERO);
+                        *shutdown_deadline = Some(dl);
+                        match tokio::time::timeout_at(dl, insert_fixing_fk(self.store.as_ref(), batch)).await {
+                            Ok(res) => res,
+                            Err(_) => return true,
+                        }
+                    }
+                }
+            } else {
+                insert_fixing_fk(self.store.as_ref(), batch).await
+            };
+            match write_outcome {
                 Ok(()) => {
                     batch.clear();
-                    return;
+                    return false;
                 }
                 Err(error) => {
                     AUDIT_WRITE_FAILED_TOTAL.with_label_values(&["batch"]).inc();
@@ -405,7 +542,29 @@ impl Writer {
                         "审计批量落库失败"
                     );
                     if attempt < self.options.max_attempts {
-                        tokio::time::sleep(backoff).await;
+                        if let Some(dl) = *shutdown_deadline {
+                            if tokio::time::timeout_at(dl, tokio::time::sleep(backoff))
+                                .await
+                                .is_err()
+                            {
+                                return true;
+                            }
+                        } else if let Some(sig) = shutdown.as_mut() {
+                            tokio::select! {
+                                () = tokio::time::sleep(backoff) => {}
+                                drain = sig => {
+                                    rx.close();
+                                    *shutdown = None;
+                                    let dl = tokio::time::Instant::now() + drain.unwrap_or(Duration::ZERO);
+                                    *shutdown_deadline = Some(dl);
+                                    if tokio::time::Instant::now() >= dl {
+                                        return true;
+                                    }
+                                }
+                            }
+                        } else {
+                            tokio::time::sleep(backoff).await;
+                        }
                         backoff = backoff.saturating_mul(4);
                     }
                 }
@@ -413,23 +572,28 @@ impl Writer {
         }
         self.fallback.write(batch, "db_error");
         batch.clear();
+        false
     }
 }
 
 #[cfg(any(test, feature = "testing"))]
 pub mod testing {
-    use super::{AuditStore, StoreError, StoreFuture};
+    use super::{AuditStore, MissingUsersFuture, StoreError, StoreFuture};
     use crate::record::AuditRecord;
+    use std::collections::HashSet;
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::{Mutex, PoisonError};
+    use std::time::Duration;
 
-    /// 内存存储：可配置前 N 次失败或外键冲突。
+    /// 内存存储：可配置前 N 次失败、外键冲突、已删管理员集合或模拟写入延迟。
     #[derive(Default)]
     pub struct MemoryStore {
         pub rows: Mutex<Vec<AuditRecord>>,
         pub fail_times: AtomicU32,
         pub fk_times: AtomicU32,
         pub calls: AtomicU32,
+        pub missing_users: Mutex<HashSet<uuid::Uuid>>,
+        pub write_delay: Mutex<Option<Duration>>,
     }
 
     impl MemoryStore {
@@ -457,8 +621,25 @@ pub mod testing {
     impl AuditStore for MemoryStore {
         fn insert_batch<'a>(&'a self, records: &'a [AuditRecord]) -> StoreFuture<'a> {
             Box::pin(async move {
+                let delay = *self
+                    .write_delay
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner);
+                if let Some(d) = delay {
+                    tokio::time::sleep(d).await;
+                }
                 self.calls.fetch_add(1, Ordering::SeqCst);
-                if take_one(&self.fk_times) {
+                let has_missing_fk = {
+                    let missing = self
+                        .missing_users
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner);
+                    !missing.is_empty()
+                        && records
+                            .iter()
+                            .any(|r| r.user_id.is_some_and(|uid| missing.contains(&uid)))
+                };
+                if has_missing_fk || take_one(&self.fk_times) {
                     return Err(StoreError::ForeignKey);
                 }
                 if take_one(&self.fail_times) {
@@ -470,6 +651,24 @@ pub mod testing {
                     .extend_from_slice(records);
                 Ok(())
             })
+        }
+
+        fn filter_missing_users<'a>(&'a self, user_ids: &'a [uuid::Uuid]) -> MissingUsersFuture<'a> {
+            let missing = self
+                .missing_users
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone();
+            let result: HashSet<uuid::Uuid> = if missing.is_empty() {
+                user_ids.iter().copied().collect()
+            } else {
+                user_ids
+                    .iter()
+                    .copied()
+                    .filter(|uid| missing.contains(uid))
+                    .collect()
+            };
+            Box::pin(async move { Ok(result) })
         }
     }
 }
@@ -626,6 +825,75 @@ mod tests {
         assert!(!sink.write_now(record()).await);
         assert_eq!(read_lines(&path).len(), 1);
         handle.shutdown(Duration::from_secs(1)).await;
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
+    async fn mixed_batch_fk_conflict_only_clears_deleted_admin_user_id() {
+        let store = Arc::new(MemoryStore::default());
+        let deleted_admin = uuid::Uuid::new_v4();
+        let active_admin_1 = uuid::Uuid::new_v4();
+        let active_admin_2 = uuid::Uuid::new_v4();
+        store
+            .missing_users
+            .lock()
+            .unwrap()
+            .insert(deleted_admin);
+        let (sink, handle) = AuditSink::start(
+            store.clone(),
+            Arc::new(FallbackWriter::new(None)),
+            options(),
+        );
+        for (uid, name) in [
+            (deleted_admin, "gone"),
+            (active_admin_1, "alice"),
+            (active_admin_2, "bob"),
+        ] {
+            let mut rec = record();
+            rec.user_id = Some(uid);
+            rec.actor_username = Some(name.into());
+            sink.enqueue(rec);
+        }
+        handle.shutdown(Duration::from_secs(2)).await;
+        let rows = store.rows();
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0].user_id, None);
+        assert_eq!(rows[0].actor_username.as_deref(), Some("gone"));
+        assert_eq!(rows[1].user_id, Some(active_admin_1));
+        assert_eq!(rows[2].user_id, Some(active_admin_2));
+    }
+
+    #[tokio::test]
+    async fn shutdown_timeout_spills_pending_records_to_0600_fallback() {
+        let store = Arc::new(MemoryStore::default());
+        *store.write_delay.lock().unwrap() = Some(Duration::from_secs(5));
+        let path = temp_file("shutdown-spill");
+        let opts = SinkOptions {
+            queue_capacity: 16,
+            batch_size: 2,
+            flush_interval: Duration::from_millis(5),
+            retry_backoff: Duration::from_millis(50),
+            max_attempts: 3,
+            sync_timeout: Duration::from_secs(1),
+        };
+        let (sink, handle) = AuditSink::start(
+            store.clone(),
+            Arc::new(FallbackWriter::new(Some(path.clone()))),
+            opts,
+        );
+        for _ in 0..5 {
+            sink.enqueue(record());
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        handle.shutdown(Duration::from_millis(60)).await;
+        let spilled = read_lines(&path);
+        assert_eq!(spilled.len(), 5);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o600);
+        }
         let _ = std::fs::remove_file(path);
     }
 }

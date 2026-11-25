@@ -3,11 +3,15 @@ use crate::error::ApiError;
 use crate::handlers::types::ListParams;
 use crate::repositories::route_management as repo;
 use crate::repositories::supplier as supplier_repo;
-use crate::services::upstream_connector::guard_channel_tls_privilege;
+use crate::services::ssrf;
+use crate::services::upstream_connector::{
+    guard_channel_origin_pinning, guard_channel_tls_privilege, reject_client_enc_in_channel_config,
+};
 use mazbri_core::{
     mask_channel_config_secrets, merge_channel_config_secrets, upsert_egress_in_channel_config,
     validate_channel_config_if_egress,
 };
+use mazbri_upstream_runtime::SsrfChecker;
 use rust_decimal::Decimal;
 use sqlx::PgPool;
 const MAX_PAGE_SIZE: u32 = 100;
@@ -367,12 +371,29 @@ impl EmergencySwitchRequest {
         Ok(())
     }
 }
-fn encrypt_channel_config_if_egress(
+async fn validate_and_encrypt_channel_config_if_egress(
+    ssrf_checker: &SsrfChecker,
     raw: &serde_json::Value,
 ) -> Result<serde_json::Value, ApiError> {
     if let Some(spec) =
         validate_channel_config_if_egress(raw).map_err(|e| ApiError::validation(e.to_string()))?
     {
+        if !spec.base_url.trim().is_empty() {
+            ssrf::validate_public_http_url(ssrf_checker, &spec.base_url)
+                .await
+                .map_err(|e| ApiError::validation(format!("SSRF_BLOCKED: {e}")))?;
+        }
+        if let Some(token_url) = spec
+            .auth
+            .as_ref()
+            .and_then(|a| a.token_url.as_deref())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            ssrf::validate_public_http_url(ssrf_checker, token_url)
+                .await
+                .map_err(|e| ApiError::validation(format!("SSRF_BLOCKED token_url: {e}")))?;
+        }
         let encrypted = spec
             .encrypt_secrets_for_storage()
             .map_err(|e| ApiError::internal(format!("加密通道 TLS 私钥失败: {e}")))?;
@@ -404,7 +425,7 @@ pub async fn list_channels(
         .as_ref()
         .map(|s| s.trim())
         .filter(|s| !s.is_empty())
-        .map(|s| format!("%{s}%"));
+        .map(mazbri_core::config::contains_ilike_pattern);
     let filters = crate::list_query::parse_and_validate_filters(
         params.filters.as_deref(),
         &crate::list_query::channels_catalog(),
@@ -441,15 +462,18 @@ pub async fn list_channels(
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn create_channel(
     pool: &PgPool,
+    ssrf_checker: &SsrfChecker,
     audit: &AuditService,
     payload: &CreateChannelRequest,
     user_id: uuid::Uuid,
     is_super_admin: bool,
     client_ip: Option<String>,
 ) -> Result<serde_json::Value, ApiError> {
+    reject_client_enc_in_channel_config(&payload.config)?;
     payload.validate()?;
     guard_channel_tls_privilege(&payload.config, None, is_super_admin)?;
-    let stored_config = encrypt_channel_config_if_egress(&payload.config)?;
+    let stored_config =
+        validate_and_encrypt_channel_config_if_egress(ssrf_checker, &payload.config).await?;
     ensure_supplier_active(pool, payload.supplier_id).await?;
     let row = repo::insert_channel(
         pool,
@@ -498,19 +522,33 @@ pub async fn get_channel(pool: &PgPool, id: &str) -> Result<serde_json::Value, A
     }
     Ok(value)
 }
+pub struct UpdateChannelArgs<'a> {
+    pub pool: &'a PgPool,
+    pub ssrf_checker: &'a SsrfChecker,
+    pub audit: &'a AuditService,
+    pub id: &'a str,
+    pub payload: &'a UpdateChannelRequest,
+    pub user_id: uuid::Uuid,
+    pub is_super_admin: bool,
+    pub client_ip: Option<String>,
+}
+
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub async fn update_channel(
-    pool: &PgPool,
-    audit: &AuditService,
-    id: &str,
-    payload: &UpdateChannelRequest,
-    user_id: uuid::Uuid,
-    is_super_admin: bool,
-    client_ip: Option<String>,
-) -> Result<serde_json::Value, ApiError> {
+pub async fn update_channel(args: UpdateChannelArgs<'_>) -> Result<serde_json::Value, ApiError> {
+    let pool = args.pool;
+    let ssrf_checker = args.ssrf_checker;
+    let audit = args.audit;
+    let id = args.id;
+    let payload = args.payload;
+    let user_id = args.user_id;
+    let is_super_admin = args.is_super_admin;
+    let client_ip = args.client_ip;
     let id_uuid = parse_uuid(id, "channel")?;
+    if let Some(ref raw_cfg) = payload.config {
+        reject_client_enc_in_channel_config(raw_cfg)?;
+    }
     let old = repo::find_channel_by_id(pool, id_uuid)
         .await
         .map_err(|e| ApiError::internal(format!("获取通道失败: {e}")))?
@@ -526,12 +564,13 @@ pub async fn update_channel(
         config: payload.config.clone(),
     };
     if let Some(ref mut new_cfg) = patched.config {
+        guard_channel_origin_pinning(new_cfg, &old.config)?;
         merge_channel_config_secrets(new_cfg, &old.config);
         guard_channel_tls_privilege(new_cfg, Some(&old.config), is_super_admin)?;
     }
     patched.validate()?;
     let stored_config = match patched.config.as_ref() {
-        Some(cfg) => Some(encrypt_channel_config_if_egress(cfg)?),
+        Some(cfg) => Some(validate_and_encrypt_channel_config_if_egress(ssrf_checker, cfg).await?),
         None => None,
     };
     if let Some(supplier_id) = patched.supplier_id {

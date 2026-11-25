@@ -202,6 +202,7 @@ import CenteredDialog from "@/components/common/CenteredDialog.vue";
 import CommonInlineHint from "@/components/common/inline-hint/index.vue";
 import ResourceTableShell from "@/components/common/resource-table-shell/index.vue";
 import StatusIndicator from "@/components/common/StatusIndicator.vue";
+import { useLatestRequest } from "@/composables/useLatestRequest";
 import { logger } from "@/utils/sys";
 import { formatDateTime as formatDate } from "@/utils/format";
 import type { ColumnOption } from "@/types/component";
@@ -211,7 +212,6 @@ const props = defineProps<{
 }>();
 const userStore = useUserStore();
 const canWriteBusiness = computed(() => userStore.canWriteBusiness);
-const loading = ref(false);
 const creating = ref(false);
 const renewing = ref(false);
 const rotatingPrefix = ref<string | null>(null);
@@ -285,18 +285,22 @@ const renewRules: FormRules = {
     },
   ],
 };
+const keysLoader = useLatestRequest(async (ctx, code: string) => {
+  const res = await fetchTenantApiKeys(code, ctx.signal);
+  if (!ctx.isLatest() || props.tenantCode !== code) return;
+  apiKeys.value = res.keys;
+  if (res.actions) {
+    apiKeyActions.value = res.actions;
+  }
+});
+const { loading } = keysLoader;
+
 const loadData = async () => {
-  loading.value = true;
+  if (!props.tenantCode) return;
   try {
-    const res = await fetchTenantApiKeys(props.tenantCode);
-    apiKeys.value = res.keys;
-    if (res.actions) {
-      apiKeyActions.value = res.actions;
-    }
+    await keysLoader.run(props.tenantCode);
   } catch (error) {
     logger.error("Failed to load API keys:", error);
-  } finally {
-    loading.value = false;
   }
 };
 const handleCreate = () => {
@@ -461,8 +465,16 @@ const handleDownloadCreatedKey = (format: "txt" | "json") => {
     ElMessage.error($t("tenant.messages.apiKeyDownloadFailed"));
   }
 };
+watch(
+  () => props.tenantCode,
+  (code, prev) => {
+    if (code && code !== prev) {
+      void loadData();
+    }
+  },
+);
 onMounted(() => {
-  loadData();
+  void loadData();
 });
 </script>
 

@@ -15,12 +15,12 @@ use serde_json::json;
 use super::Caller;
 use super::metrics::record_scope_denied;
 
-/// 越权时的处理模式。默认 audit：只告警放行。
+/// 越权时的处理模式。默认 enforce：越权返回 403。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ScopeMode {
-    #[default]
     Audit,
+    #[default]
     Enforce,
 }
 
@@ -82,8 +82,21 @@ pub fn check(caller: Caller, method: &str, route: &str, params: &[(&str, &str)])
                 ScopeDecision::Deny("route_forbidden")
             }
         }
-        ("GET", "/authorizations/root/current/materials") => {
-            if matches!(caller, Caller::Service(ServiceName::Gateway)) {
+        ("GET", "/certificates/revoked-serials") => {
+            if caller.is_service() {
+                ScopeDecision::Allow
+            } else {
+                ScopeDecision::Deny("route_forbidden")
+            }
+        }
+        (
+            "GET",
+            "/authorizations/root/current/materials" | "/authorizations/root/materials/keyring",
+        ) => {
+            if matches!(
+                caller,
+                Caller::Service(ServiceName::Gateway | ServiceName::Bypass)
+            ) {
                 ScopeDecision::Allow
             } else {
                 ScopeDecision::Deny("route_forbidden")
@@ -282,7 +295,9 @@ mod tests {
 
     #[test]
     fn node_list_and_root_materials_follow_the_matrix() {
+        assert_eq!(ScopeMode::default(), ScopeMode::Enforce);
         let gateway = Caller::Service(ServiceName::Gateway);
+        let bypass = Caller::Service(ServiceName::Bypass);
         let auth = Caller::Service(ServiceName::Auth);
         assert_eq!(check(gateway, "GET", "/nodes", &[]), ScopeDecision::Allow);
         assert_eq!(
@@ -296,6 +311,15 @@ mod tests {
         assert_eq!(
             check(
                 gateway,
+                "GET",
+                "/authorizations/root/current/materials",
+                &[]
+            ),
+            ScopeDecision::Allow
+        );
+        assert_eq!(
+            check(
+                bypass,
                 "GET",
                 "/authorizations/root/current/materials",
                 &[]

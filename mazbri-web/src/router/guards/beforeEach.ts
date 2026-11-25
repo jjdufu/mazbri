@@ -83,6 +83,22 @@ async function handleRouteGuard(
   if (settingStore.showNprogress && to.path !== from.path) {
     NProgress.start();
   }
+  if (userStore.isLogin && userStore.isLock) {
+    // 锁屏期间：禁止应用内一切路由切换绕过；刷新落在静态页（如 /auth/login）时强制拉回根布局以挂载锁屏遮罩。
+    if (
+      routeInitState.getRouteRegistry()?.isRegistered() &&
+      from.matched.length > 0
+    ) {
+      NProgress.done();
+      next(false);
+      return;
+    }
+    if (isStaticRoute(to.path)) {
+      NProgress.done();
+      next({ path: "/", replace: true });
+      return;
+    }
+  }
   if (!handleLoginStatus(to, userStore, next)) {
     return;
   }

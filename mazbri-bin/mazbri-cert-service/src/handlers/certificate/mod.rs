@@ -10,7 +10,7 @@ pub use common::CertificateState;
 pub use issue::issue_certificate;
 pub use list::{
     get_certificate, get_certificate_by_subject, get_certificate_full, list_certificate_subjects,
-    list_certificates,
+    list_certificates, list_revoked_serials,
 };
 pub use renew::renew_certificate;
 pub use revoke::revoke_certificate;

@@ -1,4 +1,7 @@
-use super::common::{CertificateState, extract_client_ip, update_certificate_inventory_metrics};
+use super::common::{
+    CertificateState, extract_client_ip, update_certificate_inventory_metrics,
+    validate_validity_days,
+};
 use crate::db::{CertificateResponse, IssueCertificateRequest};
 use crate::error::CertError;
 use axum::{
@@ -37,6 +40,7 @@ async fn issue_certificate_inner(
     socket_addr: Option<SocketAddr>,
     request: IssueCertificateRequest,
 ) -> Result<Response, CertError> {
+    let _ = validate_validity_days(request.validity_days, None)?;
     let actor_ip =
         extract_client_ip(&headers, socket_addr).and_then(|ip| ip.parse::<std::net::IpAddr>().ok());
     let subject = request.subject.trim();
@@ -48,8 +52,14 @@ async fn issue_certificate_inner(
         )));
     }
     let ca_manager = state.base_authorization.require_issuance().await?;
-    let (cert_pem, key_encrypted) = ca_manager.issue_certificate(subject, &dns_names)?;
-    let expires_at = Utc::now() + chrono::Duration::days(request.validity_days);
+    let now = Utc::now();
+    let validity_delta =
+        validate_validity_days(request.validity_days, ca_manager.ca_remaining_days(now))?;
+    let expires_at = now
+        .checked_add_signed(validity_delta)
+        .ok_or_else(|| CertError::InvalidRequest("证书过期时间溢出".into()))?;
+    let (cert_pem, key_encrypted) =
+        ca_manager.issue_certificate_until(subject, &dns_names, now, expires_at)?;
     let record = state
         .repo
         .create_certificate(

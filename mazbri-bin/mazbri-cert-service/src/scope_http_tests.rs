@@ -148,6 +148,7 @@ async fn identifies_master_derived_and_previous_tokens() {
 async fn enforce_matrix_and_matched_path_distinguishes_search() {
     let app = build_app(ScopeMode::Enforce, ActorMode::Lenient);
     let gateway = token("mazbri-gateway");
+    let bypass = token("mazbri-bypass");
     let auth = token("mazbri-auth");
     let wait = token("mazbri-wait-deps");
     let cases = [
@@ -181,6 +182,12 @@ async fn enforce_matrix_and_matched_path_distinguishes_search() {
             "GET",
             "/authorizations/root/current/materials",
             gateway.as_str(),
+            false,
+        ),
+        (
+            "GET",
+            "/authorizations/root/current/materials",
+            bypass.as_str(),
             false,
         ),
         (
@@ -238,6 +245,57 @@ async fn enforce_matrix_and_matched_path_distinguishes_search() {
         StatusCode::BAD_REQUEST,
         "subjects route must not collide with /certificates/{{id}} UUID extractor: {subjects_body}"
     );
+}
+
+#[tokio::test]
+async fn enforce_matrix_covers_keyring_and_revoked_serials() {
+    let app = build_app(ScopeMode::Enforce, ActorMode::Lenient);
+    let gateway = token("mazbri-gateway");
+    let bypass = token("mazbri-bypass");
+    let auth = token("mazbri-auth");
+    let wait = token("mazbri-wait-deps");
+    let cases = [
+        (
+            "GET",
+            "/authorizations/root/materials/keyring",
+            gateway.as_str(),
+            false,
+        ),
+        (
+            "GET",
+            "/authorizations/root/materials/keyring",
+            bypass.as_str(),
+            false,
+        ),
+        (
+            "GET",
+            "/authorizations/root/materials/keyring",
+            MASTER,
+            false,
+        ),
+        (
+            "GET",
+            "/authorizations/root/materials/keyring",
+            auth.as_str(),
+            true,
+        ),
+        (
+            "GET",
+            "/certificates/revoked-serials",
+            auth.as_str(),
+            false,
+        ),
+        (
+            "GET",
+            "/certificates/revoked-serials",
+            wait.as_str(),
+            true,
+        ),
+    ];
+    for (method, uri, bearer, expect_deny) in cases {
+        let (status, body) = call(&app, request(method, uri, Some(bearer), b"")).await;
+        assert_eq!(denied(status, &body), expect_deny, "{method} {uri} => {status} {body}");
+    }
 }
 
 #[tokio::test]
@@ -566,4 +624,202 @@ async fn batch_delete_endpoint_is_retired() {
     )
     .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn business_metrics_endpoint_is_removed() {
+    let app = build_app(ScopeMode::default(), ActorMode::default());
+    let (status, _) = call(&app, request("GET", "/metrics", None, b"")).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _) = call(&app, request("GET", "/metrics", Some(MASTER), b"")).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn production_default_allows_microservice_lifecycle_without_actor() {
+    assert_eq!(ScopeMode::default(), ScopeMode::Enforce);
+    assert_eq!(ActorMode::default(), ActorMode::Strict);
+    let app = build_app(ScopeMode::default(), ActorMode::default());
+    let gateway = token("mazbri-gateway");
+    let bypass = token("mazbri-bypass");
+    let wait = token("mazbri-wait-deps");
+
+    let valid_register = br#"{"service_name":"mazbri-gateway","ip":"192.168.50.50","port":8080,"started_at":1,"config_version":0,"config_md5":"abc","health_check_url":"http://192.168.50.50:9000/health"}"#;
+    let valid_heartbeat =
+        br#"{"service_name":"mazbri-gateway","config_version":0,"ip":"192.168.50.50","port":8080}"#;
+    for (method, uri, bearer, payload) in [
+        ("GET", "/configs/mazbri-gateway", gateway.as_str(), &b""[..]),
+        (
+            "GET",
+            "/certificates/by-subject/mazbri-gateway",
+            gateway.as_str(),
+            &b""[..],
+        ),
+        (
+            "POST",
+            "/renew/00000000-0000-0000-0000-000000000001",
+            gateway.as_str(),
+            &b""[..],
+        ),
+        (
+            "POST",
+            "/nodes/register",
+            gateway.as_str(),
+            &valid_register[..],
+        ),
+        (
+            "POST",
+            "/nodes/heartbeat",
+            gateway.as_str(),
+            &valid_heartbeat[..],
+        ),
+        ("GET", "/nodes", gateway.as_str(), &b""[..]),
+        ("GET", "/nodes", wait.as_str(), &b""[..]),
+        (
+            "GET",
+            "/authorizations/root/current/materials",
+            gateway.as_str(),
+            &b""[..],
+        ),
+        (
+            "GET",
+            "/authorizations/root/current/materials",
+            bypass.as_str(),
+            &b""[..],
+        ),
+        (
+            "GET",
+            "/authorizations/root/current/materials",
+            MASTER,
+            &b""[..],
+        ),
+    ] {
+        let mut builder = Request::builder()
+            .method(method)
+            .uri(uri)
+            .header("authorization", format!("Bearer {bearer}"));
+        if !payload.is_empty() {
+            builder = builder.header("content-type", "application/json");
+        }
+        let mut req = builder.body(Body::from(payload.to_vec())).expect("req");
+        req.extensions_mut()
+            .insert(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 9))));
+        let (status, body) = call(&app, req).await;
+        assert!(
+            status != StatusCode::UNAUTHORIZED && !denied(status, &body),
+            "expected {method} {uri} to pass auth+audit, got {status}: {body}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn production_default_requires_signed_actor_for_issue() {
+    use mazbri_audit::actor::{AUDIENCE_CERT, ActorIdentity, ActorSigner, ISSUER_MGMT};
+
+    let app = build_app(ScopeMode::default(), ActorMode::default());
+    let auth = token("mazbri-auth");
+    let issue_body = br#"{"subject":"mazbri-gateway","validity_days":365}"#;
+    let (status, body) = call(&app, request("POST", "/issue", Some(MASTER), issue_body)).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "{body}");
+    assert!(body.contains("actor_required"), "{body}");
+
+    let (status, _) = call(&app, request("POST", "/issue", Some(&auth), issue_body)).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    let signer = ActorSigner::hmac_v2(MASTER, ISSUER_MGMT);
+    let claim = signer.sign(
+        AUDIENCE_CERT,
+        &ActorIdentity {
+            user_id: Some(uuid::Uuid::from_u128(1)),
+            username: Some("superadmin".into()),
+            role: Some("R_ADMIN".into()),
+            request_id: Some("req-issue-1".into()),
+            ip: Some("127.0.0.1".into()),
+        },
+        "POST",
+        "/issue",
+    );
+    let (status, body) = call(
+        &app,
+        with_actor(request("POST", "/issue", Some(MASTER), issue_body), &claim),
+    )
+    .await;
+    assert!(
+        status != StatusCode::UNAUTHORIZED && !denied(status, &body),
+        "signed admin /issue should pass auth+audit: {status} {body}"
+    );
+}
+
+#[tokio::test]
+async fn pagination_validity_and_node_health_url_boundaries_return_400() {
+    use mazbri_audit::actor::{AUDIENCE_CERT, ActorIdentity, ActorSigner, ISSUER_MGMT};
+
+    let app = build_app(ScopeMode::Enforce, ActorMode::Strict);
+    let signer = ActorSigner::hmac_v2(MASTER, ISSUER_MGMT);
+    let admin_actor = ActorIdentity {
+        user_id: Some(uuid::Uuid::from_u128(1)),
+        username: Some("superadmin".into()),
+        role: Some("R_ADMIN".into()),
+        request_id: Some("req-bounds-1".into()),
+        ip: Some("127.0.0.1".into()),
+    };
+
+    // S01-4: 分页 limit=0 / limit=201 / offset=-1 返回 400
+    for bad_uri in [
+        "/certificates?offset=10&limit=0",
+        "/certificates?limit=-5",
+        "/certificates?limit=201",
+        "/certificates?offset=-1",
+    ] {
+        let (status, body) = call(&app, request("GET", bad_uri, Some(MASTER), b"")).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{bad_uri}: {body}");
+    }
+
+    // S01-4: issue / renew 非法 validity_days 返回 400（零 Panic）
+    for bad_issue in [
+        &br#"{"subject":"mazbri-gateway","validity_days":-5}"#[..],
+        &br#"{"subject":"mazbri-gateway","validity_days":0}"#[..],
+        &br#"{"subject":"mazbri-gateway","validity_days":3651}"#[..],
+        &br#"{"subject":"mazbri-gateway","validity_days":9223372036854775807}"#[..],
+    ] {
+        let claim = signer.sign(AUDIENCE_CERT, &admin_actor, "POST", "/issue");
+        let (status, body) = call(
+            &app,
+            with_actor(request("POST", "/issue", Some(MASTER), bad_issue), &claim),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    }
+
+    let gateway = token("mazbri-gateway");
+    let renew_uri = format!("/renew/{CERT_ID}");
+    for bad_renew in [
+        &br#"{"validity_days":-5}"#[..],
+        &br#"{"validity_days":0}"#[..],
+        &br#"{"validity_days":3651}"#[..],
+        &br#"{"validity_days":9223372036854775807}"#[..],
+    ] {
+        let (status, body) = call(
+            &app,
+            request("POST", &renew_uri, Some(&gateway), bad_renew),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    }
+
+    // S02-6: 节点注册非法 IP 或非法 health_check_url 返回 400
+    for bad_register in [
+        &br#"{"service_name":"mazbri-gateway","ip":"bad-ip","port":8080,"started_at":1,"config_version":0,"config_md5":"abc","health_check_url":null}"#[..],
+        &br#"{"service_name":"mazbri-gateway","ip":"192.168.50.50","port":8080,"started_at":1,"config_version":0,"config_md5":"abc","health_check_url":"http://192.168.50.51:9000/health"}"#[..],
+        &br#"{"service_name":"mazbri-gateway","ip":"192.168.50.50","port":8080,"started_at":1,"config_version":0,"config_md5":"abc","health_check_url":"http://user:pw@192.168.50.50:9000/health"}"#[..],
+        &br#"{"service_name":"mazbri-gateway","ip":"192.168.50.50","port":8080,"started_at":1,"config_version":0,"config_md5":"abc","health_check_url":"http://192.168.50.50:9000/health?x=1"}"#[..],
+        &br#"{"service_name":"mazbri-gateway","ip":"192.168.50.50","port":8080,"started_at":1,"config_version":0,"config_md5":"abc","health_check_url":"http://192.168.50.50:9000/metrics"}"#[..],
+    ] {
+        let (status, body) = call(
+            &app,
+            request("POST", "/nodes/register", Some(&gateway), bad_register),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    }
 }

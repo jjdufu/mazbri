@@ -6,20 +6,38 @@ use chrono::{DateTime, Utc};
 use mazbri_core::num::SaturatingFrom;
 use serde_json::{json, Value};
 
+const SLO_STATUS_SQL: &str = r"
+SELECT slo, sli, error_budget_remaining, burn_1h, burn_5m, burn_page, burn_ticket, ts
+FROM (
+    SELECT
+        slo,
+        sli,
+        error_budget_remaining,
+        burn_1h,
+        burn_5m,
+        burn_page,
+        burn_ticket,
+        ts,
+        ROW_NUMBER() OVER (PARTITION BY slo ORDER BY ts DESC) AS rn
+    FROM slo_sli_5m
+) AS ranked
+WHERE rn = 1
+ORDER BY slo ASC
+";
+
 /// `GET /api/v1/slo/status`
 pub async fn get_slo_status(State(state): State<AppState>) -> axum::response::Response {
     let Some(client) = state.greptimedb_client.as_ref() else {
         return Json(json!({"items": [], "error": "greptime_unavailable"})).into_response();
     };
-    let sql = r"
-SELECT slo, sli, error_budget_remaining, burn_1h, burn_5m, burn_page, burn_ticket, ts
-FROM slo_sli_5m
-ORDER BY ts DESC
-LIMIT 50
-";
-    match client.execute_query_rows(sql, "slo status").await {
+    let query_result = client
+        .with_query_timeout(
+            "slo_status",
+            client.execute_query_rows(SLO_STATUS_SQL, "slo status"),
+        )
+        .await;
+    match query_result {
         Ok(rows) => {
-            // 按 slo 去重取最新
             let mut seen = std::collections::BTreeSet::new();
             let mut items = Vec::new();
             for row in rows {
@@ -137,5 +155,11 @@ mod tests {
     #[test]
     fn null_ts_is_none() {
         assert_eq!(greptime_ts_to_rfc3339(&json!(null)), None);
+    }
+
+    #[test]
+    fn slo_status_sql_partitions_by_slo_without_global_limit_starvation() {
+        assert!(super::SLO_STATUS_SQL.contains("PARTITION BY slo ORDER BY ts DESC"));
+        assert!(super::SLO_STATUS_SQL.contains("WHERE rn = 1"));
     }
 }

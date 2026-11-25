@@ -1,8 +1,7 @@
-use crate::calculator::CalculationResult;
 use crate::error::BillingError;
 use crate::queue::ChargeQueue;
-use crate::service::{BillingService, UsageRecord};
-use crate::types::QueueConfig;
+use crate::service::BillingService;
+use crate::types::{QueueConfig, RecordUsageOutcome};
 use chrono::{Duration as ChronoDuration, Utc};
 use futures::stream::{self, StreamExt};
 use mazbri_core::num::SaturatingFrom;
@@ -17,9 +16,55 @@ use tokio::time::{Duration, sleep};
 use tracing::{Instrument, debug, error, info, warn};
 use uuid::Uuid;
 
-/// Marks one outbox row processed; runs in the same transaction as the enqueue.
+const CLAIM_PENDING_OUTBOX_SQL: &str = r"
+WITH claimed AS (
+    SELECT id
+    FROM usage_outbox
+    WHERE status IN ('pending', 'failed')
+      AND next_attempt_at <= NOW()
+    ORDER BY created_at ASC
+    LIMIT $1
+    FOR UPDATE SKIP LOCKED
+)
+UPDATE usage_outbox o
+SET status = 'processing',
+    lease_seq = o.lease_seq + 1,
+    updated_at = NOW()
+FROM claimed
+WHERE o.id = claimed.id
+RETURNING
+    o.id, o.event_id, o.request_id, o.tenant_id, o.account_id, o.product_id,
+    o.api_endpoint, o.http_method, o.response_status, o.request_size,
+    o.response_size, o.billing_service_duration_ms, o.unit_price,
+    o.billable_units, o.billable_amount, o.billing_code, o.trace_parent,
+    o.lease_seq
+";
+
+/// Marks one outbox row processed with monotonic `lease_seq` fencing; runs in the same
+/// transaction as `usage_records` upsert and `usage_charge_queue` enqueue.
 const MARK_OUTBOX_PROCESSED_SQL: &str = "UPDATE usage_outbox SET status = 'processed', \
-     processed_at = NOW(), error_message = NULL WHERE id = $1";
+     processed_at = NOW(), error_message = NULL \
+     WHERE id = $1 AND status = 'processing' AND lease_seq = $2";
+
+const MARK_OUTBOX_FAILED_LOCK_SQL: &str = "SELECT retry_count FROM usage_outbox \
+     WHERE id = $1 AND status = 'processing' AND lease_seq = $2 FOR UPDATE";
+
+const MARK_OUTBOX_DEAD_LETTER_SQL: &str = r"
+UPDATE usage_outbox
+SET status = 'dead_letter',
+    retry_count = retry_count + 1,
+    error_message = $2
+WHERE id = $1 AND status = 'processing' AND lease_seq = $3
+";
+
+const MARK_OUTBOX_RETRY_SQL: &str = r"
+UPDATE usage_outbox
+SET status = 'failed',
+    retry_count = retry_count + 1,
+    next_attempt_at = $2,
+    error_message = $3
+WHERE id = $1 AND status = 'processing' AND lease_seq = $4
+";
 
 struct TaskState {
     handles: Vec<JoinHandle<()>>,
@@ -54,6 +99,7 @@ struct UsageOutboxItem {
     billable_amount: Decimal,
     billing_code: Option<i16>,
     trace_parent: Option<String>,
+    lease_seq: i64,
 }
 
 pub struct UsageOutboxWorker {
@@ -171,7 +217,6 @@ async fn run_outbox_loop(
             break;
         }
 
-        // Opportunistic stale reclaim (once per loop roughly every stale window).
         if reclaim_ticker.elapsed() >= Duration::from_secs(config.stale_processing_secs) {
             if let Err(error) = reclaim_stale_outbox(&db, config.stale_processing_secs).await {
                 warn!(loop_id, error = %error, "outbox stale reclaim failed");
@@ -263,7 +308,6 @@ async fn process_batch(
     let batch_len = items.len();
     let started = Instant::now();
     let concurrency = config.max_concurrency.max(1);
-    // 一批 outbox 行各来自不同请求：批量 span 不挂父节点，用 link 指回每个请求的 enqueue span。
     let batch_span = tracing::info_span!(parent: None, "billing.outbox_batch", batch = batch_len);
     mazbri_core::trace_spans::add_links(
         &batch_span,
@@ -279,8 +323,9 @@ async fn process_batch(
             let charge_queue = charge_queue.clone();
             async move {
                 let item_id = item.id;
+                let lease_seq = item.lease_seq;
                 let result = process_one(&db, &billing_service, &charge_queue, item).await;
-                (item_id, result)
+                (item_id, lease_seq, result)
             }
         })
         .buffer_unordered(concurrency)
@@ -290,13 +335,13 @@ async fn process_batch(
 
     let mut ok_ids = Vec::new();
     let mut fail_count = 0usize;
-    for (item_id, result) in results {
+    for (item_id, lease_seq, result) in results {
         match result {
             Ok(()) => ok_ids.push(item_id),
             Err(error) => {
                 fail_count += 1;
-                warn!(item_id, error = %error, "UsageOutbox item failed");
-                mark_failed(db, item_id, &error.to_string(), config).await?;
+                warn!(item_id, lease_seq, error = %error, "UsageOutbox item failed");
+                mark_failed(db, item_id, lease_seq, &error.to_string(), config).await?;
             }
         }
     }
@@ -312,41 +357,10 @@ async fn process_batch(
 }
 
 async fn fetch_pending(db: &PgPool, limit: i32) -> Result<Vec<UsageOutboxItem>, BillingError> {
-    let mut tx = db.begin().await?;
-    let rows = sqlx::query_as::<_, UsageOutboxItem>(
-        r"
-        SELECT
-            id, event_id, request_id, tenant_id, account_id, product_id,
-            api_endpoint, http_method, response_status, request_size,
-            response_size, billing_service_duration_ms, unit_price,
-            billable_units, billable_amount, billing_code, trace_parent
-        FROM usage_outbox
-        WHERE status IN ('pending', 'failed')
-          AND next_attempt_at <= NOW()
-        ORDER BY created_at ASC
-        LIMIT $1
-        FOR UPDATE SKIP LOCKED
-        ",
-    )
-    .bind(i64::from(limit))
-    .fetch_all(&mut *tx)
-    .await?;
-    if rows.is_empty() {
-        tx.commit().await?;
-        return Ok(Vec::new());
-    }
-    let ids: Vec<i64> = rows.iter().map(|row| row.id).collect();
-    sqlx::query(
-        r"
-        UPDATE usage_outbox
-        SET status = 'processing'
-        WHERE id = ANY($1)
-        ",
-    )
-    .bind(&ids)
-    .execute(&mut *tx)
-    .await?;
-    tx.commit().await?;
+    let rows = sqlx::query_as::<_, UsageOutboxItem>(CLAIM_PENDING_OUTBOX_SQL)
+        .bind(i64::from(limit))
+        .fetch_all(db)
+        .await?;
     Ok(rows)
 }
 
@@ -356,67 +370,95 @@ async fn process_one(
     charge_queue: &ChargeQueue,
     item: UsageOutboxItem,
 ) -> Result<(), BillingError> {
+    if item.billable_amount < Decimal::ZERO {
+        return Err(BillingError::InvalidAmount(format!(
+            "Outbox billable_amount must be non-negative, got {}",
+            item.billable_amount
+        )));
+    }
     let account_id = match item.account_id {
         Some(account_id) => account_id,
         None => billing_service
-            .get_account_id(item.tenant_id)
-            .await
+            .try_get_account_id(item.tenant_id)
+            .await?
             .ok_or(BillingError::AccountNotFound(item.tenant_id))?,
     };
-    let usage_record_id = if let Some(existing_id) =
-        sqlx::query_scalar::<_, i64>("SELECT id FROM usage_records WHERE event_id = $1")
-            .bind(item.event_id)
-            .fetch_optional(db)
-            .await?
-    {
-        existing_id
-    } else {
-        let usage_record = UsageRecord {
-            event_id: Some(item.event_id),
-            tenant_id: item.tenant_id,
-            account_id,
-            api_endpoint: item.api_endpoint.clone(),
-            http_method: item.http_method.clone(),
-            response_status: u16::saturating_from(item.response_status),
-            request_size: item.request_size,
-            response_size: item.response_size,
-            billing_service_duration_ms: item.billing_service_duration_ms,
-            billing_result: CalculationResult {
-                amount: item.billable_amount,
-                units: u64::saturating_from(item.billable_units.max(0)),
-                unit_price: item.unit_price,
-                description: format!(
-                    "usage_outbox request_id={} endpoint={}",
-                    item.request_id, item.api_endpoint
-                ),
-            },
-            product_id: item.product_id.clone(),
-            billing_code: item.billing_code,
-        };
-        billing_service.record_usage(usage_record).await?
-    };
-    // Enqueue and mark the outbox row processed atomically: a crash can no longer leave
-    // the charge enqueued while the outbox row is reclaimed and re-enqueued.
     let mut tx = db.begin().await?;
-    if item.billable_amount > Decimal::ZERO {
-        charge_queue
-            .enqueue_in_tx(
-                &mut tx,
-                crate::queue::ChargeEnqueue {
-                    tenant_id: item.tenant_id,
-                    account_id,
-                    usage_record_id,
-                    amount: item.billable_amount,
-                    payload: None,
-                    trace_parent: item.trace_parent.as_deref(),
-                },
-            )
-            .await?;
-    }
-    sqlx::query(MARK_OUTBOX_PROCESSED_SQL)
+    // Step 1: Monotonic lease fence on usage_outbox inside the same transaction.
+    let fenced = sqlx::query(MARK_OUTBOX_PROCESSED_SQL)
         .bind(item.id)
+        .bind(item.lease_seq)
         .execute(&mut *tx)
         .await?;
+    if fenced.rows_affected() == 0 {
+        tx.commit().await?;
+        debug!(
+            item_id = item.id,
+            event_id = %item.event_id,
+            request_id = %item.request_id,
+            lease_seq = item.lease_seq,
+            "usage_outbox row fenced out (stale lease_seq); skipping"
+        );
+        return Ok(());
+    }
+    // Step 2: Idempotently insert or fetch usage_records row by event_id in the same tx.
+    let units = item.billable_units.max(0);
+    let inserted_id: Option<i64> = sqlx::query_scalar(
+        "INSERT INTO usage_records (
+            tenant_id, account_id, api_endpoint, http_method, response_status,
+            request_size, response_size, billing_service_duration_ms,
+            unit_price, billable_amount, billable_units,
+            product_id, billing_code, event_id
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+        ON CONFLICT (event_id) WHERE event_id IS NOT NULL DO NOTHING
+        RETURNING id",
+    )
+    .bind(item.tenant_id)
+    .bind(account_id)
+    .bind(&item.api_endpoint)
+    .bind(&item.http_method)
+    .bind(item.response_status)
+    .bind(item.request_size)
+    .bind(item.response_size)
+    .bind(item.billing_service_duration_ms)
+    .bind(item.unit_price)
+    .bind(item.billable_amount)
+    .bind(units)
+    .bind(&item.product_id)
+    .bind(item.billing_code)
+    .bind(item.event_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    let usage_record_id = match inserted_id {
+        Some(id) => id,
+        None => {
+            sqlx::query_scalar::<_, i64>("SELECT id FROM usage_records WHERE event_id = $1")
+                .bind(item.event_id)
+                .fetch_one(&mut *tx)
+                .await?
+        }
+    };
+
+    // Step 3: Enqueue charge in the same transaction when billable_amount > 0.
+    if item.billable_amount > Decimal::ZERO {
+        let _ = RecordUsageOutcome::Queued {
+            usage_record_id,
+            queue_id: charge_queue
+                .enqueue_in_tx(
+                    &mut tx,
+                    crate::queue::ChargeEnqueue {
+                        tenant_id: item.tenant_id,
+                        account_id,
+                        usage_record_id,
+                        amount: item.billable_amount,
+                        payload: None,
+                        trace_parent: item.trace_parent.as_deref(),
+                    },
+                )
+                .await?,
+        };
+    }
     tx.commit().await?;
     Ok(())
 }
@@ -424,48 +466,45 @@ async fn process_one(
 async fn mark_failed(
     db: &PgPool,
     id: i64,
+    lease_seq: i64,
     error: &str,
     config: &QueueConfig,
 ) -> Result<(), BillingError> {
-    let retry_count: i32 = sqlx::query_scalar("SELECT retry_count FROM usage_outbox WHERE id = $1")
+    let mut tx = db.begin().await?;
+    let retry_count: Option<i32> = sqlx::query_scalar(MARK_OUTBOX_FAILED_LOCK_SQL)
         .bind(id)
-        .fetch_one(db)
+        .bind(lease_seq)
+        .fetch_optional(&mut *tx)
         .await?;
+    let Some(retry_count) = retry_count else {
+        tx.commit().await?;
+        debug!(
+            id,
+            lease_seq, "mark_failed fenced out: usage_outbox row no longer owned by lease"
+        );
+        return Ok(());
+    };
     let next_retry = retry_count + 1;
     if next_retry >= config.max_retries {
-        sqlx::query(
-            r"
-            UPDATE usage_outbox
-            SET status = 'dead_letter',
-                retry_count = retry_count + 1,
-                error_message = $2
-            WHERE id = $1
-            ",
-        )
-        .bind(id)
-        .bind(error)
-        .execute(db)
-        .await?;
+        sqlx::query(MARK_OUTBOX_DEAD_LETTER_SQL)
+            .bind(id)
+            .bind(error)
+            .bind(lease_seq)
+            .execute(&mut *tx)
+            .await?;
     } else {
         let backoff_factor = 2i64.pow(u32::saturating_from(retry_count.clamp(0, 30)));
         let delay_secs = (config.retry_interval_secs * backoff_factor).min(3600);
         let next_attempt_at = Utc::now() + ChronoDuration::seconds(delay_secs);
-        sqlx::query(
-            r"
-            UPDATE usage_outbox
-            SET status = 'failed',
-                retry_count = retry_count + 1,
-                next_attempt_at = $2,
-                error_message = $3
-            WHERE id = $1
-            ",
-        )
-        .bind(id)
-        .bind(next_attempt_at)
-        .bind(error)
-        .execute(db)
-        .await?;
+        sqlx::query(MARK_OUTBOX_RETRY_SQL)
+            .bind(id)
+            .bind(next_attempt_at)
+            .bind(error)
+            .bind(lease_seq)
+            .execute(&mut *tx)
+            .await?;
     }
+    tx.commit().await?;
     Ok(())
 }
 
@@ -484,11 +523,31 @@ impl Clone for UsageOutboxWorker {
 
 #[cfg(test)]
 mod outbox_sql_tests {
-    use super::MARK_OUTBOX_PROCESSED_SQL;
+    use super::{
+        CLAIM_PENDING_OUTBOX_SQL, MARK_OUTBOX_DEAD_LETTER_SQL, MARK_OUTBOX_FAILED_LOCK_SQL,
+        MARK_OUTBOX_PROCESSED_SQL, MARK_OUTBOX_RETRY_SQL,
+    };
 
     #[test]
-    fn mark_processed_targets_single_row() {
+    fn outbox_sql_enforces_monotonic_lease_seq_fence() {
+        assert!(CLAIM_PENDING_OUTBOX_SQL.contains("lease_seq = o.lease_seq + 1"));
+        assert!(CLAIM_PENDING_OUTBOX_SQL.contains("o.lease_seq"));
         assert!(MARK_OUTBOX_PROCESSED_SQL.contains("status = 'processed'"));
-        assert!(MARK_OUTBOX_PROCESSED_SQL.contains("WHERE id = $1"));
+        assert!(
+            MARK_OUTBOX_PROCESSED_SQL
+                .contains("WHERE id = $1 AND status = 'processing' AND lease_seq = $2")
+        );
+        assert!(
+            MARK_OUTBOX_FAILED_LOCK_SQL
+                .contains("WHERE id = $1 AND status = 'processing' AND lease_seq = $2")
+        );
+        assert!(
+            MARK_OUTBOX_DEAD_LETTER_SQL
+                .contains("WHERE id = $1 AND status = 'processing' AND lease_seq = $3")
+        );
+        assert!(
+            MARK_OUTBOX_RETRY_SQL
+                .contains("WHERE id = $1 AND status = 'processing' AND lease_seq = $4")
+        );
     }
 }

@@ -1,7 +1,5 @@
 import type { AppRouteRecord } from "@/types/router";
 import { useUserStore } from "@/store/modules/user";
-import { useAppMode } from "@/hooks/core/useAppMode";
-import { fetchGetMenuList } from "@/api/system-manage";
 import { asyncRoutes } from "../routes/asyncRoutes";
 import { RoutesAlias } from "../routesAlias";
 import { formatMenuTitle } from "@/utils";
@@ -9,13 +7,7 @@ import { logger } from "@/utils/sys/logger";
 import { ErrorCodes } from "@/constants/error-codes";
 export class MenuProcessor {
   async getMenuList(): Promise<AppRouteRecord[]> {
-    const { isFrontendMode } = useAppMode();
-    let menuList: AppRouteRecord[];
-    if (isFrontendMode.value) {
-      menuList = await this.processFrontendMenu();
-    } else {
-      menuList = await this.processBackendMenu();
-    }
+    const menuList = await this.processFrontendMenu();
     this.validateMenuPaths(menuList);
     return this.normalizeMenuPaths(menuList);
   }
@@ -41,10 +33,6 @@ export class MenuProcessor {
           ? { ...item, children: this.sortMenusByOrder(item.children) }
           : item,
       );
-  }
-  private async processBackendMenu(): Promise<AppRouteRecord[]> {
-    const list = await fetchGetMenuList();
-    return this.filterEmptyMenus(list);
   }
   private filterMenuByRoles(
     menu: AppRouteRecord[],

@@ -93,20 +93,3 @@ export interface GenerateBillResponse {
   bill_id: string;
   message: string;
 }
-export interface UsageSummary {
-  tenant_id: string;
-  period: "daily" | "weekly" | "monthly";
-  start_date: ISODateString;
-  end_date: ISODateString;
-  total_requests: number;
-  total_units: number;
-  total_cost: DecimalString;
-  breakdown: UsageBreakdown[];
-}
-export interface UsageBreakdown {
-  product_id: string;
-  product_name: string;
-  request_count: number;
-  units: number;
-  cost: DecimalString;
-}

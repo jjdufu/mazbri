@@ -505,14 +505,15 @@ pub fn load_installation_key(path: &Path) -> CertResult<InstallationKeyFile> {
 
 #[must_use]
 pub fn generate_installation_key() -> InstallationKeyFile {
-    let secret_bytes: [u8; 32] = rand::random();
-    let secret = StaticSecret::from(secret_bytes);
+    let secret_bytes = zeroize::Zeroizing::new(rand::random::<[u8; 32]>());
+    let secret = StaticSecret::from(*secret_bytes);
     let public = PublicKey::from(&secret);
+    let private_bytes = zeroize::Zeroizing::new(secret.to_bytes());
     InstallationKeyFile {
         version: 1,
         installation_id: Uuid::new_v4(),
         public_key: BASE64.encode(public.as_bytes()),
-        private_key: BASE64.encode(secret.to_bytes()),
+        private_key: BASE64.encode(private_bytes.as_slice()),
     }
 }
 
@@ -606,16 +607,18 @@ pub fn decide_license(
         return empty_decision("invalid", clock_rollback);
     }
     let sticky = expired_sticky_sequence == Some(license.payload.sequence);
-    let in_active = license.not_before <= now && now < license.expires_at;
-    let in_grace = license.expires_at <= now && now < license.grace_until;
-    let (status, mark_expired_sticky) = if sticky || (!in_active && !in_grace) {
-        ("expired", !sticky && now >= license.grace_until)
-    } else if in_grace {
-        ("grace", false)
-    } else if in_active {
-        ("active", false)
-    } else {
+    let (status, mark_expired_sticky) = if sticky {
+        ("expired", false)
+    } else if now >= license.grace_until {
+        ("expired", true)
+    } else if now < license.not_before {
         ("pending", false)
+    } else if clock_rollback {
+        ("clock_rollback", false)
+    } else if now >= license.expires_at {
+        ("grace", false)
+    } else {
+        ("active", false)
     };
     let decryption_allowed = password_unseals && materials_present;
     LicenseDecision {
@@ -915,7 +918,8 @@ mod tests {
             true,
         );
         assert!(far.clock_rollback);
-        assert!(far.issuance_allowed());
+        assert!(!far.issuance_allowed());
+        assert!(far.decryption_allowed);
     }
 
     #[test]
@@ -1000,5 +1004,87 @@ mod tests {
             assets.master_key, assets.integrity_key
         );
         assert_eq!(String::from_utf8(plaintext).expect("utf8"), expected);
+    }
+
+    #[test]
+    fn decide_license_distinguishes_pending_clock_rollback_grace_and_sticky_expired() {
+        if !cfg!(debug_assertions) {
+            return;
+        }
+        let key = dev_signing_key();
+        let jws = sign_with(
+            &key,
+            LICENSE_KID_DEV,
+            &sample_payload("renewal", None, None),
+        );
+        let verified = verify_compact_license(&jws).expect("verify");
+
+        // 1. Before not_before -> status == "pending", issuance_allowed == false, mark_expired_sticky == false
+        let before = verified.not_before - Duration::hours(2);
+        let pending = decide_license(Some(&verified), true, before, None, None, true, true);
+        assert_eq!(pending.status, "pending");
+        assert!(!pending.issuance_allowed());
+        assert!(!pending.mark_expired_sticky);
+        assert!(pending.decryption_allowed);
+
+        // 2. Clock rollback (> 24h behind last_seen_at) during active window -> status == "clock_rollback", issuance disallowed
+        let mid_active = verified.not_before + Duration::days(30);
+        let future_seen = mid_active + Duration::hours(30);
+        let rollback = decide_license(
+            Some(&verified),
+            true,
+            mid_active,
+            None,
+            Some(future_seen),
+            true,
+            true,
+        );
+        assert_eq!(rollback.status, "clock_rollback");
+        assert!(rollback.clock_rollback);
+        assert!(!rollback.issuance_allowed());
+        assert!(!rollback.mark_expired_sticky);
+        assert!(rollback.decryption_allowed);
+
+        // 3. Active window without rollback -> status == "active", issuance allowed
+        let active = decide_license(
+            Some(&verified),
+            true,
+            mid_active,
+            None,
+            Some(mid_active - Duration::minutes(5)),
+            true,
+            true,
+        );
+        assert_eq!(active.status, "active");
+        assert!(active.issuance_allowed());
+        assert!(active.decryption_allowed);
+
+        // 4. Grace window -> status == "grace", issuance disallowed, decryption allowed
+        let in_grace = verified.expires_at + Duration::days(2);
+        let grace = decide_license(Some(&verified), true, in_grace, None, None, true, true);
+        assert_eq!(grace.status, "grace");
+        assert!(!grace.issuance_allowed());
+        assert!(!grace.mark_expired_sticky);
+        assert!(grace.decryption_allowed);
+
+        // 5. Past grace_until -> status == "expired", mark_expired_sticky == true
+        let past_grace = verified.grace_until + Duration::seconds(1);
+        let expired = decide_license(Some(&verified), true, past_grace, None, None, true, true);
+        assert_eq!(expired.status, "expired");
+        assert!(expired.mark_expired_sticky);
+
+        // 6. Sticky expired sequence -> stays "expired" even if clock moves back into active window
+        let sticky = decide_license(
+            Some(&verified),
+            true,
+            mid_active,
+            Some(verified.payload.sequence),
+            None,
+            true,
+            true,
+        );
+        assert_eq!(sticky.status, "expired");
+        assert!(!sticky.issuance_allowed());
+        assert!(!sticky.mark_expired_sticky);
     }
 }

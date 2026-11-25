@@ -1,5 +1,7 @@
 //! Trace 检索、详情与服务依赖接口（数据在 `GreptimeDB` trace 库，`request_id` / 租户 / 产品先经 CH 解析）。
-use super::request::{RequestLogQueryRequest, bad_request, build_query_params};
+use super::request::{
+    RequestLogQueryRequest, bad_request, build_query_params, parse_request_filters,
+};
 use super::{AppState, HandlerError};
 use axum::{
     Json,
@@ -169,6 +171,7 @@ fn parse_search(
                 request_id,
                 tenant_code,
                 product_id,
+                duration_ms_gte: q.min_duration_ms,
                 event_target: Some(EventTarget::Gateway),
                 start_time: DateTime::<Utc>::from_timestamp(start, 0).map(|t| t.to_rfc3339()),
                 end_time: DateTime::<Utc>::from_timestamp(end, 0).map(|t| t.to_rfc3339()),
@@ -210,9 +213,14 @@ pub async fn search_traces(
     };
     let mut resolved_from_logs = None;
     if let Some(req) = lookup {
+        let req_filters = match parse_request_filters(&req) {
+            Ok(f) => f,
+            Err(e) => return bad_request(e),
+        };
         let start = DateTime::<Utc>::from_timestamp(filter.start, 0);
         let end = DateTime::<Utc>::from_timestamp(filter.end, 0);
-        let mut params = build_query_params(&req, Vec::new(), (start, end, None, None));
+        let mut params = build_query_params(&req, req_filters, (start, end, None, None));
+        params.errors_only = q.errors_only;
         params.limit = MAX_RESOLVED_REQUESTS as usize;
         params.offset = 0;
         let logs = match state.clickhouse_client.query_request_logs(&params).await {
