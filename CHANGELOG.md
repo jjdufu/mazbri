@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.6](https://github.com/jjdufu/mazbri/compare/v0.6.5...v0.6.6) (2026-11-26)
+
+
+### Features
+
+* **traces,gateway:** 精细化全阶段嵌套链路追踪、热路径时延收敛与控制面 WebUI 治理方案 ([#94](https://github.com/jjdufu/mazbri/issues/94)) ([8961c44](https://github.com/jjdufu/mazbri/commit/8961c445ad88edb75ceb2db27a2de8e77743781d))
+
 ## [0.6.5](https://github.com/jjdufu/mazbri/compare/v0.6.4...v0.6.5) (2026-11-25)
 
 
