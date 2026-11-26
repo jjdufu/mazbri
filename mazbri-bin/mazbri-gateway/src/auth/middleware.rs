@@ -29,7 +29,7 @@ use prometheus::{IntCounterVec, Opts};
 use std::net::SocketAddr;
 use std::sync::LazyLock;
 use std::time::{Duration, Instant};
-use tracing::{error, warn};
+use tracing::{Instrument as _, error, warn};
 
 pub static RATELIMIT_FAIL_CLOSED_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
     IntCounterVec::new(
@@ -189,8 +189,9 @@ fn verify_bearer_jwt(
     Ok((claims, kid))
 }
 
-/// auth 阶段：补记 span（全量）并按采样输出 stage 日志。
+/// auth 阶段：读取已进入的 `auth` span ID 并按采样输出 stage 日志。
 fn log_auth_stage(
+    auth_span: &tracing::Span,
     started_at: Instant,
     request_id: &impl std::fmt::Display,
     claims: &MazbriClaims,
@@ -199,9 +200,8 @@ fn log_auth_stage(
 ) {
     let auth_elapsed = started_at.elapsed();
     let auth_stage_ms = mazbri_core::num::millis_u64(auth_elapsed);
-    let stage_ids = crate::gateway::stage_log::stage_span("auth", auth_elapsed)
-        .tenant(&claims.tenant_code)
-        .record();
+    mazbri_core::trace_spans::set_span_attr(auth_span, "tenant_code", claims.tenant_code.clone());
+    let stage_ids = crate::gateway::stage_log::span_ids_of(auth_span);
     if crate::gateway::stage_log::should_log_stage_info(auth_stage_ms) {
         stage_log!(
             info,
@@ -326,6 +326,28 @@ pub async fn jwt_auth_middleware(
     req: Request,
     next: Next,
 ) -> Result<Response, MiddlewareRejection> {
+    let auth_span = tracing::info_span!("auth");
+    let authed_req = jwt_auth_stage(&state, req, &auth_span)
+        .instrument(auth_span.clone())
+        .await;
+    match authed_req {
+        Ok(req) => {
+            drop(auth_span);
+            Ok(next.run(req).await)
+        }
+        Err(rejection) => {
+            crate::gateway::stage_log::mark_stage_span_failed(&auth_span, "auth");
+            drop(auth_span);
+            Err(rejection)
+        }
+    }
+}
+
+async fn jwt_auth_stage(
+    state: &AppState,
+    req: Request,
+    auth_span: &tracing::Span,
+) -> Result<Request, MiddlewareRejection> {
     let started_at = Instant::now();
     let request_id = current_request_id(req.headers());
     let peer_addr = req
@@ -333,7 +355,7 @@ pub async fn jwt_auth_middleware(
         .get::<ConnectInfo<SocketAddr>>()
         .map(|ci| ci.0);
     let client_ip = state.ip_extractor.extract(req.headers(), peer_addr);
-    let (claims, kid) = verify_bearer_jwt(&state, req.headers())?;
+    let (claims, kid) = verify_bearer_jwt(state, req.headers())?;
     let tenant_uuid = validate_tenant_id(&claims.tenant_id).map_err(|err| {
         warn!(
             tenant_id = %claims.tenant_id,
@@ -342,7 +364,7 @@ pub async fn jwt_auth_middleware(
         );
         JwtAuthError::AccessDenied.into_response()
     })?;
-    enforce_gateway_tenant_security(&state, req.extensions(), &claims, tenant_uuid, client_ip)
+    enforce_gateway_tenant_security(state, req.extensions(), &claims, tenant_uuid, client_ip)
         .await?;
 
     let tenant_context = TenantContext::new(tenant_uuid, CredentialType::Jwt);
@@ -366,7 +388,7 @@ pub async fn jwt_auth_middleware(
         .insert(GatewayHttpPath(path_and_query.clone()));
     let binding_outcome = if parts.uri.path() == "/api/v1/gateway" {
         bind_gateway_invoke_request(
-            &state,
+            state,
             &mut parts,
             &claims,
             tenant_context,
@@ -395,15 +417,14 @@ pub async fn jwt_auth_middleware(
         Some(GatewayRequestPayload::Encrypted(_))
     );
     log_auth_stage(
+        auth_span,
         started_at,
         &request_id,
         &claims,
         &binding_outcome,
         encrypted_request,
     );
-    Ok(next
-        .run(Request::from_parts(parts, Body::from(body_bytes)))
-        .await)
+    Ok(Request::from_parts(parts, Body::from(body_bytes)))
 }
 
 fn prepare_gateway_invoke_extensions(
@@ -484,16 +505,22 @@ pub async fn ratelimit_middleware(
         .get::<GatewayRequestTiming>()
         .cloned()
         .unwrap_or_else(|| GatewayRequestTiming::new(stage_start));
-    let decision = state
-        .proxy_state
-        .local_ratelimiter
-        .check_outer_admission(&LocalRateLimitInput {
-            tenant_id: tenant_context.tenant_id,
-            product_id: tenant_context.product_id.clone(),
-            api_endpoint: api_endpoint.clone(),
-            client_ip: client_ip.clone(),
-            request_bytes,
-        });
+    let rl_span = tracing::info_span!("ratelimit");
+    if let Some(product_id) = tenant_context.product_id.as_deref() {
+        mazbri_core::trace_spans::set_span_attr(&rl_span, "product_id", product_id.to_string());
+    }
+    let decision = rl_span.in_scope(|| {
+        state
+            .proxy_state
+            .local_ratelimiter
+            .check_outer_admission(&LocalRateLimitInput {
+                tenant_id: tenant_context.tenant_id,
+                product_id: tenant_context.product_id.clone(),
+                api_endpoint: api_endpoint.clone(),
+                client_ip: client_ip.clone(),
+                request_bytes,
+            })
+    });
     timing.ratelimit_ms = mazbri_core::num::millis_u64(stage_start.elapsed());
     match decision {
         LocalRateLimitDecision::Allow {
@@ -514,6 +541,7 @@ pub async fn ratelimit_middleware(
             timing.bandwidth_prepaid = Some(prepaid);
             req.extensions_mut().insert(timing);
             log_ratelimit_allow_stage(
+                &rl_span,
                 &req,
                 &tenant_context,
                 &request_id,
@@ -521,6 +549,7 @@ pub async fn ratelimit_middleware(
                 stage_start.elapsed(),
                 prepaid,
             );
+            drop(rl_span);
             Ok(with_ratelimit_headers(next.run(req).await, quota))
         }
         LocalRateLimitDecision::Deny {
@@ -530,27 +559,33 @@ pub async fn ratelimit_middleware(
             snapshot_age_ms,
             degraded,
             quota,
-        } => Err(build_ratelimit_deny_rejection(
-            &state,
-            &req,
-            &tenant_context,
-            &RateLimitDenyMeta {
-                peer_addr,
-                request_id: &request_id,
-                api_endpoint: &api_endpoint,
-                rl_elapsed: stage_start.elapsed(),
-                policy_version,
-                retry_after_ms,
-                reason: &reason,
-                snapshot_age_ms,
-                degraded,
-                quota,
-            },
-        )),
+        } => {
+            let rejection = build_ratelimit_deny_rejection(
+                &rl_span,
+                &state,
+                &req,
+                &tenant_context,
+                &RateLimitDenyMeta {
+                    peer_addr,
+                    request_id: &request_id,
+                    api_endpoint: &api_endpoint,
+                    rl_elapsed: stage_start.elapsed(),
+                    policy_version,
+                    retry_after_ms,
+                    reason: &reason,
+                    snapshot_age_ms,
+                    degraded,
+                    quota,
+                },
+            );
+            drop(rl_span);
+            Err(rejection)
+        }
     }
 }
 
 fn log_ratelimit_allow_stage(
+    rl_span: &tracing::Span,
     req: &Request,
     tenant_context: &TenantContext,
     request_id: &str,
@@ -559,7 +594,7 @@ fn log_ratelimit_allow_stage(
     prepaid: BandwidthPrepaid,
 ) {
     let rl_ms = mazbri_core::num::millis_u64(rl_elapsed);
-    let stage_ids = ratelimit_stage_span(tenant_context, rl_elapsed).record();
+    let stage_ids = crate::gateway::stage_log::span_ids_of(rl_span);
     if crate::gateway::stage_log::should_log_stage_info(rl_ms) {
         stage_log!(
             info,
@@ -600,6 +635,7 @@ struct RateLimitDenyMeta<'a> {
 }
 
 fn build_ratelimit_deny_rejection(
+    rl_span: &tracing::Span,
     state: &AppState,
     req: &Request,
     tenant_context: &TenantContext,
@@ -618,9 +654,8 @@ fn build_ratelimit_deny_rejection(
         );
     }
     let rl_ms = mazbri_core::num::millis_u64(deny.rl_elapsed);
-    let stage_ids = ratelimit_stage_span(tenant_context, deny.rl_elapsed)
-        .failed()
-        .record();
+    crate::gateway::stage_log::mark_stage_span_failed(rl_span, "ratelimit");
+    let stage_ids = crate::gateway::stage_log::span_ids_of(rl_span);
     stage_log!(
         warn,
         "gateway.stage",
@@ -649,17 +684,6 @@ fn build_ratelimit_deny_rejection(
         deny.quota,
     )
     .into()
-}
-
-fn ratelimit_stage_span(
-    tenant_context: &TenantContext,
-    duration: std::time::Duration,
-) -> crate::gateway::stage_log::StageSpan {
-    let span = crate::gateway::stage_log::stage_span("ratelimit", duration);
-    match tenant_context.product_id.as_deref() {
-        Some(product_id) => span.product(product_id),
-        None => span,
-    }
 }
 
 fn content_length_header(headers: &axum::http::HeaderMap) -> u64 {

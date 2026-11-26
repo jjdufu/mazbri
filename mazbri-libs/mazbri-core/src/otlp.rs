@@ -68,20 +68,29 @@ pub struct OtlpBatchOptions {
     pub scheduled_delay: Duration,
 }
 
-/// Gateway stage span names (step 16 `stage_span`).
+/// Gateway & bypass stage span names.
 const GATEWAY_STAGE_NAMES: &[&str] = &[
     "auth",
     "ratelimit",
+    "ratelimit_inner",
     "balance_check",
     "idempotency",
     "transport",
     "request_prepare",
     "product_detail_lookup",
+    "route_match",
+    "response_cache",
     "upstream",
+    "egress_build",
+    "egress_build#retry",
+    "upstream_auth",
+    "upstream_auth#retry",
+    "upstream_wire",
+    "upstream_wire#retry",
+    "response_decode",
     "response_serialize",
     "response_encrypt",
     "post_response",
-    "platform_summary",
 ];
 
 /// Span name prefixes worth exporting for dependency hops and business logic.
@@ -500,6 +509,16 @@ mod tests {
 
         let tower_req = info_span!(target: "tower_http::trace::make_span", "request");
         assert!(should_export_otlp_span(tower_req.metadata().expect("meta")));
+
+        let wire_retry = info_span!(target: "external_stage", "upstream_wire#retry");
+        assert!(should_export_otlp_span(
+            wire_retry.metadata().expect("meta")
+        ));
+
+        let route_stage = info_span!(target: "external_stage", "route_match");
+        assert!(should_export_otlp_span(
+            route_stage.metadata().expect("meta")
+        ));
 
         let unknown = info_span!(target: "sqlx::query", "fetch");
         assert!(!should_export_otlp_span(unknown.metadata().expect("meta")));

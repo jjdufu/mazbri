@@ -22,10 +22,45 @@ use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
+use tokio::sync::{Notify, mpsc};
 use tonic::{Request, Response};
 use tracing::Instrument;
 use uuid::Uuid;
+
+const ACCESS_LOG_QUEUE_CAPACITY: usize = 16_384;
+static PENDING_BYPASS_LOGS: AtomicUsize = AtomicUsize::new(0);
+static LOG_DRAIN_NOTIFY: Notify = Notify::const_new();
+
+fn spawn_bypass_log_worker() -> Option<mpsc::Sender<BypassLogSnapshot>> {
+    let handle = tokio::runtime::Handle::try_current().ok()?;
+    let (tx, mut rx) = mpsc::channel::<BypassLogSnapshot>(ACCESS_LOG_QUEUE_CAPACITY);
+    handle.spawn(async move {
+        while let Some(snapshot) = rx.recv().await {
+            snapshot.emit();
+            if PENDING_BYPASS_LOGS.fetch_sub(1, Ordering::AcqRel) == 1 {
+                LOG_DRAIN_NOTIFY.notify_waiters();
+            }
+        }
+    });
+    Some(tx)
+}
+
+pub async fn drain_pending_logs(timeout: Duration) {
+    let deadline = Instant::now() + timeout;
+    loop {
+        let notified = LOG_DRAIN_NOTIFY.notified();
+        if PENDING_BYPASS_LOGS.load(Ordering::Acquire) == 0 {
+            return;
+        }
+        let now = Instant::now();
+        if now >= deadline {
+            return;
+        }
+        let _ = tokio::time::timeout(deadline.saturating_duration_since(now), notified).await;
+    }
+}
 
 fn hash_config_json(config_json: &str) -> String {
     let digest = Sha256::digest(config_json.as_bytes());
@@ -62,6 +97,7 @@ pub struct MazbriBypassServiceImpl {
     artifact_cache: Cache<String, CachedArtifact>,
     /// 出站 HTTP 客户端的 User-Agent（`upstream.user_agent`），记入访问日志。
     user_agent: Arc<str>,
+    log_tx: Option<mpsc::Sender<BypassLogSnapshot>>,
 }
 
 /// bypass 侧配置缓存的空闲过期时间：命中即续期。网关只在首次或收到 `CONFIG_CACHE_MISS`
@@ -143,6 +179,7 @@ impl MazbriBypassServiceImpl {
                 .time_to_live(Duration::from_secs(600))
                 .build(),
             user_agent: Arc::from(""),
+            log_tx: spawn_bypass_log_worker(),
         }
     }
 
@@ -173,6 +210,19 @@ impl MazbriBypassServiceImpl {
     ) -> Result<Option<CachedSupplierConfig>, String> {
         let hash = hash.trim();
         let full = full.trim();
+        if !hash.is_empty() {
+            let lookup = if hash.bytes().all(|b| !b.is_ascii_uppercase()) {
+                self.supplier_config_cache.get(hash)
+            } else {
+                self.supplier_config_cache.get(&hash.to_ascii_lowercase())
+            };
+            if let Some(cached) = lookup
+                && cached.hash.eq_ignore_ascii_case(hash)
+            {
+                UpstreamMetricsRecorder::record_config_cache("supplier", "hit");
+                return Ok(Some(cached));
+            }
+        }
         if !full.is_empty() {
             let computed = hash_config_json(full);
             if !hash.is_empty() && !computed.eq_ignore_ascii_case(hash) {
@@ -190,13 +240,6 @@ impl MazbriBypassServiceImpl {
                 .map_err(|e| e.as_ref().clone())?;
             return Ok(Some(entry));
         }
-        if !hash.is_empty()
-            && let Some(cached) = self.supplier_config_cache.get(hash)
-            && cached.hash.eq_ignore_ascii_case(hash)
-        {
-            UpstreamMetricsRecorder::record_config_cache("supplier", "hit");
-            return Ok(Some(cached));
-        }
         if !hash.is_empty() {
             UpstreamMetricsRecorder::record_config_cache("supplier", "miss");
             return Err(
@@ -210,6 +253,19 @@ impl MazbriBypassServiceImpl {
     fn resolve_egress_spec(&self, hash: &str, full: &str) -> Result<Arc<ChannelEgressSpec>, String> {
         let hash = hash.trim();
         let full = full.trim();
+        if !hash.is_empty() {
+            let lookup = if hash.bytes().all(|b| !b.is_ascii_uppercase()) {
+                self.egress_spec_cache.get(hash)
+            } else {
+                self.egress_spec_cache.get(&hash.to_ascii_lowercase())
+            };
+            if let Some(cached) = lookup
+                && cached.hash.eq_ignore_ascii_case(hash)
+            {
+                UpstreamMetricsRecorder::record_config_cache("egress", "hit");
+                return Ok(cached.spec);
+            }
+        }
         if !full.is_empty() {
             let computed = hash_egress_spec_json(full);
             if !hash.is_empty() && !computed.eq_ignore_ascii_case(hash) {
@@ -223,13 +279,6 @@ impl MazbriBypassServiceImpl {
                 .try_get_with(computed.clone(), || parse_cached_egress_spec(computed, full))
                 .map(|c| c.spec)
                 .map_err(|e| e.as_ref().clone());
-        }
-        if !hash.is_empty()
-            && let Some(cached) = self.egress_spec_cache.get(hash)
-            && cached.hash.eq_ignore_ascii_case(hash)
-        {
-            UpstreamMetricsRecorder::record_config_cache("egress", "hit");
-            return Ok(cached.spec);
         }
         if hash.is_empty() {
             return Err("SPEC_INVALID: missing egress_spec_json".into());
@@ -299,7 +348,7 @@ impl MazbriBypassServiceImpl {
             collect_trace: false,
         };
         let (outcome, _) = self
-            .run_traced_invoke(&req, ExecuteMode::Production, options)
+            .run_traced_invoke(req, ExecuteMode::Production, options)
             .await;
         outcome.response
     }
@@ -313,7 +362,7 @@ impl MazbriBypassServiceImpl {
             collect_trace: true,
         };
         let (outcome, trace_id) = self
-            .run_traced_invoke(&req, ExecuteMode::Business, options)
+            .run_traced_invoke(req, ExecuteMode::Business, options)
             .await;
         let mut probe_resp = ProbeInvokeResponse::from(outcome.response);
         probe_resp.response_headers = outcome.response_headers;
@@ -327,7 +376,7 @@ impl MazbriBypassServiceImpl {
 
     async fn run_traced_invoke(
         &self,
-        req: &upstream_proto::InvokeRequest,
+        req: upstream_proto::InvokeRequest,
         mode: ExecuteMode,
         options: ExecuteOptions,
     ) -> (OnceOutcome, String) {
@@ -338,11 +387,11 @@ impl MazbriBypassServiceImpl {
             request_id = %req.request_id,
             channel_id = %req.channel_id
         );
-        let trace_context = bypass_trace_context(req, &span);
+        let trace_context = bypass_trace_context(&req, &span);
         let (mut outcome, spec) = async {
             match self.resolve_egress_spec(&req.egress_spec_hash, &req.egress_spec_json) {
                 Ok(spec) => {
-                    let out = self.execute_once(req, &spec, mode, options).await;
+                    let out = self.execute_once(&req, &spec, mode, options).await;
                     (out, Some(spec))
                 }
                 Err(error) => (OnceOutcome::error(error), None),
@@ -352,7 +401,7 @@ impl MazbriBypassServiceImpl {
         .await;
         let trace_id = trace_context.trace_id.to_string();
         if outcome.response.error.starts_with(CONFIG_CACHE_MISS_PREFIX) {
-            emit_config_cache_miss(req, &trace_context, &outcome.response.error);
+            emit_config_cache_miss(&req, &trace_context, &outcome.response.error);
             return (outcome, trace_id);
         }
         let duration_ms = mazbri_core::num::millis_u64(start_time.elapsed());
@@ -364,34 +413,50 @@ impl MazbriBypassServiceImpl {
             std::mem::take(&mut outcome.stage_timings),
             duration_ms,
         );
-        tokio::spawn(async move {
-            snapshot.emit();
-        });
+        self.enqueue_log_snapshot(snapshot);
         (outcome, trace_id)
+    }
+
+    fn enqueue_log_snapshot(&self, snapshot: BypassLogSnapshot) {
+        let Some(ref tx) = self.log_tx else {
+            snapshot.emit();
+            return;
+        };
+        PENDING_BYPASS_LOGS.fetch_add(1, Ordering::AcqRel);
+        if let Err(err) = tx.try_send(snapshot) {
+            let snapshot = match err {
+                mpsc::error::TrySendError::Full(s) | mpsc::error::TrySendError::Closed(s) => s,
+            };
+            if PENDING_BYPASS_LOGS.fetch_sub(1, Ordering::AcqRel) == 1 {
+                LOG_DRAIN_NOTIFY.notify_waiters();
+            }
+            snapshot.emit();
+        }
     }
 
     fn capture_log_snapshot(
         &self,
-        req: &upstream_proto::InvokeRequest,
+        req: upstream_proto::InvokeRequest,
         trace_context: TraceContext,
         spec: Option<&ChannelEgressSpec>,
         response: &upstream_proto::InvokeResponse,
         stage_timings: Vec<StageTiming>,
         duration_ms: u64,
     ) -> BypassLogSnapshot {
+        let request_bytes = req.payload_json.len() as u64;
         BypassLogSnapshot {
             service_name: Arc::clone(&self.service_name),
             user_agent: Arc::clone(&self.user_agent),
             trace_context,
-            tenant_id: req.tenant_id.clone(),
-            tenant_code: req.tenant_code.clone(),
-            product_id: req.product_id.clone(),
-            supplier_id: req.supplier_id.clone(),
-            supplier_code: req.supplier_code.clone(),
-            channel_id: req.channel_id.clone(),
-            channel_code: req.channel_code.clone(),
+            tenant_id: req.tenant_id,
+            tenant_code: req.tenant_code,
+            product_id: req.product_id,
+            supplier_id: req.supplier_id,
+            supplier_code: req.supplier_code,
+            channel_id: req.channel_id,
+            channel_code: req.channel_code,
             attempt_order: req.attempt_order,
-            request_bytes: req.payload_json.len() as u64,
+            request_bytes,
             response_bytes: response.payload_json.len() as u64,
             spec_adapter: spec.map_or_default(|s| s.adapter.clone()),
             spec_method_upper: spec.map(|s| s.request.method.to_ascii_uppercase()),
@@ -479,7 +544,17 @@ impl MazbriBypassServiceImpl {
             BTreeMap::new()
         };
         let decode_start = Instant::now();
-        let response = finalize_invoke_response(result, &spec.adapter, duration);
+        let decode_span = tracing::info_span!(
+            "response_decode",
+            channel_id = %req.channel_id,
+            adapter = %spec.adapter,
+        );
+        let response =
+            decode_span.in_scope(|| finalize_invoke_response(result, &spec.adapter, duration));
+        if !response.success {
+            mazbri_core::trace_spans::set_span_error(&decode_span, response.error.clone());
+        }
+        drop(decode_span);
         stage_timings.push(StageTiming {
             name: "response_decode".into(),
             ms: mazbri_core::num::millis_u64(decode_start.elapsed()),
@@ -1046,5 +1121,38 @@ mod retry_passthrough_tests {
         let meta = resp.upstream_meta.expect("meta");
         assert_eq!(meta.upstream_wire_ms, 0);
         assert_eq!(meta.upstream_wire_us, 450);
+    }
+
+    #[tokio::test]
+    async fn config_cache_hits_by_hash_without_recomputing_and_rejects_initial_mismatch() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://postgres:postgres@127.0.0.1:5432/mazbri")
+            .expect("lazy pool");
+        let client = Arc::new(reqwest::Client::new());
+        let svc = MazbriBypassServiceImpl::new(
+            client,
+            SsrfChecker::with_allow_private(true),
+            "mazbri-bypass",
+            Arc::new(pool),
+        );
+
+        let supplier_json = r#"{"timeouts":{"total_ms":5000}}"#;
+        let valid_hash = hash_config_json(supplier_json);
+        assert!(
+            svc.resolve_supplier_config("deadbeef", supplier_json)
+                .is_err(),
+            "mismatched hash on uncached insert must fail"
+        );
+        let first = svc
+            .resolve_supplier_config(&valid_hash, supplier_json)
+            .expect("valid insert")
+            .expect("some config");
+        let second = svc
+            .resolve_supplier_config(&valid_hash.to_ascii_uppercase(), supplier_json)
+            .expect("cached hit")
+            .expect("some config");
+        assert!(Arc::ptr_eq(&first.config, &second.config));
+
+        drain_pending_logs(Duration::from_millis(50)).await;
     }
 }

@@ -100,13 +100,14 @@ impl<S: BypassRpcHandler> UnaryService<InvokeRequest> for ExecuteMethod<S> {
 
     fn call(&mut self, request: Request<InvokeRequest>) -> Self::Future {
         let inner = Arc::clone(&self.0);
-        let request_id = request.get_ref().request_id.clone();
         Box::pin(async move {
-            let fut = async move { Box::pin(inner.execute(request)).await };
+            let fut = inner.execute(request);
             match AssertUnwindSafe(recoverable(fut)).catch_unwind().await {
                 Ok(response) => Ok(response),
                 Err(payload) => {
                     let err = PanicError::from_payload(payload.as_ref());
+                    let request_id = mazbri_core::current_request_trace()
+                        .map_or_default(|trace| trace.request_id.to_string());
                     error!(
                         rpc = "Execute",
                         request_id = %request_id,
@@ -159,44 +160,16 @@ impl<S: BypassRpcHandler> tower::Service<http::Request<Body>> for BypassGrpcServ
         let inner = Arc::clone(&self.inner);
         match req.uri().path() {
             BYPASS_EXECUTE_PATH => Box::pin(async move {
-                let fut = async move {
-                    let mut grpc = Grpc::new(ProstCodec::<InvokeResponse, InvokeRequest>::default())
-                        .max_decoding_message_size(MAX_BYPASS_GRPC_MESSAGE_BYTES)
-                        .max_encoding_message_size(MAX_BYPASS_GRPC_MESSAGE_BYTES);
-                    grpc.unary(ExecuteMethod(inner), req).await
-                };
-                match AssertUnwindSafe(recoverable(fut)).catch_unwind().await {
-                    Ok(resp) => Ok(resp),
-                    Err(payload) => {
-                        let err = PanicError::from_payload(payload.as_ref());
-                        error!(
-                            rpc = "Execute",
-                            panic = %err.message,
-                            "Bypass gRPC Execute framing panicked; returning Status::internal"
-                        );
-                        Ok(Status::internal("internal bypass error").into_http())
-                    }
-                }
+                let mut grpc = Grpc::new(ProstCodec::<InvokeResponse, InvokeRequest>::default())
+                    .max_decoding_message_size(MAX_BYPASS_GRPC_MESSAGE_BYTES)
+                    .max_encoding_message_size(MAX_BYPASS_GRPC_MESSAGE_BYTES);
+                Ok(grpc.unary(ExecuteMethod(inner), req).await)
             }),
             BYPASS_HEALTH_PATH => Box::pin(async move {
-                let fut = async move {
-                    let mut grpc = Grpc::new(ProstCodec::<HealthResponse, HealthRequest>::default())
-                        .max_decoding_message_size(MAX_BYPASS_GRPC_MESSAGE_BYTES)
-                        .max_encoding_message_size(MAX_BYPASS_GRPC_MESSAGE_BYTES);
-                    grpc.unary(HealthMethod(inner), req).await
-                };
-                match AssertUnwindSafe(recoverable(fut)).catch_unwind().await {
-                    Ok(resp) => Ok(resp),
-                    Err(payload) => {
-                        let err = PanicError::from_payload(payload.as_ref());
-                        error!(
-                            rpc = "Health",
-                            panic = %err.message,
-                            "Bypass gRPC Health framing panicked; returning Status::internal"
-                        );
-                        Ok(Status::internal("internal bypass error").into_http())
-                    }
-                }
+                let mut grpc = Grpc::new(ProstCodec::<HealthResponse, HealthRequest>::default())
+                    .max_decoding_message_size(MAX_BYPASS_GRPC_MESSAGE_BYTES)
+                    .max_encoding_message_size(MAX_BYPASS_GRPC_MESSAGE_BYTES);
+                Ok(grpc.unary(HealthMethod(inner), req).await)
             }),
             _ => Box::pin(async move { Ok(Status::new(Code::Unimplemented, "").into_http()) }),
         }

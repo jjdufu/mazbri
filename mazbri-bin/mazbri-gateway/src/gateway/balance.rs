@@ -18,7 +18,7 @@ use parking_lot::Mutex;
 use rust_decimal::Decimal;
 use std::sync::Arc;
 use std::time::Instant;
-use tracing::warn;
+use tracing::{Instrument as _, warn};
 use uuid::Uuid;
 
 /// RAII guard for a single balance precheck reservation (`reserve(estimated)`).
@@ -59,13 +59,13 @@ impl BalanceReservationGuard {
         }
     }
 
-    pub(crate) async fn release_now(&mut self) {
+    pub(crate) fn release_now(&mut self) {
         if self.committed {
             return;
         }
         self.committed = true;
         if let Some(ref cache) = self.cache {
-            cache.release(self.tenant_id, self.reserved).await;
+            cache.release(self.tenant_id, self.reserved);
         }
         self.reserved = Decimal::ZERO;
     }
@@ -84,17 +84,9 @@ impl Drop for BalanceReservationGuard {
             return;
         }
         self.committed = true;
-        let Some(cache) = self.cache.clone() else {
-            return;
-        };
-        let Ok(handle) = tokio::runtime::Handle::try_current() else {
-            return;
-        };
-        let tenant_id = self.tenant_id;
-        let reserved = self.reserved;
-        handle.spawn(async move {
-            cache.release(tenant_id, reserved).await;
-        });
+        if let Some(ref cache) = self.cache {
+            cache.release(self.tenant_id, self.reserved);
+        }
     }
 }
 
@@ -171,6 +163,7 @@ struct StageTimes {
 }
 
 fn reject_insufficient(
+    bal_span: &tracing::Span,
     tenant_id: Uuid,
     product_id: &str,
     estimated_cost: Decimal,
@@ -188,10 +181,8 @@ fn reject_insufficient(
     );
     let bal_elapsed = times.stage_start.elapsed();
     let bal_ms = mazbri_core::num::millis_u64(bal_elapsed);
-    let stage_ids = super::stage_log::stage_span("balance_check", bal_elapsed)
-        .product(product_id)
-        .failed()
-        .record();
+    super::stage_log::mark_stage_span_failed(bal_span, "balance_check");
+    let stage_ids = super::stage_log::span_ids_of(bal_span);
     stage_log!(
         warn,
         "gateway.stage",
@@ -208,6 +199,7 @@ fn reject_insufficient(
 }
 
 fn log_infra_failure(
+    bal_span: &tracing::Span,
     tenant_id: Uuid,
     product_id: &str,
     error: &str,
@@ -227,10 +219,8 @@ fn log_infra_failure(
     );
     let bal_elapsed = times.stage_start.elapsed();
     let bal_ms = mazbri_core::num::millis_u64(bal_elapsed);
-    let stage_ids = super::stage_log::stage_span("balance_check", bal_elapsed)
-        .product(product_id)
-        .failed()
-        .record();
+    super::stage_log::mark_stage_span_failed(bal_span, "balance_check");
+    let stage_ids = super::stage_log::span_ids_of(bal_span);
     stage_log!(
         warn,
         "gateway.stage",
@@ -252,12 +242,10 @@ fn estimate_cost(product_detail: &TenantProductDetail) -> Decimal {
         .amount
 }
 
-fn log_allowed(product_id: &str, cache_source: &'static str, times: &StageTimes) {
+fn log_allowed(bal_span: &tracing::Span, cache_source: &'static str, times: &StageTimes) {
     let bal_elapsed = times.stage_start.elapsed();
     let bal_ms = mazbri_core::num::millis_u64(bal_elapsed);
-    let stage_ids = super::stage_log::stage_span("balance_check", bal_elapsed)
-        .product(product_id)
-        .record();
+    let stage_ids = super::stage_log::span_ids_of(bal_span);
     if super::stage_log::should_log_stage_info(bal_ms) {
         stage_log!(
             info,
@@ -396,9 +384,53 @@ pub(crate) async fn enforce_product_and_balance_gate(
     stage_ctx: StageCtx,
     timing: &mut GatewayRequestTiming,
 ) -> Result<(TenantProductDetail, BalanceReservationGuard), BalanceRejection> {
+    let bal_span = tracing::info_span!(
+        "balance_check",
+        product_id = %product_id,
+        tenant_code = %stage_ctx.tenant_code,
+    );
+    enforce_product_and_balance_gate_inner(
+        &bal_span,
+        state,
+        tenant_id,
+        product_id,
+        stage_ctx,
+        timing,
+    )
+    .instrument(bal_span.clone())
+    .await
+}
+
+async fn enforce_product_and_balance_gate_inner(
+    bal_span: &tracing::Span,
+    state: &AppState,
+    tenant_id: Uuid,
+    product_id: &str,
+    stage_ctx: StageCtx,
+    timing: &mut GatewayRequestTiming,
+) -> Result<(TenantProductDetail, BalanceReservationGuard), BalanceRejection> {
     let stage_start = Instant::now();
     let product_detail_lookup_started_at = Instant::now();
-    let product_detail = lookup_product_detail(state, tenant_id, product_id).await?;
+    let prod_span = tracing::info_span!(
+        "product_detail_lookup",
+        product_id = %product_id,
+        tenant_code = %stage_ctx.tenant_code,
+    );
+    let product_detail = match lookup_product_detail(state, tenant_id, product_id)
+        .instrument(prod_span.clone())
+        .await
+    {
+        Ok(detail) => {
+            drop(prod_span);
+            detail
+        }
+        Err(rejection) => {
+            super::stage_log::mark_stage_span_failed(&prod_span, "product_detail_lookup");
+            drop(prod_span);
+            super::stage_log::mark_stage_span_failed(bal_span, "balance_check");
+            return Err(rejection);
+        }
+    };
     let product_detail_lookup_elapsed = product_detail_lookup_started_at.elapsed();
     let product_detail_lookup_ms = product_detail_lookup_elapsed.as_millis();
     timing.product_detail_lookup_ms = mazbri_core::num::millis_u64(product_detail_lookup_elapsed);
@@ -436,7 +468,7 @@ pub(crate) async fn enforce_product_and_balance_gate(
                 .with_label_values(&[cache_source, "allowed"])
                 .inc();
             if let Some(cache) = state.balance_cache.as_ref() {
-                cache.reserve(tenant_id, estimated_cost).await;
+                cache.reserve(tenant_id, estimated_cost);
             }
             let guard = BalanceReservationGuard::reserved(
                 state.balance_cache.clone(),
@@ -444,11 +476,12 @@ pub(crate) async fn enforce_product_and_balance_gate(
                 estimated_cost,
             );
             timing.balance_check_ms = mazbri_core::num::millis_u64(stage_start.elapsed());
-            log_allowed(product_id, cache_source, &times);
+            log_allowed(bal_span, cache_source, &times);
             Ok((product_detail, guard))
         }
         Ok((false, cache_source)) => {
             reject_insufficient(
+                bal_span,
                 tenant_id,
                 product_id,
                 estimated_cost,
@@ -458,7 +491,7 @@ pub(crate) async fn enforce_product_and_balance_gate(
             Err(BalanceRejection::Insufficient)
         }
         Err(error) => {
-            log_infra_failure(tenant_id, product_id, &error, fail_open, &times);
+            log_infra_failure(bal_span, tenant_id, product_id, &error, fail_open, &times);
             if fail_open {
                 BALANCE_PRECHECK_TOTAL
                     .with_label_values(&["l3", "fail_open"])

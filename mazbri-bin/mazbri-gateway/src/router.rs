@@ -287,6 +287,21 @@ async fn init_auth(
     let jwt_keyring = crate::auth::JwtHs256Keyring::new(config.auth.jwt_kid.clone(), jwt_secret)
         .with_extra_keys(extra_jwt_keys);
     let tenant_security = TenantStatusAndWhitelistCache::new(Arc::clone(db));
+    match tenant_security.warm_all_tenants().await {
+        Ok(count) => {
+            tracing::info!(
+                tenant_count = count,
+                "Pre-warmed tenant security & IP whitelist cache"
+            );
+        }
+        Err(error) => {
+            tracing::warn!(
+                error = %error,
+                "Initial tenant security cache warmup failed; spawning background retry warmup"
+            );
+            crate::warmup::spawn_tenant_security_warmup(tenant_security.clone());
+        }
+    }
     let service = AuthService::new(AuthServiceInit {
         keyring: jwt_keyring.clone(),
         token_expiration_secs: config.auth.token_expiration_secs,

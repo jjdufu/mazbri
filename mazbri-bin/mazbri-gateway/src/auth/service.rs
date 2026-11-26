@@ -368,7 +368,7 @@ impl AuthService {
         &self,
         tenant_uuid: Uuid,
         client_ip: Option<IpAddr>,
-    ) -> Result<super::tenant_security::TenantSecuritySnapshot, TokenError> {
+    ) -> Result<Arc<super::tenant_security::TenantSecuritySnapshot>, TokenError> {
         self.tenant_security
             .verify_tenant_and_ip(tenant_uuid, client_ip)
             .await
@@ -444,8 +444,8 @@ impl AuthService {
             refresh_token: None,
             tenant_info: Some(TenantInfo {
                 tenant_id,
-                tenant_code: snapshot.code,
-                tenant_name: snapshot.name,
+                tenant_code: snapshot.code.clone(),
+                tenant_name: snapshot.name.clone(),
                 account_type: AccountType::Standard.to_string(),
             }),
             error: None,
@@ -484,7 +484,13 @@ impl AuthService {
                 let tenant_security = tenant_security_for_keys.clone();
                 async move {
                     token_cache.invalidate_all();
-                    tenant_security.invalidate_all();
+                    if let Err(error) = tenant_security.warm_all_tenants().await {
+                        warn!(
+                            error = %error,
+                            "Tenant security cache reload failed after API key update; falling back to invalidate_all"
+                        );
+                        tenant_security.invalidate_all();
+                    }
                 }
             },
         );
@@ -501,8 +507,14 @@ impl AuthService {
                 let token_cache = token_cache_for_wl.clone();
                 let tenant_security = tenant_security_for_wl.clone();
                 async move {
-                    tenant_security.invalidate_all();
                     token_cache.invalidate_all();
+                    if let Err(error) = tenant_security.warm_all_tenants().await {
+                        warn!(
+                            error = %error,
+                            "Tenant security cache reload failed after IP whitelist update; falling back to invalidate_all"
+                        );
+                        tenant_security.invalidate_all();
+                    }
                 }
             },
         );

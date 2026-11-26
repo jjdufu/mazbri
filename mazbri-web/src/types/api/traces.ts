@@ -60,6 +60,9 @@ export interface TraceSpan {
   start_ns: number;
   end_ns: number;
   duration_ns: number;
+  self_duration_ns: number;
+  transit_req_ns: number | null;
+  transit_resp_ns: number | null;
   depth: number;
   child_count: number;
   critical: boolean;
@@ -83,12 +86,13 @@ export interface TraceDetail {
   start_ns: number;
   end_ns: number;
   duration_ms: number;
+  upstream_wire_ns: number | null;
+  platform_overhead_ns: number | null;
   services: string[];
   critical_path: string[];
   spans: TraceSpan[];
   linked_from: LinkedSpan[];
 }
-
 
 export interface TraceBillingRow {
   request_id: string;

@@ -116,6 +116,37 @@ pub fn current_context() -> OtelContext {
     tracing::Span::current().context()
 }
 
+/// 提取给定 `tracing::Span` 关联的 `(trace_id, span_id)` 十六进制字符串；未启用导出或上下文无效时返回 `None`。
+#[must_use]
+pub fn span_ids_of(span: &tracing::Span) -> Option<(String, String)> {
+    let cx = span.context();
+    let span_ref = cx.span();
+    let span_context = span_ref.span_context();
+    span_context
+        .is_valid()
+        .then(|| (span_context.trace_id().to_string(), span_context.span_id().to_string()))
+}
+
+/// 提取当前激活 `tracing::Span` 关联的 `(trace_id, span_id)`。
+#[must_use]
+pub fn current_span_ids() -> Option<(String, String)> {
+    span_ids_of(&tracing::Span::current())
+}
+
+/// 在已进入/创建的 `tracing::Span` 关联的 OpenTelemetry span 上附加属性。
+pub fn set_span_attr(
+    span: &tracing::Span,
+    key: &'static str,
+    value: impl Into<opentelemetry::Value>,
+) {
+    span.set_attribute(key, value);
+}
+
+/// 将 `tracing::Span` 关联的 OpenTelemetry span 标记为错误状态。
+pub fn set_span_error(span: &tracing::Span, message: impl Into<String>) {
+    span.set_status(Status::error(message.into()));
+}
+
 /// `00-<trace>-<span>-<flags>` 形式的 W3C `traceparent`。
 #[must_use]
 pub fn traceparent_of(span_context: &SpanContext) -> String {

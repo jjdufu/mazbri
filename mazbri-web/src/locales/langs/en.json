@@ -509,20 +509,11 @@
   "setting": {
     "menuType": {
       "title": "Menu Layout",
-      "list": [
-        "Vertical",
-        "Horizontal",
-        "Mixed",
-        "Dual"
-      ]
+      "list": ["Vertical", "Horizontal", "Mixed", "Dual"]
     },
     "theme": {
       "title": "Theme Style",
-      "list": [
-        "Light",
-        "Dark",
-        "System (Follow System)"
-      ]
+      "list": ["Light", "Dark", "System (Follow System)"]
     },
     "menu": {
       "title": "Menu Style"
@@ -532,10 +523,7 @@
     },
     "box": {
       "title": "Box Style",
-      "list": [
-        "Border",
-        "Shadow"
-      ]
+      "list": ["Border", "Shadow"]
     },
     "basics": {
       "title": "Basic Config",
@@ -578,14 +566,8 @@
   "notice": {
     "title": "Notice",
     "btnRead": "Mark as read",
-    "bar": [
-      "Notice",
-      "Message",
-      "Todo"
-    ],
-    "text": [
-      "No"
-    ],
+    "bar": ["Notice", "Message", "Todo"],
+    "text": ["No"],
     "viewAll": "View all"
   },
   "chat": {
@@ -4875,6 +4857,14 @@
         "back": "Back",
         "title": "Trace detail",
         "startedAt": "Start",
+        "upstreamWire": "Upstream Wire",
+        "platformOverhead": "Platform Overhead",
+        "selfDuration": "Self Time",
+        "selfShort": "self",
+        "transitReq": "Outbound RPC",
+        "transitResp": "Inbound RPC",
+        "scaleLinear": "Linear",
+        "scaleFoldUpstream": "Fold Upstream",
         "criticalPath": "Critical path",
         "error": "Error",
         "expandAll": "Expand all",
@@ -4890,7 +4880,7 @@
         "links": "Links",
         "linksTo": "Links to",
         "linkedFrom": "Linked from",
-        "selectSpan": "Click a span to see its details",
+        "selectSpan": "No span selected",
         "asyncTitle": "Async billing spans (via span links)",
         "logs": "Call logs",
         "stages": "Stage timings",

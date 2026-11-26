@@ -16,16 +16,26 @@ docs/
 │   └── upstream-auth-and-reconnect.md               # 上游令牌失效判定、重试预算与 WS 断线重连机制
 ├── performance/
 │   └── gateway-bypass-latency-optimization.md       # Gateway ↔ Bypass 通信机制、热路径缺陷修复与低延迟演进方案
-└── audit-remediation-plan/                          # 全量代码审计第一性原理归因与 8 步可落地治理方案
-    ├── 00-overview-and-first-principles.md          # 七大公理归因矩阵、二三阶影响图谱与总路线图
-    ├── 01-step01-runtime-panic-and-clock-safety.md  # Step 01：Panic 隔离闭环与单调时钟边界止血
-    ├── 02-step02-trust-boundary-ssrf-and-proxy-hardening.md # Step 02：SSRF 底座、代理强类型化与防混淆代理人
-    ├── 03-step03-dataplane-tenant-isolation-and-encrypted-gate.md # Step 03：多租户键隔离与解密后统一风控门禁
-    ├── 04-step04-crypto-domain-separation-and-mtls-lifecycle.md # Step 04：密码学域分离与全集群 mTLS 动态热重载
-    ├── 05-step05-async-cancellation-resilience-and-caching.md # Step 05：异步取消安全、响应缓存与通道级熔断
-    ├── 06-step06-billing-ledger-fencing-and-reconciliation.md # Step 06：账务精度同构、租约围栏与对账 SSOT
-    ├── 07-step07-control-plane-rbac-session-and-transactions.md # Step 07：控制面 RBAC 裁剪、会话纪元与事务收敛
-    └── 08-step08-observability-frontend-hygiene-and-ci-cd.md # Step 08：可观测校准、前端竞态安全与确定性发版
+├── audit-remediation-plan/                          # 全量代码审计第一性原理归因与 8 步可落地治理方案
+│   ├── 00-overview-and-first-principles.md          # 七大公理归因矩阵、二三阶影响图谱与总路线图
+│   ├── 01-step01-runtime-panic-and-clock-safety.md  # Step 01：Panic 隔离闭环与单调时钟边界止血
+│   ├── 02-step02-trust-boundary-ssrf-and-proxy-hardening.md # Step 02：SSRF 底座、代理强类型化与防混淆代理人
+│   ├── 03-step03-dataplane-tenant-isolation-and-encrypted-gate.md # Step 03：多租户键隔离与解密后统一风控门禁
+│   ├── 04-step04-crypto-domain-separation-and-mtls-lifecycle.md # Step 04：密码学域分离与全集群 mTLS 动态热重载
+│   ├── 05-step05-async-cancellation-resilience-and-caching.md # Step 05：异步取消安全、响应缓存与通道级熔断
+│   ├── 06-step06-billing-ledger-fencing-and-reconciliation.md # Step 06：账务精度同构、租约围栏与对账 SSOT
+│   ├── 07-step07-control-plane-rbac-session-and-transactions.md # Step 07：控制面 RBAC 裁剪、会话纪元与事务收敛
+│   └── 08-step08-observability-frontend-hygiene-and-ci-cd.md # Step 08：可观测校准、前端竞态安全与确定性发版
+└── webui-audit-remediation-plan/                    # 控制面 WebUI 深度审计核验纠偏与 8 步可落地治理方案
+    ├── 00-overview-and-first-principles.md          # 四大公理归因、7 处原审计误判纠偏、红队守卫与总路线图
+    ├── 01-step01-mfa-capability-gate-and-auth-audit-truth.md # Step 01：MFA 前置能力门卫、取消解耦与两阶段登录审计正名
+    ├── 02-step02-observability-clock-ssot-and-backend-predicates.md # Step 02：单一东八区时钟源、安全榜单后端谓词与链路瀑布图对齐
+    ├── 03-step03-semantic-value-formatters-and-chart-primitives.md # Step 03：值域/亚分精度语义格式化器、柱图限宽与资源量纲校准
+    ├── 04-step04-table-infrastructure-theme-pipeline-and-surfaces.md # Step 04：表格底座契约闭环（total/右对齐/空态/按钮降噪）与唯一主题管线
+    ├── 05-step05-dark-cockpit-dashboard-and-alert-ergonomics.md # Step 05：航空暗舱式全局态势首屏降噪、KPI Grid 与告警视图收敛
+    ├── 06-step06-entity-identity-bar-and-tenant-crypto-ledger-ux.md # Step 06：轻量实体身份顶栏原语、状态徽标统一与详情页精修
+    ├── 07-step07-workbench-viewport-and-security-settings-cohesion.md # Step 07：免代码工作台紧凑屏自适应、暗色对比度与单保存脏状态闭环
+    └── 08-step08-bilingual-sanitization-fitness-gates-and-topbar-closure.md # Step 08：双语清零、异常页自愈、Vitest 架构门禁与顶栏收官
 ```
 
 ## 文档清单
@@ -38,4 +48,5 @@ docs/
 | 内部架构 | [architecture/upstream-auth-and-reconnect.md](./architecture/upstream-auth-and-reconnect.md) | `mazbri-upstream-runtime` 认证失效重放、按代令牌重试预算、WS 连接池探活与计费口径 |
 | 性能优化 | [performance/gateway-bypass-latency-optimization.md](./performance/gateway-bypass-latency-optimization.md) | `gateway ↔ bypass` 双容器 mTLS/gRPC 单跳延迟拆解、7 项热路径代码级缺陷修复清单与进程内直调演进约束 |
 | 审计治理方案 | [audit-remediation-plan/00-overview-and-first-principles.md](./audit-remediation-plan/00-overview-and-first-principles.md) | 全仓代码审计第一性原理归因、跨生态二/三阶连锁影响推演与 8 步串行落地治理方案 |
+| 控制面 WebUI 治理方案 | [webui-audit-remediation-plan/00-overview-and-first-principles.md](./webui-audit-remediation-plan/00-overview-and-first-principles.md) | 控制面 UI/UX 审计源码核验纠偏、第一性原理归因、红队边界守卫与 8 步串行治理方案 |
 | 前端组件规范 | [../mazbri-web/docs/page-templates.md](../mazbri-web/docs/page-templates.md) | 管理后台 `OpsPage`、`ResourceTablePageShell`、`TenantDetailShell` 页面外壳与三态规范 |

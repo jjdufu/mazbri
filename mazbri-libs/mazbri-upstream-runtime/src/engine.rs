@@ -4,6 +4,7 @@ use mazbri_core::num::SaturatingFrom;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use tracing::Instrument as _;
 
 use mazbri_core::{AdapterKind, UpstreamTlsSpec};
 use mazbri_crypto::AlgorithmRegistry;
@@ -552,6 +553,18 @@ impl RuntimeEngine {
 
     /// validate + ssrf syntax/literal stages; returns the resolved base URL.
     fn preflight(&self, input: &InvokeInput, trace: &mut Trace) -> Result<String, StageFail> {
+        let span = tracing::info_span!(
+            "egress_build",
+            channel_id = %input.channel_id,
+            adapter = %input.spec.adapter,
+        );
+        span.in_scope(|| self.preflight_inner(input, trace))
+            .inspect_err(|fail| {
+                mazbri_core::trace_spans::set_span_error(&span, fail.err.to_string());
+            })
+    }
+
+    fn preflight_inner(&self, input: &InvokeInput, trace: &mut Trace) -> Result<String, StageFail> {
         let v_start = Instant::now();
         let validate_fail = |err| StageFail::new("validate", v_start, err);
         if !input.spec_validated {
@@ -639,6 +652,63 @@ impl RuntimeEngine {
         Ok((auth_client, adapter_client))
     }
 
+    async fn run_auth_stage(
+        &self,
+        input: &InvokeInput,
+        base_url: &str,
+        cache_key: &str,
+        trace: &mut Trace,
+    ) -> Result<(Arc<reqwest::Client>, AppliedAuth), StageFail> {
+        let a_start = Instant::now();
+        let auth_span = if trace.retry_round {
+            tracing::info_span!(
+                "upstream_auth#retry",
+                channel_id = %input.channel_id,
+                retry = true,
+            )
+        } else {
+            tracing::info_span!(
+                "upstream_auth",
+                channel_id = %input.channel_id,
+            )
+        };
+        let res: Result<(Arc<reqwest::Client>, AppliedAuth), StageFail> = async {
+            let (auth_client, adapter_client) = self
+                .resolve_attempt_clients(input)
+                .map_err(|e| StageFail::new("auth", a_start, e))?;
+            let applied = apply_auth(crate::auth::AuthApply {
+                client: &auth_client,
+                ssrf: &self.ssrf,
+                token_cache: &self.token_cache,
+                spec: &input.spec,
+                base_url,
+                credentials: &input.credentials,
+                cache_key,
+                token_default_ttl: self.options.token_default_ttl,
+                request_id: &input.request_id,
+                wire_clock: Some(&trace.wire_clock),
+            })
+            .await
+            .map_err(|e| StageFail::new("auth", a_start, e))?;
+            Ok((adapter_client, applied))
+        }
+        .instrument(auth_span.clone())
+        .await;
+        match res {
+            Ok((adapter_client, applied)) => {
+                trace.time("upstream_auth", a_start, true);
+                trace.record(|| auth_stage(input, &applied, a_start));
+                drop(auth_span);
+                Ok((adapter_client, applied))
+            }
+            Err(fail) => {
+                mazbri_core::trace_spans::set_span_error(&auth_span, fail.err.to_string());
+                drop(auth_span);
+                Err(fail)
+            }
+        }
+    }
+
     /// One auth + adapter round（重试轮前被拒令牌已由 [`Self::auth_retry_gate`] 作废）。
     async fn attempt(
         &self,
@@ -648,31 +718,11 @@ impl RuntimeEngine {
         trace: &mut Trace,
         retry_log: &RetryLog,
     ) -> AttemptOutcome {
-        let a_start = Instant::now();
-        let (auth_client, adapter_client) = match self.resolve_attempt_clients(input) {
-            Ok(pair) => pair,
-            Err(e) => return AttemptOutcome::Failed(StageFail::new("auth", a_start, e)),
-        };
-        let applied = match apply_auth(crate::auth::AuthApply {
-            client: &auth_client,
-            ssrf: &self.ssrf,
-            token_cache: &self.token_cache,
-            spec: &input.spec,
-            base_url,
-            credentials: &input.credentials,
-            cache_key,
-            token_default_ttl: self.options.token_default_ttl,
-            request_id: &input.request_id,
-            wire_clock: Some(&trace.wire_clock),
-        })
-        .await
-        {
-            Ok(a) => a,
-            Err(e) => return AttemptOutcome::Failed(StageFail::new("auth", a_start, e)),
-        };
-        trace.time("upstream_auth", a_start, true);
-        trace.record(|| auth_stage(input, &applied, a_start));
-
+        let (adapter_client, applied) =
+            match self.run_auth_stage(input, base_url, cache_key, trace).await {
+                Ok(pair) => pair,
+                Err(fail) => return AttemptOutcome::Failed(fail),
+            };
         let kind = match input.spec.adapter_kind() {
             Ok(k) => k,
             Err(e) => {
@@ -691,6 +741,7 @@ impl RuntimeEngine {
             }));
         }
         let u_start = Instant::now();
+        let wire_span = build_wire_span(input, trace.retry_round);
         let derived_keys;
         let pipeline_keys_ref: &crate::crypto_pipeline::PipelineKeys =
             if let Some(ref prebuilt) = input.pipeline_keys {
@@ -722,11 +773,59 @@ impl RuntimeEngine {
             retry_log,
             wire_clock: &trace.wire_clock,
         };
-        let outcome = match invoke_adapter(&ctx, kind).await {
+        let outcome = match invoke_adapter(&ctx, kind).instrument(wire_span.clone()).await {
             Ok(o) => o,
-            Err(e) => return AttemptOutcome::Failed(StageFail::new("upstream", u_start, e)),
+            Err(e) => {
+                mazbri_core::trace_spans::set_span_error(&wire_span, e.to_string());
+                drop(wire_span);
+                return AttemptOutcome::Failed(StageFail::new("upstream", u_start, e));
+            }
         };
+        finish_wire_span(&wire_span, &outcome, auth_only);
+        drop(wire_span);
         finalize_adapter_outcome(input, applied, outcome, auth_only, u_start, trace)
+    }
+}
+
+fn build_wire_span(input: &InvokeInput, retry_round: bool) -> tracing::Span {
+    if retry_round {
+        tracing::info_span!(
+            "upstream_wire#retry",
+            otel.kind = "client",
+            channel_id = %input.channel_id,
+            adapter = %input.spec.adapter,
+            retry = true,
+        )
+    } else {
+        tracing::info_span!(
+            "upstream_wire",
+            otel.kind = "client",
+            channel_id = %input.channel_id,
+            adapter = %input.spec.adapter,
+        )
+    }
+}
+
+fn finish_wire_span(wire_span: &tracing::Span, outcome: &AdapterOutcome, auth_only: bool) {
+    mazbri_core::trace_spans::set_span_attr(
+        wire_span,
+        "http.status_code",
+        i64::from(outcome.response.status),
+    );
+    let wire_us = mazbri_core::num::micros_u64(outcome.response.wire_duration);
+    mazbri_core::trace_spans::set_span_attr(
+        wire_span,
+        "upstream_wire_us",
+        i64::try_from(wire_us).unwrap_or(i64::MAX),
+    );
+    if !auth_only
+        && (outcome.biz_error.is_some() || !(200..300).contains(&outcome.response.status))
+    {
+        let msg = outcome.biz_error.as_ref().map_or_else(
+            || format!("HTTP {}", outcome.response.status),
+            |b| b.message.clone(),
+        );
+        mazbri_core::trace_spans::set_span_error(wire_span, msg);
     }
 }
 
