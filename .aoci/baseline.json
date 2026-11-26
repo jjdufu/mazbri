@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created_at": "2026-11-24T21:41:22Z",
-  "updated_at": "2026-11-25T16:46:54Z",
+  "updated_at": "2026-11-26T10:53:53Z",
   "files": {
     ".agents/skills/mz-rt-pr/SKILL.md": {
       "role": "index",
@@ -53,9 +53,9 @@
     },
     ".release-please-manifest.json": {
       "role": "index",
-      "sha256": "efc0564330a8ab24b79f5c5ef39eb3fbc1af4fc3f809afff0339c907f6994517",
+      "sha256": "8a3cd9a43585d551fbd9a8b4e996417755fb001878693aec93d89056b3636279",
       "size": 14,
-      "normalized_sha256": "efc0564330a8ab24b79f5c5ef39eb3fbc1af4fc3f809afff0339c907f6994517"
+      "normalized_sha256": "8a3cd9a43585d551fbd9a8b4e996417755fb001878693aec93d89056b3636279"
     },
     "AGENTS.md": {
       "role": "index",
@@ -65,21 +65,21 @@
     },
     "CHANGELOG.md": {
       "role": "index",
-      "sha256": "edadc65833fd8aa99f0fdbed46e6e7ea8d6e377ca3fd0de53cac52a8faa52570",
-      "size": 48278,
-      "normalized_sha256": "edadc65833fd8aa99f0fdbed46e6e7ea8d6e377ca3fd0de53cac52a8faa52570"
+      "sha256": "7897b1cdab0f51c1ea21c6b4931450d4e4e77cda23ee50a76fc18a60d69dcb00",
+      "size": 48637,
+      "normalized_sha256": "7897b1cdab0f51c1ea21c6b4931450d4e4e77cda23ee50a76fc18a60d69dcb00"
     },
     "VERSION": {
       "role": "index",
-      "sha256": "fe095f487e65bfe3b94d469bb12eeb1405a29208ae603fba7318a53a6eea039c",
+      "sha256": "88a25e899a7784431ddaeb3e21b76a0353511359c68a94a862b6d1a7923c5c8b",
       "size": 33,
-      "normalized_sha256": "fe095f487e65bfe3b94d469bb12eeb1405a29208ae603fba7318a53a6eea039c"
+      "normalized_sha256": "88a25e899a7784431ddaeb3e21b76a0353511359c68a94a862b6d1a7923c5c8b"
     },
     "aoci.code.txt": {
       "role": "index",
-      "sha256": "f9129ca2cea0ac163b56d715cbe42bd3fb1b4e2c03c4c2eac87951a822fe5f52",
-      "size": 758083,
-      "normalized_sha256": "f9129ca2cea0ac163b56d715cbe42bd3fb1b4e2c03c4c2eac87951a822fe5f52"
+      "sha256": "5b9efecc81894492bdb21ef29c7c73ec935e17c62058ac33a7c718d27a60ddda",
+      "size": 757505,
+      "normalized_sha256": "5b9efecc81894492bdb21ef29c7c73ec935e17c62058ac33a7c718d27a60ddda"
     },
     "aoci.meta.txt": {
       "role": "index",
@@ -631,9 +631,9 @@
     },
     "mazbri-bin/mazbri-bypass/src/main.rs": {
       "role": "index",
-      "sha256": "164381ad930d381aed3785679ac5a1fc2cd4b51c86549a094c410e9d9e467999",
-      "size": 6350,
-      "normalized_sha256": "164381ad930d381aed3785679ac5a1fc2cd4b51c86549a094c410e9d9e467999"
+      "sha256": "bf85e9463c740f64bea0e94e5d5be3a263760819e520e4e5dbf1d3109ed554ae",
+      "size": 6437,
+      "normalized_sha256": "bf85e9463c740f64bea0e94e5d5be3a263760819e520e4e5dbf1d3109ed554ae"
     },
     "mazbri-bin/mazbri-bypass/src/metrics.rs": {
       "role": "index",
@@ -649,15 +649,15 @@
     },
     "mazbri-bin/mazbri-bypass/src/server.rs": {
       "role": "index",
-      "sha256": "8e461c3d012652d6a2450b610f398d011144aa278e53a4f7fdf18f9b7907460f",
-      "size": 16367,
-      "normalized_sha256": "8e461c3d012652d6a2450b610f398d011144aa278e53a4f7fdf18f9b7907460f"
+      "sha256": "46be86071f2c9e94f713d02f0962c56f9c7e0bfde234e787968888bea510b553",
+      "size": 15070,
+      "normalized_sha256": "46be86071f2c9e94f713d02f0962c56f9c7e0bfde234e787968888bea510b553"
     },
     "mazbri-bin/mazbri-bypass/src/service.rs": {
       "role": "index",
-      "sha256": "3ab1b3ed0f35712fdddc013b8d7a0295f43d25291ceb300de856e25d6b32477a",
-      "size": 38310,
-      "normalized_sha256": "3ab1b3ed0f35712fdddc013b8d7a0295f43d25291ceb300de856e25d6b32477a"
+      "sha256": "6770252a868032afafc015df345f8f74f089a77a131bd3a4f2e552d6930a03ad",
+      "size": 41952,
+      "normalized_sha256": "6770252a868032afafc015df345f8f74f089a77a131bd3a4f2e552d6930a03ad"
     },
     "mazbri-bin/mazbri-bypass/src/ssrf.rs": {
       "role": "index",
@@ -1261,21 +1261,21 @@
     },
     "mazbri-bin/mazbri-gateway/src/auth/service.rs": {
       "role": "index",
-      "sha256": "cd03ce8d8a9302822bd16c6867bd614db9316fca7110aa47e09ebf05332d4824",
-      "size": 23696,
-      "normalized_sha256": "cd03ce8d8a9302822bd16c6867bd614db9316fca7110aa47e09ebf05332d4824"
+      "sha256": "20a7478378b785f5bf9bbce657b72ca9544ef4ab46ec42d54ba14e4e36880961",
+      "size": 24382,
+      "normalized_sha256": "20a7478378b785f5bf9bbce657b72ca9544ef4ab46ec42d54ba14e4e36880961"
     },
     "mazbri-bin/mazbri-gateway/src/auth/tenant_security.rs": {
       "role": "index",
-      "sha256": "3e83507564ebf8602180a1a05b02d583cd3aa15849110898eb545a773737da68",
-      "size": 6680,
-      "normalized_sha256": "3e83507564ebf8602180a1a05b02d583cd3aa15849110898eb545a773737da68"
+      "sha256": "6766014d7477254d56d6895e22d86e4537c2599d22c009620d3dba1838fba63d",
+      "size": 13290,
+      "normalized_sha256": "6766014d7477254d56d6895e22d86e4537c2599d22c009620d3dba1838fba63d"
     },
     "mazbri-bin/mazbri-gateway/src/balance_cache.rs": {
       "role": "index",
-      "sha256": "74a755769f1c2dbad0040fba69f4a7f8aede9bfe0c337928916850697dd111a9",
-      "size": 13685,
-      "normalized_sha256": "74a755769f1c2dbad0040fba69f4a7f8aede9bfe0c337928916850697dd111a9"
+      "sha256": "d9db2009639ef594241a6759097ade705571d2ebc998038b2eb15f9b53ff224b",
+      "size": 24862,
+      "normalized_sha256": "d9db2009639ef594241a6759097ade705571d2ebc998038b2eb15f9b53ff224b"
     },
     "mazbri-bin/mazbri-gateway/src/cache.rs": {
       "role": "index",
@@ -1363,9 +1363,9 @@
     },
     "mazbri-bin/mazbri-gateway/src/gateway/balance.rs": {
       "role": "index",
-      "sha256": "63597e207ae0d73c2e126a6a25d878c00dad194be9e82d817fce75964dd41be1",
-      "size": 19068,
-      "normalized_sha256": "63597e207ae0d73c2e126a6a25d878c00dad194be9e82d817fce75964dd41be1"
+      "sha256": "d683cc0e1bf04def6fdf03ee4551046b23c557df665401d67b39e5032f97976f",
+      "size": 18802,
+      "normalized_sha256": "d683cc0e1bf04def6fdf03ee4551046b23c557df665401d67b39e5032f97976f"
     },
     "mazbri-bin/mazbri-gateway/src/gateway/disconnect.rs": {
       "role": "index",
@@ -1405,9 +1405,9 @@
     },
     "mazbri-bin/mazbri-gateway/src/gateway/handler.rs": {
       "role": "index",
-      "sha256": "fa3f8eddf23a898a55f433d3f4e377bc0504a63823f3f05f7555db34078fc545",
-      "size": 53290,
-      "normalized_sha256": "fa3f8eddf23a898a55f433d3f4e377bc0504a63823f3f05f7555db34078fc545"
+      "sha256": "af5913de0b250fb4b5fab56bbba48e225e50677f71ed004e8c9b2adb11fc2d1f",
+      "size": 53278,
+      "normalized_sha256": "af5913de0b250fb4b5fab56bbba48e225e50677f71ed004e8c9b2adb11fc2d1f"
     },
     "mazbri-bin/mazbri-gateway/src/gateway/idempotency.rs": {
       "role": "index",
@@ -1429,9 +1429,9 @@
     },
     "mazbri-bin/mazbri-gateway/src/gateway/post_response.rs": {
       "role": "index",
-      "sha256": "61d279b4cf93dc3dccf523abd3efe6559e717e63f71daeb524690afe3d97b3e4",
-      "size": 25345,
-      "normalized_sha256": "61d279b4cf93dc3dccf523abd3efe6559e717e63f71daeb524690afe3d97b3e4"
+      "sha256": "61d24c06ac7f4d32bedf18adfa3dba4401e055ab9082387cab35540f9af1c118",
+      "size": 25346,
+      "normalized_sha256": "61d24c06ac7f4d32bedf18adfa3dba4401e055ab9082387cab35540f9af1c118"
     },
     "mazbri-bin/mazbri-gateway/src/gateway/rejection_log.rs": {
       "role": "index",
@@ -1603,9 +1603,9 @@
     },
     "mazbri-bin/mazbri-gateway/src/router.rs": {
       "role": "index",
-      "sha256": "2f39ba2d87a3632ed3b9c2277c04b5c03dc4c4f932f604e2faa555605c121021",
-      "size": 36307,
-      "normalized_sha256": "2f39ba2d87a3632ed3b9c2277c04b5c03dc4c4f932f604e2faa555605c121021"
+      "sha256": "ecdca6b3684407f2fa146047d7e54cac2dea6220f95446a52e4ebbb8f60e3066",
+      "size": 36833,
+      "normalized_sha256": "ecdca6b3684407f2fa146047d7e54cac2dea6220f95446a52e4ebbb8f60e3066"
     },
     "mazbri-bin/mazbri-gateway/src/router_panic_tests.rs": {
       "role": "observe",
@@ -1651,9 +1651,9 @@
     },
     "mazbri-bin/mazbri-gateway/src/warmup.rs": {
       "role": "index",
-      "sha256": "607dffab38a058e7c902d5e48a0cbbc8ac26783ab84d3b7abd9d40f8e871bc3f",
-      "size": 11792,
-      "normalized_sha256": "607dffab38a058e7c902d5e48a0cbbc8ac26783ab84d3b7abd9d40f8e871bc3f"
+      "sha256": "f8d6e8214f0f3b26c9ee15103293fa129e3aad4b74eff22056cf5239081c19ae",
+      "size": 12477,
+      "normalized_sha256": "f8d6e8214f0f3b26c9ee15103293fa129e3aad4b74eff22056cf5239081c19ae"
     },
     "mazbri-bin/mazbri-mgmt/Cargo.toml": {
       "role": "index",
@@ -3733,9 +3733,9 @@
     },
     "mazbri-libs/mazbri-core/src/redis/client.rs": {
       "role": "index",
-      "sha256": "384c4cadc6521a1d29a2a877df900988a123e53ef75a69e8c82bd7ccd17ef35d",
-      "size": 32538,
-      "normalized_sha256": "384c4cadc6521a1d29a2a877df900988a123e53ef75a69e8c82bd7ccd17ef35d"
+      "sha256": "560204f70999acedec2bcc818256f73274c9012a4087bf7768f855fa9ea982d8",
+      "size": 36112,
+      "normalized_sha256": "560204f70999acedec2bcc818256f73274c9012a4087bf7768f855fa9ea982d8"
     },
     "mazbri-libs/mazbri-core/src/redis/config.rs": {
       "role": "index",
