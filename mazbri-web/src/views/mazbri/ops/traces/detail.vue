@@ -18,6 +18,14 @@
             >{{ t("ops.traces.columns.duration") }}
             {{ detail.duration_ms.toFixed(2) }} ms</span
           >
+          <span v-if="detail.upstream_wire_ns !== null"
+            >{{ t("ops.traces.detail.upstreamWire") }}
+            {{ formatTraceMs(detail.upstream_wire_ns) }}</span
+          >
+          <span v-if="detail.platform_overhead_ns !== null"
+            >{{ t("ops.traces.detail.platformOverhead") }}
+            {{ formatTraceMs(detail.platform_overhead_ns) }}</span
+          >
           <span
             >{{ t("ops.traces.columns.spans") }} {{ detail.spans.length }}</span
           >
@@ -51,18 +59,33 @@
           <span class="ops-trace__legend-item"
             ><i class="is-error"></i>{{ t("ops.traces.detail.error") }}</span
           >
-          <ElButton size="small" link @click="expandAll">{{
-            t("ops.traces.detail.expandAll")
-          }}</ElButton>
-          <ElButton size="small" link @click="collapseAll">{{
-            t("ops.traces.detail.collapseAll")
-          }}</ElButton>
+          <div class="ops-trace__legend-actions">
+            <ElButton size="small" link @click="expandAll">{{
+              t("ops.traces.detail.expandAll")
+            }}</ElButton>
+            <ElButton size="small" link @click="collapseAll">{{
+              t("ops.traces.detail.collapseAll")
+            }}</ElButton>
+            <ElRadioGroup
+              v-if="foldableUpstream"
+              v-model="scaleMode"
+              size="small"
+              class="ops-trace__scale-switch"
+            >
+              <ElRadioButton value="linear">{{
+                t("ops.traces.detail.scaleLinear")
+              }}</ElRadioButton>
+              <ElRadioButton value="fold-upstream">{{
+                t("ops.traces.detail.scaleFoldUpstream")
+              }}</ElRadioButton>
+            </ElRadioGroup>
+          </div>
         </div>
         <div class="ops-trace__axis">
           <div class="ops-trace__axis-label"></div>
           <div class="ops-trace__axis-track">
             <span
-              v-for="tick in ticks"
+              v-for="tick in projector.ticks"
               :key="tick.percent"
               :style="{ left: `${tick.percent}%` }"
             >
@@ -82,10 +105,20 @@
           :data-span="row.span.span_name"
           @click="selectSpan(row.span.span_id)"
         >
-          <div
-            class="ops-trace__label"
-            :style="{ paddingLeft: `${row.span.depth * 14 + 4}px` }"
-          >
+          <div class="ops-trace__label">
+            <span class="ops-trace__indent" aria-hidden="true">
+              <i
+                v-for="(g, gi) in row.indent.guides"
+                :key="gi"
+                class="ops-trace__guide"
+                :class="`is-${g}`"
+              ></i>
+              <i
+                v-if="row.indent.connector !== 'none'"
+                class="ops-trace__branch"
+                :class="`is-${row.indent.connector}`"
+              ></i>
+            </span>
             <span
               v-if="row.span.child_count > 0"
               class="ops-trace__toggle"
@@ -102,15 +135,33 @@
               row.span.span_name
             }}</span>
           </div>
-          <div class="ops-trace__track">
+          <div
+            class="ops-trace__track"
+            :style="{ '--span-color': rowColor(row.span) }"
+          >
+            <span
+              v-if="projector.breakZone"
+              class="ops-trace__break-zone"
+              :style="{
+                left: `${projector.breakZone.left}%`,
+                width: `${projector.breakZone.width}%`,
+              }"
+            ></span>
             <span
               class="ops-trace__bar"
+              :class="{ 'is-container': row.isContainer }"
               :style="{
                 left: `${row.left}%`,
                 width: `${row.width}%`,
-                background: row.span.error
-                  ? 'var(--el-color-danger)'
-                  : serviceColor(row.span.service_name),
+              }"
+            ></span>
+            <span
+              v-for="(seg, si) in row.selfSegments"
+              :key="si"
+              class="ops-trace__bar-self"
+              :style="{
+                left: `${seg.left}%`,
+                width: `${seg.width}%`,
               }"
             ></span>
             <span
@@ -119,7 +170,7 @@
                 'is-inside-bar': row.durPlacement.mode === 'inside-bar',
               }"
               :style="row.durPlacement.style"
-              >{{ formatDurationNs(row.span.duration_ns) }}</span
+              >{{ row.durLabel }}</span
             >
           </div>
         </div>
@@ -158,12 +209,28 @@
               />
             </ElDescriptionsItem>
             <ElDescriptionsItem :label="t('ops.traces.columns.duration')">
-              {{ formatDurationNs(selected.duration_ns) }}
+              {{ formatTraceMs(selected.duration_ns) }}
+            </ElDescriptionsItem>
+            <ElDescriptionsItem
+              v-if="selected.child_count > 0"
+              :label="t('ops.traces.detail.selfDuration')"
+            >
+              {{ formatTraceMs(selected.self_duration_ns) }}
+            </ElDescriptionsItem>
+            <ElDescriptionsItem
+              v-if="selected.transit_req_ns !== null"
+              :label="t('ops.traces.detail.transitReq')"
+            >
+              {{ formatTraceMs(selected.transit_req_ns) }}
+            </ElDescriptionsItem>
+            <ElDescriptionsItem
+              v-if="selected.transit_resp_ns !== null"
+              :label="t('ops.traces.detail.transitResp')"
+            >
+              {{ formatTraceMs(selected.transit_resp_ns) }}
             </ElDescriptionsItem>
             <ElDescriptionsItem :label="t('ops.traces.detail.offset')">
-              {{
-                formatDurationNs(selected.start_ns - (detail?.start_ns ?? 0))
-              }}
+              {{ formatTraceMs(selected.start_ns - (detail?.start_ns ?? 0)) }}
             </ElDescriptionsItem>
             <ElDescriptionsItem
               v-if="selected.status_message"
@@ -452,11 +519,21 @@ import { HttpError } from "@/utils/http/error";
 import { buildCallsRoute, buildTraceRoute } from "@/utils/ops/opsRoutes";
 import { logger } from "@/utils/sys";
 import {
+  computeSelfSegments,
+  computeTreeConnectors,
+  createWaterfallProjector,
+  findFoldableUpstream,
+  formatTraceMs,
   resolveWaterfallDurPlacement,
+  type TreeRowIndent,
   type WaterfallDurPlacement,
+  type WaterfallScaleMode,
+  type WaterfallSegment,
 } from "./waterfall-layout";
 
 defineOptions({ name: "OpsTraceDetail" });
+
+const SELF_BADGE_THRESHOLD_NS = 50_000;
 
 const KeyValueList = defineComponent({
   props: {
@@ -508,6 +585,7 @@ const missing = ref(false);
 const detail = ref<TraceDetail | null>(null);
 const selectedId = ref("");
 const collapsed = ref(new Set<string>());
+const scaleMode = ref<WaterfallScaleMode>("linear");
 const panelTab = ref("attributes");
 const bottomTab = ref("logs");
 
@@ -529,51 +607,108 @@ function serviceColor(service: string): string {
   return PALETTE[hash % PALETTE.length];
 }
 
+function rowColor(span: TraceSpan): string {
+  return span.error
+    ? "var(--el-color-danger)"
+    : serviceColor(span.service_name);
+}
+
 const errorCount = computed(
   () => detail.value?.spans.filter((s) => s.error).length ?? 0,
 );
 
+const childrenByParent = computed(() => {
+  const map = new Map<string, TraceSpan[]>();
+  for (const span of detail.value?.spans ?? []) {
+    if (!span.parent_span_id) continue;
+    const list = map.get(span.parent_span_id);
+    if (list) list.push(span);
+    else map.set(span.parent_span_id, [span]);
+  }
+  return map;
+});
+
+const foldableUpstream = computed(() => {
+  const d = detail.value;
+  if (!d) return null;
+  return findFoldableUpstream(d.start_ns, d.end_ns, d.spans);
+});
+
+const projector = computed(() => {
+  const d = detail.value;
+  if (!d) {
+    return createWaterfallProjector(0, 1, "linear", null);
+  }
+  return createWaterfallProjector(
+    d.start_ns,
+    d.end_ns,
+    scaleMode.value,
+    foldableUpstream.value,
+  );
+});
+
 interface WaterfallRow {
   span: TraceSpan;
+  indent: TreeRowIndent;
   left: number;
   width: number;
+  isContainer: boolean;
+  selfSegments: WaterfallSegment[];
+  durLabel: string;
   durPlacement: WaterfallDurPlacement;
 }
 
 const visibleRows = computed<WaterfallRow[]>(() => {
   const d = detail.value;
   if (!d) return [];
-  const total = Math.max(1, d.end_ns - d.start_ns);
-  const rows: WaterfallRow[] = [];
+  const proj = projector.value;
+  const visibleSpans: TraceSpan[] = [];
   let hideBelow: number | null = null;
   for (const span of d.spans) {
     if (hideBelow !== null) {
       if (span.depth > hideBelow) continue;
       hideBelow = null;
     }
-    const left = ((span.start_ns - d.start_ns) / total) * 100;
-    const width = Math.max(0.3, (span.duration_ns / total) * 100);
-    const safeLeft = Math.max(0, left);
-    const safeWidth = Math.min(width, 100 - safeLeft);
-    rows.push({
-      span,
-      left: safeLeft,
-      width: safeWidth,
-      durPlacement: resolveWaterfallDurPlacement(safeLeft, safeWidth),
-    });
+    visibleSpans.push(span);
     if (collapsed.value.has(span.span_id)) hideBelow = span.depth;
   }
-  return rows;
-});
 
-const ticks = computed(() => {
-  const d = detail.value;
-  if (!d) return [];
-  const totalMs = (d.end_ns - d.start_ns) / 1e6;
-  return [0, 25, 50, 75, 100].map((percent) => ({
-    percent,
-    label: `${((totalMs * percent) / 100).toFixed(totalMs < 10 ? 2 : 0)} ms`,
-  }));
+  const indents = computeTreeConnectors(visibleSpans.map((s) => s.depth));
+  const selfPrefix = t("ops.traces.detail.selfShort");
+
+  return visibleSpans.map((span, idx) => {
+    const startPct = proj.project(span.start_ns);
+    const endPct = proj.project(span.end_ns);
+    const safeLeft = Math.max(0, Math.min(100, startPct));
+    const safeWidth = Math.min(
+      Math.max(0.3, endPct - startPct),
+      100 - safeLeft,
+    );
+    const isContainer =
+      span.child_count > 0 && !collapsed.value.has(span.span_id);
+    const directChildren = isContainer
+      ? (childrenByParent.value.get(span.span_id) ?? [])
+      : [];
+    const selfSegments = isContainer
+      ? computeSelfSegments(span, directChildren, proj.project)
+      : [];
+    const baseDur = formatTraceMs(span.duration_ns);
+    const durLabel =
+      span.child_count > 0 && span.self_duration_ns >= SELF_BADGE_THRESHOLD_NS
+        ? `${baseDur} · ${selfPrefix} ${formatTraceMs(span.self_duration_ns)}`
+        : baseDur;
+
+    return {
+      span,
+      indent: indents[idx],
+      left: safeLeft,
+      width: safeWidth,
+      isContainer,
+      selfSegments,
+      durLabel,
+      durPlacement: resolveWaterfallDurPlacement(safeLeft, safeWidth),
+    };
+  });
 });
 
 const selected = computed(
@@ -617,16 +752,9 @@ function formatEventTime(value: number | string | undefined): string {
   if (value === undefined) return "";
   if (typeof value === "number") {
     const offset = value - (detail.value?.start_ns ?? value);
-    return `+${formatDurationNs(offset)}`;
+    return `+${formatTraceMs(offset)}`;
   }
   return value;
-}
-
-function formatDurationNs(ns: number): string {
-  const ms = ns / 1e6;
-  if (ms >= 1000) return `${(ms / 1000).toFixed(2)} s`;
-  if (ms >= 1) return `${ms.toFixed(2)} ms`;
-  return `${(ns / 1000).toFixed(0)} µs`;
 }
 
 function toggle(id: string) {
@@ -779,6 +907,7 @@ async function load() {
   missing.value = false;
   detail.value = null;
   collapsed.value = new Set();
+  scaleMode.value = "linear";
   void loadCalls(id);
   try {
     await traceRunner.run(id);
@@ -815,8 +944,10 @@ watch(traceId, () => void load(), { immediate: true });
 }
 .ops-trace__meta {
   display: flex;
+  flex-wrap: wrap;
   gap: 16px;
   font-size: 13px;
+  font-variant-numeric: tabular-nums;
   color: var(--el-text-color-regular);
 }
 .ops-trace__body {
@@ -899,16 +1030,24 @@ watch(traceId, () => void load(), { immediate: true });
 .ops-trace__legend-item i.is-error {
   background: var(--el-color-danger);
 }
+.ops-trace__legend-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-left: auto;
+}
 .ops-trace__axis,
 .ops-trace__row {
   display: grid;
-  grid-template-columns: clamp(220px, 34%, 340px) minmax(0, 1fr);
+  grid-template-columns: clamp(230px, 35%, 360px) minmax(0, 1fr);
   align-items: center;
 }
 .ops-trace__axis-track {
   position: relative;
   height: 18px;
   font-size: 11px;
+  font-variant-numeric: tabular-nums;
   color: var(--el-text-color-regular);
   border-bottom: 1px solid var(--el-border-color-lighter);
 }
@@ -948,10 +1087,54 @@ watch(traceId, () => void load(), { immediate: true });
   display: flex;
   gap: 4px;
   align-items: center;
+  height: 24px;
+  padding-left: 4px;
   overflow: hidden;
   white-space: nowrap;
 }
+.ops-trace__indent {
+  display: inline-flex;
+  flex: none;
+  align-items: stretch;
+  height: 24px;
+}
+.ops-trace__guide,
+.ops-trace__branch {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: 14px;
+  height: 24px;
+}
+.ops-trace__guide.is-pipe::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 6px;
+  content: "";
+  border-left: 1px solid var(--el-border-color);
+}
+.ops-trace__branch::before {
+  position: absolute;
+  top: 0;
+  left: 6px;
+  height: 12px;
+  content: "";
+  border-left: 1px solid var(--el-border-color);
+}
+.ops-trace__branch.is-tee::before {
+  height: 24px;
+}
+.ops-trace__branch::after {
+  position: absolute;
+  top: 12px;
+  left: 6px;
+  width: 7px;
+  content: "";
+  border-top: 1px solid var(--el-border-color);
+}
 .ops-trace__toggle {
+  flex: none;
   width: 12px;
   color: var(--el-text-color-regular);
   text-align: center;
@@ -980,13 +1163,45 @@ watch(traceId, () => void load(), { immediate: true });
   background: var(--el-fill-color-light);
   border-radius: 2px;
 }
+.ops-trace__break-zone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent 4px,
+    color-mix(in srgb, var(--el-border-color) 42%, transparent) 4px,
+    color-mix(in srgb, var(--el-border-color) 42%, transparent) 6px
+  );
+  border-right: 1px dashed var(--el-border-color);
+  border-left: 1px dashed var(--el-border-color);
+}
 .ops-trace__bar {
+  position: absolute;
+  top: 5px;
+  box-sizing: border-box;
+  display: block;
+  height: 12px;
+  background: var(--span-color);
+  border-radius: 2px;
+  opacity: 0.88;
+}
+.ops-trace__bar.is-container {
+  background: color-mix(in srgb, var(--span-color) 18%, transparent);
+  border: 1px solid color-mix(in srgb, var(--span-color) 75%, transparent);
+  opacity: 1;
+}
+.ops-trace__bar-self {
   position: absolute;
   top: 5px;
   display: block;
   height: 12px;
-  border-radius: 2px;
-  opacity: 0.85;
+  pointer-events: none;
+  background: var(--span-color);
+  border-radius: 1px;
+  opacity: 0.9;
 }
 .ops-trace__row.is-critical .ops-trace__bar {
   outline: 2px solid var(--el-color-warning);
@@ -998,6 +1213,7 @@ watch(traceId, () => void load(), { immediate: true });
   z-index: 1;
   padding: 0 4px;
   font-size: 11px;
+  font-variant-numeric: tabular-nums;
   line-height: 16px;
   color: var(--el-text-color-primary);
   white-space: nowrap;
@@ -1005,9 +1221,9 @@ watch(traceId, () => void load(), { immediate: true });
   border-radius: 2px;
 }
 .ops-trace__dur.is-inside-bar {
-  color: #ffffff;
-  background: rgba(0, 0, 0, 0.32);
-  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.45);
+  color: var(--el-text-color-primary);
+  background: color-mix(in srgb, var(--el-bg-color) 90%, transparent);
+  border: 1px solid var(--el-border-color-lighter);
 }
 .ops-trace__event {
   padding: 6px 8px;

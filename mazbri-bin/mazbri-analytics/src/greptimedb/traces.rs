@@ -117,6 +117,12 @@ pub struct SpanNode {
     pub start_ns: i64,
     pub end_ns: i64,
     pub duration_ns: i64,
+    /// 扣除直接子 span 覆盖并集后的自身净耗时（纳秒）。
+    pub self_duration_ns: i64,
+    /// 跨服务 CLIENT span 到下游 SERVER span 的去程传输耗时（纳秒）。
+    pub transit_req_ns: Option<i64>,
+    /// 下游 SERVER span 结束回到跨服务 CLIENT span 的回程传输耗时（纳秒）。
+    pub transit_resp_ns: Option<i64>,
     /// 树深度（根为 0）。
     pub depth: usize,
     pub child_count: usize,
@@ -147,6 +153,10 @@ pub struct TraceDetail {
     pub start_ns: i64,
     pub end_ns: i64,
     pub duration_ms: f64,
+    /// 纯上游网络往返耗时（纳秒，合并同 trace 内 `upstream_wire*` 区间）。
+    pub upstream_wire_ns: Option<i64>,
+    /// 平台自身总开销（纳秒，`trace 总耗时 - upstream_wire_ns`）。
+    pub platform_overhead_ns: Option<i64>,
     pub services: Vec<String>,
     pub critical_path: Vec<String>,
     pub spans: Vec<SpanNode>,
@@ -580,6 +590,9 @@ fn spans_from_rows(rows: &[HashMap<String, Value>]) -> Vec<SpanNode> {
                 start_ns,
                 end_ns,
                 duration_ns: end_ns - start_ns,
+                self_duration_ns: end_ns - start_ns,
+                transit_req_ns: None,
+                transit_resp_ns: None,
                 depth: 0,
                 child_count: 0,
                 critical: false,
@@ -667,10 +680,250 @@ fn critical_path(
     }
 }
 
-/// 把 span 排成深度优先列表（兄弟按开始时间），填充深度、子数与关键路径标记；
+/// 历史平铺阶段 Span 时间包含容差（25 µs，容忍 `Instant` 与 `SystemTime` 换算抖动）。
+const CONTAINMENT_SLACK_NS: i64 = 25_000;
+
+fn stage_container_rank(span_name: &str) -> Option<u8> {
+    match span_name {
+        "request_prepare" | "upstream" => Some(1),
+        "auth" | "ratelimit" | "ratelimit_inner" | "transport" | "balance_check"
+        | "idempotency" | "response_cache" | "route_match" | "billing.enqueue" => Some(2),
+        "product_detail_lookup" | "upstream.attempt" => Some(3),
+        _ => None,
+    }
+}
+
+fn is_leaf_dependency_span(s: &SpanNode) -> bool {
+    (s.span_kind == "SPAN_KIND_CLIENT" && s.span_name != "upstream.attempt")
+        || s.span_name.starts_with("redis.")
+        || s.span_name.starts_with("db.")
+        || s.span_name.starts_with("cache.")
+}
+
+fn can_nest_inside(container_name: &str, inner: &SpanNode) -> bool {
+    let inner_name = inner.span_name.as_str();
+    if container_name == inner_name {
+        return false;
+    }
+    match container_name {
+        "request_prepare" => {
+            matches!(
+                inner_name,
+                "transport"
+                    | "ratelimit_inner"
+                    | "balance_check"
+                    | "product_detail_lookup"
+                    | "idempotency"
+            ) || is_leaf_dependency_span(inner)
+        }
+        "upstream" => {
+            matches!(inner_name, "response_cache" | "upstream.attempt")
+                || is_leaf_dependency_span(inner)
+        }
+        "balance_check" => {
+            inner_name == "product_detail_lookup" || is_leaf_dependency_span(inner)
+        }
+        "auth"
+        | "ratelimit"
+        | "ratelimit_inner"
+        | "transport"
+        | "product_detail_lookup"
+        | "idempotency"
+        | "response_cache"
+        | "route_match"
+        | "billing.enqueue" => is_leaf_dependency_span(inner),
+        _ => false,
+    }
+}
+
+fn normalize_legacy_flat_siblings(spans: &mut [SpanNode]) {
+    let orig_parents: Vec<Option<String>> =
+        spans.iter().map(|s| s.parent_span_id.clone()).collect();
+    let mut reparented: Vec<Option<String>> = vec![None; spans.len()];
+
+    for s_idx in 0..spans.len() {
+        if orig_parents[s_idx].is_none() {
+            continue;
+        }
+        let inner = &spans[s_idx];
+        let inner_rank = stage_container_rank(&inner.span_name).unwrap_or(u8::MAX);
+        let best = (0..spans.len())
+            .filter_map(|c_idx| {
+                if c_idx == s_idx || orig_parents[c_idx] != orig_parents[s_idx] {
+                    return None;
+                }
+                let container = &spans[c_idx];
+                if container.service_name != inner.service_name {
+                    return None;
+                }
+                let c_rank = stage_container_rank(&container.span_name)?;
+                if !can_nest_inside(&container.span_name, inner) {
+                    return None;
+                }
+                let within_window = inner.start_ns
+                    >= container.start_ns.saturating_sub(CONTAINMENT_SLACK_NS)
+                    && inner.end_ns <= container.end_ns.saturating_add(CONTAINMENT_SLACK_NS);
+                let strictly_outer =
+                    container.duration_ns > inner.duration_ns || c_rank < inner_rank;
+                (within_window && strictly_outer).then_some((c_idx, c_rank))
+            })
+            .max_by_key(|&(c_idx, c_rank)| {
+                (
+                    c_rank,
+                    std::cmp::Reverse(spans[c_idx].duration_ns),
+                    std::cmp::Reverse(spans[c_idx].start_ns),
+                )
+            });
+        if let Some((best_idx, _)) = best {
+            reparented[s_idx] = Some(spans[best_idx].span_id.clone());
+        }
+    }
+
+    for (span, next_parent) in spans.iter_mut().zip(reparented) {
+        if let Some(p) = next_parent {
+            span.parent_span_id = Some(p);
+        }
+    }
+}
+
+fn merged_interval_len(intervals: &mut [(i64, i64)]) -> i64 {
+    if intervals.is_empty() {
+        return 0;
+    }
+    intervals.sort_unstable_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+    let (mut cur_s, mut cur_e) = intervals[0];
+    let mut total: i64 = 0;
+    for &(s, e) in &intervals[1..] {
+        if s <= cur_e {
+            cur_e = cur_e.max(e);
+        } else {
+            total = total.saturating_add(cur_e.saturating_sub(cur_s));
+            cur_s = s;
+            cur_e = e;
+        }
+    }
+    total.saturating_add(cur_e.saturating_sub(cur_s))
+}
+
+fn compute_self_and_transit(
+    span: &SpanNode,
+    child_indices: &[usize],
+    spans: &[SpanNode],
+) -> (i64, Option<i64>, Option<i64>) {
+    if child_indices.is_empty() {
+        return (span.duration_ns.max(0), None, None);
+    }
+    let mut intervals: Vec<(i64, i64)> = child_indices
+        .iter()
+        .filter_map(|&ci| {
+            let c = &spans[ci];
+            let s = c.start_ns.clamp(span.start_ns, span.end_ns);
+            let e = c.end_ns.clamp(span.start_ns, span.end_ns);
+            (e > s).then_some((s, e))
+        })
+        .collect();
+    let covered = merged_interval_len(&mut intervals);
+    let self_ns = span.duration_ns.saturating_sub(covered).max(0);
+
+    let (transit_req, transit_resp) = if span.span_kind == "SPAN_KIND_CLIENT" {
+        let remote_servers: Vec<&SpanNode> = child_indices
+            .iter()
+            .map(|&ci| &spans[ci])
+            .filter(|c| c.service_name != span.service_name && c.span_kind == "SPAN_KIND_SERVER")
+            .collect();
+        if let [srv] = remote_servers.as_slice() {
+            if srv.start_ns >= span.start_ns && span.end_ns >= srv.end_ns {
+                (
+                    Some(srv.start_ns - span.start_ns),
+                    Some(span.end_ns - srv.end_ns),
+                )
+            } else {
+                (None, None)
+            }
+        } else {
+            (None, None)
+        }
+    } else {
+        (None, None)
+    };
+    (self_ns, transit_req, transit_resp)
+}
+
+fn attr_ns_from_value(val: &Value, scale_ns: f64) -> Option<i64> {
+    let num = match val {
+        Value::Number(n) => n.as_f64(),
+        Value::String(s) => s.parse::<f64>().ok(),
+        _ => None,
+    }?;
+    f64_to_i64(num * scale_ns).filter(|&ns| ns > 0)
+}
+
+/// 计算整条链路的纯上游网络耗时与平台开销。
+#[must_use]
+pub fn compute_wire_and_overhead(
+    start_ns: i64,
+    end_ns: i64,
+    spans: &[SpanNode],
+) -> (Option<i64>, Option<i64>) {
+    let total_ns = end_ns.saturating_sub(start_ns).max(0);
+    let mut wire_intervals: Vec<(i64, i64)> = spans
+        .iter()
+        .filter(|s| matches!(s.span_name.as_str(), "upstream_wire" | "upstream_wire#retry"))
+        .filter_map(|s| {
+            let st = s.start_ns.clamp(start_ns, end_ns);
+            let ed = s.end_ns.clamp(start_ns, end_ns);
+            (ed > st).then_some((st, ed))
+        })
+        .collect();
+
+    let mut legacy_client_intervals: Vec<(i64, i64)> = spans
+        .iter()
+        .filter(|s| {
+            s.service_name == "mazbri-bypass"
+                && s.span_kind == "SPAN_KIND_CLIENT"
+                && !s.span_name.starts_with("redis.")
+                && !s.span_name.starts_with("db.")
+                && !s.span_name.starts_with("cache.")
+        })
+        .filter_map(|s| {
+            let st = s.start_ns.clamp(start_ns, end_ns);
+            let ed = s.end_ns.clamp(start_ns, end_ns);
+            (ed > st).then_some((st, ed))
+        })
+        .collect();
+
+    let raw_wire = if !wire_intervals.is_empty() {
+        Some(merged_interval_len(&mut wire_intervals))
+    } else if !legacy_client_intervals.is_empty() {
+        Some(merged_interval_len(&mut legacy_client_intervals))
+    } else {
+        spans.iter().filter(|s| s.span_name == "upstream").find_map(|s| {
+            s.attributes
+                .get("upstream_wire_us")
+                .and_then(|v| attr_ns_from_value(v, 1_000.0))
+                .or_else(|| {
+                    s.attributes
+                        .get("upstream_wire_ms")
+                        .and_then(|v| attr_ns_from_value(v, 1_000_000.0))
+                })
+        })
+    };
+
+    let wire_ns = raw_wire.map(|w| w.clamp(0, total_ns));
+    let overhead_ns = wire_ns.map(|w| total_ns.saturating_sub(w));
+    (wire_ns, overhead_ns)
+}
+
+/// 把 span 排成深度优先列表（兄弟按开始时间），填充深度、子数、自身净耗时、跨服传输耗时与关键路径标记；
 /// 返回关键路径 span id（见 [`critical_path`]）。
 #[must_use]
 pub fn build_tree(spans: Vec<SpanNode>) -> (Vec<SpanNode>, Vec<String>) {
+    let mut spans: Vec<SpanNode> = spans
+        .into_iter()
+        .filter(|s| s.span_name != "platform_summary")
+        .collect();
+    normalize_legacy_flat_siblings(&mut spans);
+
     let ids: HashSet<String> = spans.iter().map(|s| s.span_id.clone()).collect();
     let mut children: HashMap<String, Vec<usize>> = HashMap::new();
     let mut roots = Vec::new();
@@ -713,27 +966,48 @@ pub fn build_tree(spans: Vec<SpanNode>) -> (Vec<SpanNode>, Vec<String>) {
             }
         }
     }
-    let flags: Vec<(usize, usize, bool)> = order
+    let derived: Vec<DerivedSpanMetrics> = order
         .iter()
         .map(|&(idx, depth)| {
-            let count = children.get(&spans[idx].span_id).map_or(0, Vec::len);
-            (depth, count, critical_set.contains(&spans[idx].span_id))
+            let child_list = children.get(&spans[idx].span_id).map_or(&[][..], Vec::as_slice);
+            let (self_ns, transit_req_ns, transit_resp_ns) =
+                compute_self_and_transit(&spans[idx], child_list, &spans);
+            DerivedSpanMetrics {
+                depth,
+                child_count: child_list.len(),
+                critical: critical_set.contains(&spans[idx].span_id),
+                self_ns,
+                transit_req_ns,
+                transit_resp_ns,
+            }
         })
         .collect();
     let mut slots: Vec<Option<SpanNode>> = spans.into_iter().map(Some).collect();
     let ordered = order
         .iter()
-        .zip(flags)
-        .filter_map(|(&(idx, _), (depth, count, is_critical))| {
+        .zip(derived)
+        .filter_map(|(&(idx, _), m)| {
             slots[idx].take().map(|mut s| {
-                s.depth = depth;
-                s.child_count = count;
-                s.critical = is_critical;
+                s.depth = m.depth;
+                s.child_count = m.child_count;
+                s.critical = m.critical;
+                s.self_duration_ns = m.self_ns;
+                s.transit_req_ns = m.transit_req_ns;
+                s.transit_resp_ns = m.transit_resp_ns;
                 s
             })
         })
         .collect();
     (ordered, critical)
+}
+
+struct DerivedSpanMetrics {
+    depth: usize,
+    child_count: usize,
+    critical: bool,
+    self_ns: i64,
+    transit_req_ns: Option<i64>,
+    transit_resp_ns: Option<i64>,
 }
 
 /// 计费 span 行 → 指向本 trace 的链接。
@@ -917,6 +1191,8 @@ impl GreptimeDBClient {
         let (spans, critical_path) = build_tree(spans_from_rows(&rows));
         let start_ns = spans.iter().map(|s| s.start_ns).min().unwrap_or(0);
         let end_ns = spans.iter().map(|s| s.end_ns).max().unwrap_or(start_ns);
+        let (upstream_wire_ns, platform_overhead_ns) =
+            compute_wire_and_overhead(start_ns, end_ns, &spans);
         let mut services: Vec<String> = spans
             .iter()
             .map(|s| s.service_name.clone())
@@ -938,6 +1214,8 @@ impl GreptimeDBClient {
             start_ns,
             end_ns,
             duration_ms: ns_to_ms(end_ns - start_ns),
+            upstream_wire_ns,
+            platform_overhead_ns,
             services,
             critical_path,
             spans,
@@ -1041,6 +1319,9 @@ mod tests {
             start_ns: start,
             end_ns: end,
             duration_ns: end - start,
+            self_duration_ns: end - start,
+            transit_req_ns: None,
+            transit_resp_ns: None,
             depth: 0,
             child_count: 0,
             critical: false,
@@ -1050,6 +1331,99 @@ mod tests {
             events: json!([]),
             links: json!([]),
         }
+    }
+
+    #[test]
+    fn legacy_flat_siblings_nest_and_compute_self_and_transit() {
+        let mut root = span("POST /api/v1/proxy", None, 0, 87_780_000);
+        root.service_name = "mazbri-gateway".to_string();
+        root.span_kind = "SPAN_KIND_SERVER".to_string();
+
+        let mut summary = span("platform_summary", Some("POST /api/v1/proxy"), 0, 87_780_000);
+        summary.service_name = "mazbri-gateway".to_string();
+
+        let mut prep = span("request_prepare", Some("POST /api/v1/proxy"), 500_000, 1_500_000);
+        prep.service_name = "mazbri-gateway".to_string();
+
+        let mut transport = span("transport", Some("POST /api/v1/proxy"), 520_000, 900_000);
+        transport.service_name = "mazbri-gateway".to_string();
+
+        let mut redis_nonce = span("redis.set_nx_ex", Some("POST /api/v1/proxy"), 600_000, 820_000);
+        redis_nonce.service_name = "mazbri-gateway".to_string();
+        redis_nonce.span_kind = "SPAN_KIND_CLIENT".to_string();
+
+        let mut upstream = span("upstream", Some("POST /api/v1/proxy"), 2_000_000, 86_020_000);
+        upstream.service_name = "mazbri-gateway".to_string();
+
+        let mut attempt = span(
+            "upstream.attempt",
+            Some("POST /api/v1/proxy"),
+            2_000_000,
+            86_020_000,
+        );
+        attempt.service_name = "mazbri-gateway".to_string();
+        attempt.span_kind = "SPAN_KIND_CLIENT".to_string();
+
+        let mut bypass = span(
+            "BypassHttpProxyService.Execute",
+            Some("upstream.attempt"),
+            3_030_000,
+            85_090_000,
+        );
+        bypass.service_name = "mazbri-bypass".to_string();
+        bypass.span_kind = "SPAN_KIND_SERVER".to_string();
+
+        let mut wire = span(
+            "upstream_wire",
+            Some("BypassHttpProxyService.Execute"),
+            3_150_000,
+            85_000_000,
+        );
+        wire.service_name = "mazbri-bypass".to_string();
+        wire.span_kind = "SPAN_KIND_CLIENT".to_string();
+
+        let (ordered, _) = build_tree(vec![
+            root,
+            summary,
+            prep,
+            transport,
+            redis_nonce,
+            upstream,
+            attempt,
+            bypass,
+            wire,
+        ]);
+        assert!(ordered.iter().all(|s| s.span_name != "platform_summary"));
+
+        let tree_depths: Vec<(&str, usize)> = ordered
+            .iter()
+            .map(|s| (s.span_name.as_str(), s.depth))
+            .collect();
+        assert_eq!(
+            tree_depths,
+            vec![
+                ("POST /api/v1/proxy", 0),
+                ("request_prepare", 1),
+                ("transport", 2),
+                ("redis.set_nx_ex", 3),
+                ("upstream", 1),
+                ("upstream.attempt", 2),
+                ("BypassHttpProxyService.Execute", 3),
+                ("upstream_wire", 4),
+            ]
+        );
+
+        let attempt_node = ordered
+            .iter()
+            .find(|s| s.span_name == "upstream.attempt")
+            .expect("attempt node");
+        assert_eq!(attempt_node.transit_req_ns, Some(1_030_000));
+        assert_eq!(attempt_node.transit_resp_ns, Some(930_000));
+        assert_eq!(attempt_node.self_duration_ns, 1_960_000);
+
+        let (wire_ns, overhead_ns) = compute_wire_and_overhead(0, 87_780_000, &ordered);
+        assert_eq!(wire_ns, Some(81_850_000));
+        assert_eq!(overhead_ns, Some(5_930_000));
     }
 
     #[test]

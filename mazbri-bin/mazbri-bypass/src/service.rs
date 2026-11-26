@@ -544,7 +544,17 @@ impl MazbriBypassServiceImpl {
             BTreeMap::new()
         };
         let decode_start = Instant::now();
-        let response = finalize_invoke_response(result, &spec.adapter, duration);
+        let decode_span = tracing::info_span!(
+            "response_decode",
+            channel_id = %req.channel_id,
+            adapter = %spec.adapter,
+        );
+        let response =
+            decode_span.in_scope(|| finalize_invoke_response(result, &spec.adapter, duration));
+        if !response.success {
+            mazbri_core::trace_spans::set_span_error(&decode_span, response.error.clone());
+        }
+        drop(decode_span);
         stage_timings.push(StageTiming {
             name: "response_decode".into(),
             ms: mazbri_core::num::millis_u64(decode_start.elapsed()),

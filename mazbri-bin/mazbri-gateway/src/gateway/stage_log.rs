@@ -61,18 +61,6 @@ impl StageSpan {
         self
     }
 
-    pub fn mode(mut self, mode: &str) -> Self {
-        self.span = self.span.attr("mode", mode.to_string());
-        self
-    }
-
-    pub fn upstream_wire_ms(mut self, ms: u64) -> Self {
-        self.span = self
-            .span
-            .attr("upstream_wire_ms", i64::try_from(ms).unwrap_or(i64::MAX));
-        self
-    }
-
     /// 本阶段出错：span status=error，`error_stage` 属性取阶段名（与访问日志 `error_stage` 一致）。
     pub fn failed(mut self) -> Self {
         self.failed = true;
@@ -105,6 +93,26 @@ impl StageSpan {
                 span_id: span_context.span_id().to_string(),
             })
     }
+}
+
+/// 从真实阶段 `tracing::Span` 提取 `(trace_id, span_id)` 供阶段日志关联，避免重复补记 `CompletedSpan`。
+#[must_use]
+pub fn span_ids_of(span: &tracing::Span) -> StageSpanIds {
+    mazbri_core::trace_spans::span_ids_of(span)
+        .map_or_default(|(trace_id, span_id)| StageSpanIds { trace_id, span_id })
+}
+
+/// 从当前激活 `tracing::Span` 提取 `(trace_id, span_id)`（供 `platform_summary` 仅写日志不发伪 Span）。
+#[must_use]
+pub fn current_stage_span_ids() -> StageSpanIds {
+    mazbri_core::trace_spans::current_span_ids()
+        .map_or_default(|(trace_id, span_id)| StageSpanIds { trace_id, span_id })
+}
+
+/// 将阶段作用域 `tracing::Span` 标记为失败并补写 `error_stage`。
+pub fn mark_stage_span_failed(span: &tracing::Span, stage: &'static str) {
+    mazbri_core::trace_spans::set_span_attr(span, "error_stage", stage);
+    mazbri_core::trace_spans::set_span_error(span, format!("{stage} failed"));
 }
 
 /// 阶段日志的公共维度：每条 `gateway.stage` / `gateway.postpath` 行都带同一组租户、产品与路由字段，
