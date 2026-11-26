@@ -59,13 +59,13 @@ impl BalanceReservationGuard {
         }
     }
 
-    pub(crate) async fn release_now(&mut self) {
+    pub(crate) fn release_now(&mut self) {
         if self.committed {
             return;
         }
         self.committed = true;
         if let Some(ref cache) = self.cache {
-            cache.release(self.tenant_id, self.reserved).await;
+            cache.release(self.tenant_id, self.reserved);
         }
         self.reserved = Decimal::ZERO;
     }
@@ -84,17 +84,9 @@ impl Drop for BalanceReservationGuard {
             return;
         }
         self.committed = true;
-        let Some(cache) = self.cache.clone() else {
-            return;
-        };
-        let Ok(handle) = tokio::runtime::Handle::try_current() else {
-            return;
-        };
-        let tenant_id = self.tenant_id;
-        let reserved = self.reserved;
-        handle.spawn(async move {
-            cache.release(tenant_id, reserved).await;
-        });
+        if let Some(ref cache) = self.cache {
+            cache.release(self.tenant_id, self.reserved);
+        }
     }
 }
 
@@ -436,7 +428,7 @@ pub(crate) async fn enforce_product_and_balance_gate(
                 .with_label_values(&[cache_source, "allowed"])
                 .inc();
             if let Some(cache) = state.balance_cache.as_ref() {
-                cache.reserve(tenant_id, estimated_cost).await;
+                cache.reserve(tenant_id, estimated_cost);
             }
             let guard = BalanceReservationGuard::reserved(
                 state.balance_cache.clone(),

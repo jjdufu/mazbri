@@ -91,9 +91,14 @@ fn redis_metric_op(op: &'static str) -> &'static str {
         "GET" | "MGET" | "EXISTS" | "TTL" | "PTTL" | "MEMORY USAGE" | "DBSIZE" | "SCAN" => "get",
         "SET EX" | "SET NX EX" | "DEL" | "PUBLISH" => "set",
         "PING" => "ping",
-        "MEMORY USAGES" => "pipeline",
+        "MEMORY USAGES" | "EVALSHA PIPELINE" => "pipeline",
         _ => "execute",
     }
+}
+
+fn is_noscript_error(error: &redis::RedisError) -> bool {
+    error.code() == Some("NOSCRIPT")
+        || error.to_string().to_ascii_uppercase().contains("NOSCRIPT")
 }
 
 pub(crate) fn build_redis_url_from_config(config: &RedisConfig) -> anyhow::Result<String> {
@@ -257,6 +262,14 @@ impl RedisClient {
     #[must_use]
     pub fn key_prefix(&self) -> &str {
         &self.key_prefix
+    }
+
+    #[must_use]
+    pub fn has_active_connections(&self) -> bool {
+        match &*self.inner {
+            InnerClient::Standalone { managers, .. } => !managers.is_empty(),
+            InnerClient::Cluster { .. } => true,
+        }
     }
 
     fn connection(&self) -> Result<InnerConnection> {
@@ -640,6 +653,79 @@ impl RedisClient {
                 command.arg(arg);
             }
             command.query_async(&mut conn).await
+        })
+        .await
+    }
+
+    /// Executes a single-key, single-integer-argument Lua script across `keys_and_args` using
+    /// a single Redis Pipeline + `EVALSHA` (falling back to `SCRIPT LOAD` + retry once on `NOSCRIPT`).
+    ///
+    /// # Errors
+    ///
+    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+    pub async fn evalsha_batch_opt_i64(
+        &self,
+        script: &str,
+        keys_and_args: &[(String, i64)],
+    ) -> Result<Vec<Option<i64>>> {
+        if keys_and_args.is_empty() {
+            return Ok(Vec::new());
+        }
+        let script_obj = redis::Script::new(script);
+        let sha1 = script_obj.get_hash().to_owned();
+        self.run_once("EVALSHA PIPELINE", |mut conn| async move {
+            match &mut conn {
+                InnerConnection::Standalone(standalone) => {
+                    let mut pipe = redis::pipe();
+                    for (key, arg) in keys_and_args {
+                        pipe.cmd("EVALSHA")
+                            .arg(&sha1)
+                            .arg(1usize)
+                            .arg(key)
+                            .arg(*arg);
+                    }
+                    match pipe.query_async::<Vec<Option<i64>>>(standalone.as_mut()).await {
+                        Ok(values) => Ok(values),
+                        Err(err) if is_noscript_error(&err) => {
+                            let _: String = redis::cmd("SCRIPT")
+                                .arg("LOAD")
+                                .arg(script)
+                                .query_async(standalone.as_mut())
+                                .await?;
+                            pipe.query_async::<Vec<Option<i64>>>(standalone.as_mut())
+                                .await
+                        }
+                        Err(err) => Err(err),
+                    }
+                }
+                InnerConnection::Cluster(cluster) => {
+                    let mut out = Vec::with_capacity(keys_and_args.len());
+                    for (key, arg) in keys_and_args {
+                        let res = redis::cmd("EVALSHA")
+                            .arg(&sha1)
+                            .arg(1usize)
+                            .arg(key)
+                            .arg(*arg)
+                            .query_async::<Option<i64>>(cluster)
+                            .await;
+                        let val = match res {
+                            Ok(v) => v,
+                            Err(err) if is_noscript_error(&err) => {
+                                redis::cmd("EVAL")
+                                    .arg(script)
+                                    .arg(1usize)
+                                    .arg(key)
+                                    .arg(*arg)
+                                    .query_async::<Option<i64>>(cluster)
+                                    .await?
+                            }
+                            Err(err) => return Err(err),
+                        };
+                        out.push(val);
+                    }
+                    Ok(out)
+                }
+            }
         })
         .await
     }

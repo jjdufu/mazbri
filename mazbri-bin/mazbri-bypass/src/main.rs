@@ -106,7 +106,9 @@ async fn main() -> Result<()> {
 
         Ok(runtime.into_output(admin_state, server_future))
     })
-    .await
+    .await?;
+    service::drain_pending_logs(std::time::Duration::from_secs(5)).await;
+    Ok(())
 }
 
 async fn refresh_bypass_root_keyring(

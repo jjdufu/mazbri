@@ -171,7 +171,7 @@ pub async fn unified_gateway_handler(
     };
     let (idempotency_ms, idem_guard) = match idempotency_stage(&ctx, tenant_uuid).await? {
         IdempotencyStage::Replay { ms, replayed } => {
-            balance_guard.release_now().await;
+            balance_guard.release_now();
             record_prepare_timing(&ctx, request_was_encrypted, tenant_validation_started_at, [tenant_id_validation_ms, request_validate_ms, ms], &mut timing);
             return Box::pin(build_idempotency_replay_response(
                 &ctx,
@@ -527,7 +527,7 @@ async fn release_guards(
     if let Some(g) = idem_guard {
         g.release_now().await;
     }
-    balance_guard.release_now().await;
+    balance_guard.release_now();
 }
 
 struct ReplayResponseArgs<'a> {

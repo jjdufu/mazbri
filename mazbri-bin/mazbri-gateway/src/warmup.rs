@@ -2,6 +2,7 @@
 //!
 //! 下游（ratelimit/auth/billing/cache/cbpro/bypass 及直连上游）可能晚于 gateway
 //! 就绪，甚至在另一台主机上；预热不能依赖启动顺序，也不能阻塞 gateway 启动。
+use crate::auth::TenantStatusAndWhitelistCache;
 use crate::cbpro_client::CBProClient;
 use crate::config::ServicesConfig;
 use crate::http2_upstream_client::UpstreamHttp2ClientPool;
@@ -197,6 +198,24 @@ pub fn spawn_cbpro_warmup(client: CBProClient) {
         warmup_until_ready(ServiceName::Cbpro.as_str(), &url, backoff, || {
             let client = client.clone();
             async move { client.health_check().await.map_err(CoreError::Network) }
+        })
+        .await;
+    });
+}
+
+/// 启动期或首轮查库暂态失败后，后台指数退避预热全量租户活性与 IP 白名单快照。
+pub fn spawn_tenant_security_warmup(tenant_security: TenantStatusAndWhitelistCache) {
+    let backoff = Backoff::default();
+    tokio::spawn(async move {
+        warmup_until_ready("tenant-security", "postgres", backoff, || {
+            let cache = tenant_security.clone();
+            async move {
+                cache
+                    .warm_all_tenants()
+                    .await
+                    .map(|_| ())
+                    .map_err(CoreError::Network)
+            }
         })
         .await;
     });

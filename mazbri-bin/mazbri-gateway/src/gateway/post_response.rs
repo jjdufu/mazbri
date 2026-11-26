@@ -190,7 +190,7 @@ pub(crate) async fn record_usage_charge(
     let started_at = Instant::now();
     let Some(billing_state) = state.billing_state.as_ref() else {
         if let Some(cache) = state.balance_cache.as_ref() {
-            cache.release(ctx.tenant_id, reserved_amount).await;
+            cache.release(ctx.tenant_id, reserved_amount);
         }
         return started_at.elapsed().as_millis();
     };
@@ -200,7 +200,7 @@ pub(crate) async fn record_usage_charge(
     };
     if !billable {
         if let Some(cache) = state.balance_cache.as_ref() {
-            cache.release(ctx.tenant_id, reserved_amount).await;
+            cache.release(ctx.tenant_id, reserved_amount);
         }
         return started_at.elapsed().as_millis();
     }
@@ -208,9 +208,7 @@ pub(crate) async fn record_usage_charge(
     if produced {
         // L1: already enqueued for background batch produce; reconcile reservation delta (zero double subtraction!).
         if let Some(cache) = state.balance_cache.as_ref() {
-            cache
-                .settle(ctx.tenant_id, reserved_amount, calc_result.amount)
-                .await;
+            cache.settle(ctx.tenant_id, reserved_amount, calc_result.amount);
         }
         return started_at.elapsed().as_millis();
     }
@@ -218,14 +216,12 @@ pub(crate) async fn record_usage_charge(
     match deliver_usage_event(service, usage_outbox_event, CHARGE_RETRY_ATTEMPTS).await {
         Delivery::Done => {
             if let Some(cache) = state.balance_cache.as_ref() {
-                cache
-                    .settle(ctx.tenant_id, reserved_amount, calc_result.amount)
-                    .await;
+                cache.settle(ctx.tenant_id, reserved_amount, calc_result.amount);
             }
         }
         Delivery::AccountNotFound => {
             if let Some(cache) = state.balance_cache.as_ref() {
-                cache.release(ctx.tenant_id, reserved_amount).await;
+                cache.release(ctx.tenant_id, reserved_amount);
             }
             warn!(
                 tenant_id = %ctx.tenant_id,
@@ -235,9 +231,7 @@ pub(crate) async fn record_usage_charge(
         }
         Delivery::Transient(event, error) => {
             if let Some(cache) = state.balance_cache.as_ref() {
-                cache
-                    .settle(ctx.tenant_id, reserved_amount, calc_result.amount)
-                    .await;
+                cache.settle(ctx.tenant_id, reserved_amount, calc_result.amount);
             }
             warn!(
                 request_id = %ctx.request_id,
@@ -444,13 +438,70 @@ impl Drop for InflightGuard {
     }
 }
 
-pub(crate) fn spawn_post_response_tasks(state: &AppState, args: PostResponseTaskArgs) {
-    let state_for_subtask = state.clone();
-    let state_for_watcher = state.clone();
-    let request_id = args.request_id.clone();
-    let request_id_for_watcher = args.request_id.clone();
-    let tenant_id = args.tenant_id;
-    let reserved_amount = args.reserved_amount;
+async fn run_post_response_work(
+    state: &AppState,
+    args: &mut PostResponseTaskArgs,
+    parent: &mazbri_core::trace_spans::OtelContext,
+) {
+    let started_at = Instant::now();
+    let callback_task = enqueue_callback_delivery(
+        &state.proxy_state,
+        args.tenant_product_id,
+        CallbackPayloadContext {
+            request_id: &args.request_id,
+            tenant_id: args.tenant_id,
+            product_code: &args.req.product_id,
+            status: args.status,
+            body: &args.body,
+            error: args.error.as_deref(),
+            response_bytes: args.response_bytes,
+            content_type: args.content_type.as_deref(),
+        },
+    );
+    let usage_event = args.usage_event.take();
+    let billing_task = record_usage_charge(
+        state,
+        UsageChargeContext {
+            request_id: &args.request_id,
+            tenant_id: args.tenant_id,
+            product_detail: args.tenant_product_detail.as_ref(),
+            req: &args.req,
+            request_size: args.request_size,
+            status: args.status,
+            response_bytes: args.response_bytes,
+            service_total_ms: args.service_total_ms,
+            interaction_event_id: args.interaction_event_id,
+            idempotency_epoch_id: args.idempotency_epoch_id,
+            from_cbpro_fallback: args.from_cbpro_fallback,
+        },
+        usage_event,
+        args.usage_event_produced,
+        args.reserved_amount,
+    );
+    let ((), billing_record_ms) = tokio::join!(callback_task, billing_task);
+    let post_elapsed = started_at.elapsed();
+    let post_response_ms = mazbri_core::num::millis_u64(post_elapsed);
+    let stage_ids = super::stage_log::stage_span("post_response", post_elapsed)
+        .product(&args.req.product_id)
+        .record_with_parent(parent);
+    stage_log!(
+        info,
+        "gateway.postpath",
+        &args.stage_ctx,
+        &stage_ids,
+        "post_response",
+        post_response_ms,
+        method = %args.req.method,
+        path = %args.req.path,
+        post_response_ms,
+        billing_record_ms,
+        upstream_route = ?args.upstream_route.as_ref().map(|route| (&route.supplier_code, &route.channel_code, &route.upstream_url)),
+        message = "Gateway post-response work completed",
+    );
+}
+
+pub(crate) fn spawn_post_response_tasks(state: &AppState, mut args: PostResponseTaskArgs) {
+    let state = state.clone();
     let reconcile_info = args
         .usage_event
         .as_ref()
@@ -458,83 +509,41 @@ pub(crate) fn spawn_post_response_tasks(state: &AppState, args: PostResponseTask
         .map(|ev| (ev.event_id, ev.billing_result.amount));
     let guard = InflightGuard::new();
     let parent = mazbri_core::trace_spans::current_context();
-    let trace_context = args.trace_context.clone();
-
-    let subtask = mazbri_core::panic_policy::spawn_request_subtask(
-        "post_response",
-        trace_context,
-        async move {
-            let started_at = Instant::now();
-            let callback_task = enqueue_callback_delivery(
-                &state_for_subtask.proxy_state,
-                args.tenant_product_id,
-                CallbackPayloadContext {
-                    request_id: &request_id,
-                    tenant_id: args.tenant_id,
-                    product_code: &args.req.product_id,
-                    status: args.status,
-                    body: &args.body,
-                    error: args.error.as_deref(),
-                    response_bytes: args.response_bytes,
-                    content_type: args.content_type.as_deref(),
-                },
-            );
-            let billing_task = record_usage_charge(
-                &state_for_subtask,
-                UsageChargeContext {
-                    request_id: &request_id,
-                    tenant_id: args.tenant_id,
-                    product_detail: args.tenant_product_detail.as_ref(),
-                    req: &args.req,
-                    request_size: args.request_size,
-                    status: args.status,
-                    response_bytes: args.response_bytes,
-                    service_total_ms: args.service_total_ms,
-                    interaction_event_id: args.interaction_event_id,
-                    idempotency_epoch_id: args.idempotency_epoch_id,
-                    from_cbpro_fallback: args.from_cbpro_fallback,
-                },
-                args.usage_event,
-                args.usage_event_produced,
-                args.reserved_amount,
-            );
-            let ((), billing_record_ms) = tokio::join!(callback_task, billing_task);
-            let post_elapsed = started_at.elapsed();
-            let post_response_ms = mazbri_core::num::millis_u64(post_elapsed);
-            let stage_ids = super::stage_log::stage_span("post_response", post_elapsed)
-                .product(&args.req.product_id)
-                .record_with_parent(&parent);
-            stage_log!(
-                info,
-                "gateway.postpath",
-                &args.stage_ctx,
-                &stage_ids,
-                "post_response",
-                post_response_ms,
-                method = %args.req.method,
-                path = %args.req.path,
-                post_response_ms,
-                billing_record_ms,
-                upstream_route = ?args.upstream_route.as_ref().map(|route| (&route.supplier_code, &route.channel_code, &route.upstream_url)),
-                message = "Gateway post-response work completed",
-            );
-        },
-    );
 
     tokio::spawn(async move {
         let _guard = guard;
-        let panicked = !matches!(subtask.await, Ok(Some(())));
-        if panicked {
+        let trace_context = args.trace_context.clone();
+        let tenant_id = args.tenant_id;
+        let reserved_amount = args.reserved_amount;
+        let request_id_snapshot = args.request_id.clone();
+
+        let scoped = mazbri_core::scope_request_trace(
+            trace_context.clone(),
+            run_post_response_work(&state, &mut args, &parent),
+        );
+        let outcome = futures::FutureExt::catch_unwind(std::panic::AssertUnwindSafe(
+            mazbri_core::panic_policy::recoverable(scoped),
+        ))
+        .await;
+        if let Err(payload) = outcome {
+            let err = mazbri_core::panic_policy::PanicError::from_payload(payload.as_ref());
+            error!(
+                subtask = "post_response",
+                request_id = %trace_context.request_id,
+                trace_id = %trace_context.trace_id,
+                panic = %err.message,
+                "Request subtask panicked and was contained"
+            );
             if let Some((event_id, amount)) = reconcile_info {
                 error!(
                     event_id = %event_id,
-                    request_id = %request_id_for_watcher,
+                    request_id = %request_id_snapshot,
                     tenant_id = %tenant_id,
                     amount = %amount,
                     "Post-response subtask panicked before outbox confirmation; manual billing reconciliation required"
                 );
-            } else if let Some(cache) = state_for_watcher.balance_cache.as_ref() {
-                cache.release(tenant_id, reserved_amount).await;
+            } else if let Some(cache) = state.balance_cache.as_ref() {
+                cache.release(tenant_id, reserved_amount);
             }
         }
     });
