@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created_at": "2026-11-24T21:41:22Z",
-  "updated_at": "2026-11-26T13:17:50Z",
+  "updated_at": "2026-11-26T14:45:19Z",
   "files": {
     ".agents/skills/mz-rt-pr/SKILL.md": {
       "role": "index",
@@ -77,9 +77,9 @@
     },
     "aoci.code.txt": {
       "role": "index",
-      "sha256": "1fd34825342abf55c87ba8182df209cb09e145738bfd69a6793ab5b53283967d",
-      "size": 758991,
-      "normalized_sha256": "1fd34825342abf55c87ba8182df209cb09e145738bfd69a6793ab5b53283967d"
+      "sha256": "5a0e55847b465a723625bc3120689068c47dc14b435b4530422a7ca8864a9791",
+      "size": 764991,
+      "normalized_sha256": "5a0e55847b465a723625bc3120689068c47dc14b435b4530422a7ca8864a9791"
     },
     "aoci.meta.txt": {
       "role": "index",
@@ -125,9 +125,9 @@
     },
     "docs/README.md": {
       "role": "index",
-      "sha256": "cb7e1c5fb858ad9567bee85d06e51582502ff3f430c5559fdfdb293c0590b97f",
-      "size": 4229,
-      "normalized_sha256": "cb7e1c5fb858ad9567bee85d06e51582502ff3f430c5559fdfdb293c0590b97f"
+      "sha256": "348820671de694ab5c5bb6e01e067870699af187bdc56da0efb93b824c1516ab",
+      "size": 6096,
+      "normalized_sha256": "348820671de694ab5c5bb6e01e067870699af187bdc56da0efb93b824c1516ab"
     },
     "docs/architecture/crypto-platform.md": {
       "role": "index",
@@ -244,6 +244,60 @@
       "sha256": "4e176cdcf263fc5844b519e7efc8e93b3ac100deb7a41625daf03b651dc442ff",
       "size": 29730,
       "normalized_sha256": "4e176cdcf263fc5844b519e7efc8e93b3ac100deb7a41625daf03b651dc442ff"
+    },
+    "docs/webui-audit-remediation-plan/00-overview-and-first-principles.md": {
+      "role": "index",
+      "sha256": "1073b723fdfcc910f1cce6be03b576079b83b5199d0718b9ee9b41ef34156372",
+      "size": 10904,
+      "normalized_sha256": "1073b723fdfcc910f1cce6be03b576079b83b5199d0718b9ee9b41ef34156372"
+    },
+    "docs/webui-audit-remediation-plan/01-step01-mfa-capability-gate-and-auth-audit-truth.md": {
+      "role": "index",
+      "sha256": "2f9ad8bde56177c1657bd7434bf6476a304b56bc25b5a4f7275e9a5ecda52be4",
+      "size": 14429,
+      "normalized_sha256": "2f9ad8bde56177c1657bd7434bf6476a304b56bc25b5a4f7275e9a5ecda52be4"
+    },
+    "docs/webui-audit-remediation-plan/02-step02-observability-clock-ssot-and-backend-predicates.md": {
+      "role": "index",
+      "sha256": "fe8e6785cb5f50b50067ceff8639f8ecf34be8eeb857319eea5fb47392678de9",
+      "size": 12523,
+      "normalized_sha256": "fe8e6785cb5f50b50067ceff8639f8ecf34be8eeb857319eea5fb47392678de9"
+    },
+    "docs/webui-audit-remediation-plan/03-step03-semantic-value-formatters-and-chart-primitives.md": {
+      "role": "index",
+      "sha256": "3816b4130ea798677496a2cd7a3fba2471fcf7bfc28a15d2b852ca4eda7396e1",
+      "size": 11895,
+      "normalized_sha256": "3816b4130ea798677496a2cd7a3fba2471fcf7bfc28a15d2b852ca4eda7396e1"
+    },
+    "docs/webui-audit-remediation-plan/04-step04-table-infrastructure-theme-pipeline-and-surfaces.md": {
+      "role": "index",
+      "sha256": "f47d9255cb17d4a7c939e3a1da44c5178a2fe0f45ecbfc99c13f1bcca23f01db",
+      "size": 13315,
+      "normalized_sha256": "f47d9255cb17d4a7c939e3a1da44c5178a2fe0f45ecbfc99c13f1bcca23f01db"
+    },
+    "docs/webui-audit-remediation-plan/05-step05-dark-cockpit-dashboard-and-alert-ergonomics.md": {
+      "role": "index",
+      "sha256": "1b82fdbefbdf775bb8919f37cc1d7ab18e07eb0a3464d8902215230dd3eb005a",
+      "size": 11061,
+      "normalized_sha256": "1b82fdbefbdf775bb8919f37cc1d7ab18e07eb0a3464d8902215230dd3eb005a"
+    },
+    "docs/webui-audit-remediation-plan/06-step06-entity-identity-bar-and-tenant-crypto-ledger-ux.md": {
+      "role": "index",
+      "sha256": "20b45117788599d026747abe4d672f6ef9cc6af34e707bd3afc07b10cae2996c",
+      "size": 13383,
+      "normalized_sha256": "20b45117788599d026747abe4d672f6ef9cc6af34e707bd3afc07b10cae2996c"
+    },
+    "docs/webui-audit-remediation-plan/07-step07-workbench-viewport-and-security-settings-cohesion.md": {
+      "role": "index",
+      "sha256": "785e1a7095a6826a4ebd03a273cdeaa71a4854e0dfbd2290182596f402de11eb",
+      "size": 12848,
+      "normalized_sha256": "785e1a7095a6826a4ebd03a273cdeaa71a4854e0dfbd2290182596f402de11eb"
+    },
+    "docs/webui-audit-remediation-plan/08-step08-bilingual-sanitization-fitness-gates-and-topbar-closure.md": {
+      "role": "index",
+      "sha256": "b0ec2b697c4662fc46693a58903d53155c454472ba1f10891c41212039a4e61c",
+      "size": 13301,
+      "normalized_sha256": "b0ec2b697c4662fc46693a58903d53155c454472ba1f10891c41212039a4e61c"
     },
     "mazbri-bin/Cargo.lock": {
       "role": "observe",
