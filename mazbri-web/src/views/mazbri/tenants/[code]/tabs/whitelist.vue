@@ -11,6 +11,7 @@
     >
       <template #actions>
         <TableExportDropdown
+          :disabled="entries.length === 0"
           :items="exportItems"
           :label="$t('tenant.whitelist.export')"
           @command="(type) => handleExport(type as 'all' | 'selected')"

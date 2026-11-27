@@ -43,6 +43,7 @@
         <TableExportDropdown
           :items="exportItems"
           :label="$t('common.actions.export')"
+          :disabled="displayTableData.length === 0"
           @command="handleExport"
         />
         <ElButton @click="handleResetFilters">{{

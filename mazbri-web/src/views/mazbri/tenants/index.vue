@@ -50,7 +50,6 @@
         <CopyableText
           :value="row.tenant_id"
           :label="$t('tenant.fields.accountId')"
-          compact
         />
       </template>
       <template #status="{ row }">

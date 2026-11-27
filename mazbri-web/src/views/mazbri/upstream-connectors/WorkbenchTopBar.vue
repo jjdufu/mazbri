@@ -373,13 +373,15 @@ const emit = defineEmits<{
   publish: [];
 }>();
 
+import { useTheme } from "@/hooks/core/useTheme";
+
 const settingStore = useSettingStore();
+const { switchThemeStyles } = useTheme();
 const isDark = computed(() => Boolean(settingStore.isDark));
 
 function toggleTheme() {
   const next = isDark.value ? SystemThemeEnum.LIGHT : SystemThemeEnum.DARK;
-  settingStore.setGlopTheme(next, next);
-  settingStore.applyToDom();
+  switchThemeStyles(next);
 }
 
 const switcherOpen = ref(false);

@@ -1,23 +1,7 @@
 import { useSettingStore } from "@/store/modules/setting";
 import { SystemThemeEnum } from "@/enums/appEnum";
-import AppConfig from "@/config";
-import { SystemThemeTypes } from "@/types/store";
-import { getDarkColor, getLightColor, setElementThemeColor } from "@/utils/ui";
 import { usePreferredDark } from "@vueuse/core";
 import { watch } from "vue";
-
-function syncHtmlThemeClass(el: HTMLElement, targetClassName?: string): void {
-  const knownThemeClasses = Object.values(AppConfig.systemThemeStyles)
-    .flatMap((style) => style.className.split(/\s+/))
-    .filter(Boolean);
-  if (knownThemeClasses.length > 0) {
-    el.classList.remove(...knownThemeClasses);
-  }
-  const nextClasses = (targetClassName ?? "").split(/\s+/).filter(Boolean);
-  if (nextClasses.length > 0) {
-    el.classList.add(...nextClasses);
-  }
-}
 
 export function useTheme() {
   const settingStore = useSettingStore();
@@ -32,42 +16,16 @@ export function useTheme() {
     themeMode?: SystemThemeEnum,
   ) => {
     disableTransitions();
-    const el = document.documentElement;
-    const isDark = theme === SystemThemeEnum.DARK;
-    if (!themeMode) {
-      themeMode = theme;
-    }
-    const currentTheme =
-      AppConfig.systemThemeStyles[theme as keyof SystemThemeTypes];
-    const primary = settingStore.systemThemeColor;
-    const colorVariables: Array<{
-      name: string;
-      value: string;
-    }> = [];
-    for (let i = 1; i <= 9; i++) {
-      colorVariables.push({
-        name: `--el-color-primary-light-${i}`,
-        value: isDark
-          ? getDarkColor(primary, i / 10)
-          : getLightColor(primary, i / 10),
-      });
-    }
-    requestAnimationFrame(() => {
-      if (currentTheme) {
-        syncHtmlThemeClass(el, currentTheme.className);
-      }
-      colorVariables.forEach(({ name, value }) => {
-        el.style.setProperty(name, value);
-      });
-      settingStore.setGlopTheme(theme, themeMode);
+    const resolvedMode = themeMode ?? theme;
+    settingStore.setGlopTheme(theme, resolvedMode);
+    settingStore.applyToDom();
+    if (typeof requestAnimationFrame !== "undefined") {
       requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            enableTransitions();
-          });
-        });
+        enableTransitions();
       });
-    });
+    } else {
+      enableTransitions();
+    }
   };
   const prefersDark = usePreferredDark();
   const setSystemAutoTheme = () => {
@@ -90,24 +48,19 @@ export function useTheme() {
     prefersDark,
   };
 }
+
 export function initializeTheme() {
   const settingStore = useSettingStore();
   const prefersDark = usePreferredDark();
   const applyThemeByMode = () => {
     const el = document.documentElement;
-    let actualTheme = settingStore.systemThemeType;
     if (settingStore.systemThemeMode === SystemThemeEnum.AUTO) {
-      actualTheme = prefersDark.value
+      const actualTheme = prefersDark.value
         ? SystemThemeEnum.DARK
         : SystemThemeEnum.LIGHT;
-      settingStore.systemThemeType = actualTheme;
+      settingStore.setGlopTheme(actualTheme, SystemThemeEnum.AUTO);
     }
-    const currentTheme =
-      AppConfig.systemThemeStyles[actualTheme as keyof SystemThemeTypes];
-    if (currentTheme) {
-      syncHtmlThemeClass(el, currentTheme.className);
-    }
-    setElementThemeColor(settingStore.systemThemeColor);
+    settingStore.applyToDom();
     const radiusRem = `${settingStore.customRadius}rem`;
     const isZero = parseFloat(String(settingStore.customRadius)) === 0;
     if (isZero) {
@@ -138,15 +91,13 @@ export function initializeTheme() {
     );
   };
   applyThemeByMode();
-  if (settingStore.systemThemeMode === SystemThemeEnum.AUTO) {
-    watch(
-      prefersDark,
-      () => {
-        if (settingStore.systemThemeMode === SystemThemeEnum.AUTO) {
-          applyThemeByMode();
-        }
-      },
-      { immediate: false },
-    );
-  }
+  watch(
+    prefersDark,
+    () => {
+      if (settingStore.systemThemeMode === SystemThemeEnum.AUTO) {
+        applyThemeByMode();
+      }
+    },
+    { immediate: false },
+  );
 }

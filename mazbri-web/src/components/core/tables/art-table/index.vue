@@ -62,7 +62,7 @@
 
       <template #empty>
         <div v-if="visualLoading"></div>
-        <div v-else class="art-table-empty">{{ emptyText }}</div>
+        <EmptyState v-else compact :description="emptyText" />
       </template>
     </ElTable>
 
@@ -73,6 +73,9 @@
       :class="mergedPaginationOptions?.align"
     >
       <div class="pagination-bar">
+        <span v-if="showTotalText" class="pagination-total tabular-nums">
+          {{ totalDisplayText }}
+        </span>
         <ElPagination
           v-bind="mergedPaginationOptions"
           class="pagination-sizes"
@@ -151,6 +154,7 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { storeToRefs } from "pinia";
 import { ArrowLeft, ArrowRight } from "@element-plus/icons-vue";
+import EmptyState from "@/components/common/empty-state/index.vue";
 import { useTableStore } from "@/store/modules/table";
 import type { ColumnOption } from "@/types/component";
 import { getColumnVisibility } from "@/hooks/core/useTableColumns";
@@ -168,6 +172,7 @@ const props = withDefaults(defineProps<ArtTableProps>(), {
   columns: () => [],
   fit: true,
   showHeader: true,
+  showTotal: true,
   stripe: undefined,
   border: undefined,
   size: undefined,
@@ -175,6 +180,22 @@ const props = withDefaults(defineProps<ArtTableProps>(), {
   showTableHeader: true,
 });
 const { t } = useI18n();
+const showTotalText = computed(
+  () => props.showTotal !== false && props.pagination?.total !== undefined,
+);
+const totalDisplayText = computed(() => {
+  const pag = props.pagination;
+  if (!pag || pag.total === undefined) return "";
+  const isCapped =
+    pag.browseCapped === true ||
+    (pag.queryMode === "latest" &&
+      pag.universeSize != null &&
+      pag.total >= pag.universeSize);
+  const formatted = isCapped
+    ? `${(pag.universeSize ?? pag.total).toLocaleString()}+`
+    : pag.total.toLocaleString();
+  return t("common.pagination.totalCount", { n: formatted });
+});
 const emit = defineEmits<{
   (e: "pagination:size-change", val: number): void;
   (e: "pagination:current-change", val: number): void;

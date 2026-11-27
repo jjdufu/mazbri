@@ -218,12 +218,10 @@ const defaultMaxForKey = (columnKey: string, fallback: number): number => {
   if (key.endsWith("_id") || key === "id") {
     return 280;
   }
-  if (
-    key.includes("status") ||
-    key.includes("enabled") ||
-    key === "code" ||
-    key.endsWith("_code")
-  ) {
+  if (key === "code" || key.endsWith("_code")) {
+    return 240;
+  }
+  if (key.includes("status") || key.includes("enabled")) {
     return 110;
   }
   if (
@@ -309,7 +307,12 @@ const resolveEffectiveMax = <T>(
   if (explicitMax > 0) {
     return explicitMax;
   }
-  return defaultMaxForKey(columnKey, defaultMaxWidth);
+  const declaredMin = Math.max(
+    toWidthNumber(column.width),
+    toWidthNumber(column.minWidth),
+  );
+  const guessedMax = defaultMaxForKey(columnKey, defaultMaxWidth);
+  return declaredMin > 0 ? Math.max(guessedMax, declaredMin) : guessedMax;
 };
 
 const defaultWeightForKey = (

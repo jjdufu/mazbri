@@ -72,25 +72,12 @@
       </template>
 
       <template #fingerprint="{ row }">
-        <div v-if="row.fingerprint" class="cert-fingerprint-cell">
-          <ElTooltip :content="row.fingerprint" placement="top">
-            <code class="cert-fingerprint-cell__short">
-              {{ formatShortFingerprint(row.fingerprint) }}
-            </code>
-          </ElTooltip>
-          <ElTooltip
-            :content="$t('certificate.list.copyFingerprint')"
-            placement="top"
-          >
-            <ElButton
-              link
-              type="primary"
-              :icon="CopyDocument"
-              :aria-label="$t('certificate.list.copyFingerprint')"
-              @click="handleCopyFingerprint(row.fingerprint)"
-            />
-          </ElTooltip>
-        </div>
+        <CopyableText
+          v-if="row.fingerprint"
+          :value="row.fingerprint"
+          :display-text="formatShortFingerprint(row.fingerprint)"
+          :label="$t('certificate.list.copyFingerprint')"
+        />
         <span v-else>{{ EMPTY_PLACEHOLDER }}</span>
       </template>
 
@@ -175,6 +162,7 @@ import IssueDialog from "./modules/issue-dialog.vue";
 import CertificateDetailDrawer from "./modules/CertificateDetailDrawer.vue";
 import StatusIndicator from "@/components/common/StatusIndicator.vue";
 import ControlPanelPageShell from "@/components/common/control-panel-page-shell/index.vue";
+import CopyableText from "@/components/common/copyable-text/index.vue";
 import ResourceTableShell from "@/components/common/resource-table-shell/index.vue";
 import ResourceTableActionBar from "@/components/common/resource-table-action-bar/index.vue";
 import { runWithLoading } from "@/composables/useAsyncState";

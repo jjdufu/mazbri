@@ -81,7 +81,6 @@
             <CopyableText
               :value="row.tenant_id"
               :label="$t('callbacks.columns.tenantAccount')"
-              compact
             />
           </template>
           <template #product_code="{ row }">

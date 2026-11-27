@@ -116,6 +116,13 @@
       pointer-events: auto;
     }
 
+    .pagination-total {
+      flex: 0 0 auto;
+      font-size: 13px;
+      color: var(--el-text-color-secondary);
+      white-space: nowrap;
+    }
+
     .pagination-sizes {
       flex: 0 0 auto;
 

@@ -41,6 +41,7 @@
         />
         <TableExportDropdown
           :loading="exporting"
+          :disabled="exporting || tableData.length === 0"
           :items="exportItems"
           :label="$t('operations.monitoring.actions.export')"
           @command="

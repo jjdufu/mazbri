@@ -46,6 +46,8 @@ export interface ColumnOption<T = unknown> {
   slotName?: string;
   useHeaderSlot?: boolean;
   headerSlotName?: string;
+  /** 声明式数值列：自动右对齐并附加 tabular-nums 等宽数字类。 */
+  numeric?: boolean;
   [key: string]: unknown;
 }
 export type { PaginationConfig } from "@/types/api/common";

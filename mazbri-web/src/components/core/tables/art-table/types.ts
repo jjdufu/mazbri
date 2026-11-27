@@ -19,6 +19,7 @@ export interface ArtTableProps extends TableProps<DefaultRow> {
   columns?: ColumnOption[];
   pagination?: PaginationConfig;
   paginationOptions?: PaginationOptions;
+  showTotal?: boolean;
   emptyHeight?: string;
   emptyText?: string;
   showTableHeader?: boolean;

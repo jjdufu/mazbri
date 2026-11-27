@@ -271,7 +271,7 @@ const buildUserColumns = (): ColumnOption<AdminUser>[] => {
     {
       prop: "email",
       label: t("userManagement.list.columns.email"),
-      minWidth: 132,
+      minWidth: 220,
     },
     {
       prop: "role",
@@ -282,21 +282,21 @@ const buildUserColumns = (): ColumnOption<AdminUser>[] => {
     {
       prop: "status",
       label: t("userManagement.list.columns.status"),
-      minWidth: 84,
+      width: 104,
       align: "center",
       useSlot: true,
     },
     {
       prop: "mfa_enabled",
       label: t("userManagement.list.columns.mfa"),
-      minWidth: isEn ? 88 : 80,
+      width: 100,
       align: "center",
       useSlot: true,
     },
     {
       prop: "mfa_required",
       label: t("userManagement.list.columns.mfaRequired"),
-      minWidth: isEn ? 104 : 88,
+      width: 112,
       align: "center",
       useSlot: true,
     },

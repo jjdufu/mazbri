@@ -1,7 +1,7 @@
 :root {
   --main-color: var(--el-color-primary);
   --el-color-white: white !important;
-  --el-color-black: white !important;
+  --el-color-black: #000000 !important;
 
   --el-font-weight-primary: 400 !important;
 
@@ -48,6 +48,15 @@
 
 html.dark .el-card {
   --el-card-bg-color: var(--default-box-color) !important;
+}
+
+.el-button--default.is-disabled:not(.is-link):not(.is-text),
+.el-button--default.is-disabled:not(.is-link):not(.is-text):hover,
+.el-button--default.is-disabled:not(.is-link):not(.is-text):focus {
+  background-color: var(--el-fill-color-light) !important;
+  border-color: var(--el-border-color-lighter) !important;
+  color: var(--el-text-color-disabled) !important;
+  opacity: 0.65;
 }
 
 .el-pagination--default {
@@ -761,7 +770,7 @@ html.dark .el-card {
   }
 
   .el-button.is-link {
-    padding: 4px 10px !important;
+    padding: 3px 8px !important;
     height: 24px !important;
     line-height: 1 !important;
     border-radius: var(--art-form-control-radius-sm, 4px) !important;
@@ -769,89 +778,83 @@ html.dark .el-card {
     display: inline-flex !important;
     align-items: center !important;
     justify-content: center !important;
-    margin: 2px 4px !important;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    margin: 2px 2px !important;
+    transition:
+      background-color 0.16s ease,
+      color 0.16s ease !important;
     font-weight: 500 !important;
     white-space: nowrap !important;
     border: 1px solid transparent !important;
-
-    background-color: var(--el-fill-color-light) !important;
-    border: 1px solid var(--el-border-color) !important;
+    background-color: transparent !important;
     color: var(--el-text-color-regular) !important;
 
     & + .el-button.is-link {
-      margin-left: 8px !important;
+      margin-left: 4px !important;
     }
 
-    &:hover {
-      background-color: var(--el-fill-color) !important;
-      border-color: var(--el-border-color-darker) !important;
+    &:hover:not(.is-disabled) {
+      background-color: var(--el-fill-color-light) !important;
       color: var(--el-text-color-primary) !important;
       text-decoration: none !important;
     }
 
     &.el-button--primary {
-      background-color: var(--el-color-primary-light-9) !important;
-      border: 1px solid var(--el-color-primary-light-7) !important;
       color: var(--el-color-primary) !important;
 
-      &:hover {
-        background-color: var(--el-color-primary) !important;
-        border-color: var(--el-color-primary) !important;
-        color: var(--el-color-white) !important;
+      &:hover:not(.is-disabled) {
+        background-color: var(--el-color-primary-light-9) !important;
+        color: var(--el-color-primary) !important;
       }
     }
 
     &.el-button--danger {
-      background-color: var(--el-color-danger-light-9) !important;
-      border: 1px solid var(--el-color-danger-light-7) !important;
       color: var(--el-color-danger) !important;
 
-      &:hover {
-        background-color: var(--el-color-danger) !important;
-        border-color: var(--el-color-danger) !important;
-        color: var(--el-color-white) !important;
+      &:hover:not(.is-disabled) {
+        background-color: var(--el-color-danger-light-9) !important;
+        color: var(--el-color-danger) !important;
       }
     }
 
     &.el-button--success {
-      background-color: var(--el-color-success-light-9) !important;
-      border: 1px solid var(--el-color-success-light-7) !important;
       color: var(--el-color-success) !important;
 
-      &:hover {
-        background-color: var(--el-color-success) !important;
-        border-color: var(--el-color-success) !important;
-        color: var(--el-color-white) !important;
+      &:hover:not(.is-disabled) {
+        background-color: var(--el-color-success-light-9) !important;
+        color: var(--el-color-success) !important;
       }
     }
 
     &.el-button--warning {
-      background-color: var(--el-color-warning-light-9) !important;
-      border: 1px solid var(--el-color-warning-light-7) !important;
       color: var(--el-color-warning) !important;
 
-      &:hover {
-        background-color: var(--el-color-warning) !important;
-        border-color: var(--el-color-warning) !important;
-        color: var(--el-color-white) !important;
+      &:hover:not(.is-disabled) {
+        background-color: var(--el-color-warning-light-9) !important;
+        color: var(--el-color-warning) !important;
       }
     }
 
     &.el-button--info {
-      background-color: var(--el-color-info-light-9) !important;
-      border: 1px solid var(--el-color-info-light-7) !important;
       color: var(--el-color-info) !important;
 
-      &:hover {
-        background-color: var(--el-color-info) !important;
-        border-color: var(--el-color-info) !important;
-        color: var(--el-color-white) !important;
+      &:hover:not(.is-disabled) {
+        background-color: var(--el-color-info-light-9) !important;
+        color: var(--el-color-info) !important;
       }
     }
 
-    &:active {
-      transform: scale(0.95) !important;
+    &.is-disabled,
+    &.is-disabled:hover {
+      background-color: transparent !important;
+      border-color: transparent !important;
+      color: var(--el-text-color-disabled) !important;
+      opacity: 0.55;
+      cursor: not-allowed !important;
+      transform: none !important;
+    }
+
+    &:active:not(.is-disabled) {
+      transform: scale(0.97) !important;
     }
   }
 }

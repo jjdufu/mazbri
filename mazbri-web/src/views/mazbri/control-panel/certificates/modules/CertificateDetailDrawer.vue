@@ -133,18 +133,11 @@
               :label="$t('certificate.detail.fields.fingerprint')"
               :span="2"
             >
-              <div v-if="cert.fingerprint" class="fingerprint-full-row">
-                <code class="fingerprint-full-row__code">{{
-                  cert.fingerprint
-                }}</code>
-                <ElButton
-                  link
-                  type="primary"
-                  :icon="CopyDocument"
-                  :aria-label="$t('certificate.detail.actions.copyFingerprint')"
-                  @click="handleCopyText(cert.fingerprint)"
-                />
-              </div>
+              <CopyableText
+                v-if="cert.fingerprint"
+                :value="cert.fingerprint"
+                :label="$t('certificate.detail.actions.copyFingerprint')"
+              />
               <span v-else>{{ EMPTY_PLACEHOLDER }}</span>
             </ElDescriptionsItem>
             <ElDescriptionsItem

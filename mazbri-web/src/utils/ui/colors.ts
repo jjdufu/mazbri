@@ -140,10 +140,11 @@ export function handleElementThemeColor(
 }
 export function setElementThemeColor(color?: string | null): void {
   const normalizedColor = normalizeThemeColor(color);
-  const mixColor = "#ffffff";
+  const isDark = useSettingStore().isDark;
+  const mixColor = isDark ? "#141414" : "#ffffff";
   const elStyle = document.documentElement.style;
   elStyle.setProperty("--el-color-primary", normalizedColor);
-  handleElementThemeColor(normalizedColor, useSettingStore().isDark);
+  handleElementThemeColor(normalizedColor, isDark);
   for (let i = 1; i < 16; i++) {
     const itemColor = colourBlend(normalizedColor, mixColor, i / 16);
     elStyle.setProperty(`--el-color-primary-custom-${i}`, itemColor);

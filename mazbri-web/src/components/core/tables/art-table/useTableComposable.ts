@@ -91,6 +91,20 @@ export const useTableComposable = (
     delete columnProps.headerSlotName;
     delete columnProps.useSlot;
     delete columnProps.slotName;
+    const isNumeric = columnProps.numeric === true;
+    delete columnProps.numeric;
+
+    if (isNumeric) {
+      columnProps.align = col.align ?? "right";
+      columnProps.headerAlign = col.headerAlign ?? "right";
+      const existingClass =
+        typeof col.className === "string" ? col.className.trim() : "";
+      columnProps.className = existingClass
+        ? existingClass.includes("tabular-nums")
+          ? existingClass
+          : `${existingClass} tabular-nums`
+        : "tabular-nums";
+    }
 
     const colType = columnProps.type;
     const prop = String(columnProps.prop ?? "");

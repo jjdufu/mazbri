@@ -72,6 +72,7 @@
         :empty-text="props.emptyText"
         :pagination="props.pagination"
         :pagination-options="props.paginationOptions"
+        :show-total="props.showTotal"
         :fit="props.fit"
         :table-layout="props.tableLayout"
         :height="props.height"

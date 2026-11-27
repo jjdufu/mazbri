@@ -2,11 +2,10 @@ export interface PaginationConfig {
   current: number;
   size: number;
   total?: number;
-
-
-
-
   pageCount?: number;
+  queryMode?: "full" | "latest" | "ranged";
+  browseCapped?: boolean;
+  universeSize?: number;
 }
 /** Canonical list pagination object returned by mgmt list APIs. */
 export interface ListPagination {

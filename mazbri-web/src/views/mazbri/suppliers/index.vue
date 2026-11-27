@@ -218,7 +218,7 @@ const supplierColumns = computed<ColumnOption<Supplier>[]>(() => {
     {
       prop: "supplier_code",
       label: $t("supplier.fields.code"),
-      minWidth: 112,
+      minWidth: 200,
       useSlot: true,
     },
     {
