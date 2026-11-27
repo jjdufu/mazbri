@@ -4638,7 +4638,7 @@
         "tokio": "Tokio 繁忙",
         "restart": "最近启动",
         "version": "版本",
-        "cpu": "CPU（核）",
+        "cpu": "CPU 用量",
         "memory": "内存",
         "fds": "文件描述符"
       },
@@ -5161,7 +5161,9 @@
       "colBurn5m": "燃烧率 5m",
       "colBurnPage": "短期快速消耗",
       "colBurnTicket": "长期缓慢消耗",
-      "colTs": "更新时间"
+      "colTs": "更新时间",
+      "burnFiring": "触发中",
+      "burnNormal": "正常"
     },
     "anomaly": {
       "colTime": "时间",
@@ -5180,7 +5182,8 @@
       "empty": "当前角色没有可查看的 Tab。"
     },
     "charts": {
-      "empty": "暂无数据"
+      "empty": "暂无数据",
+      "noSamplesInRange": "当前时间窗无样本"
     },
     "layout": {
       "windowSubtitle": "统计时段：{label}",

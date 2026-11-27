@@ -4638,7 +4638,7 @@
         "tokio": "Tokio busy",
         "restart": "Last start",
         "version": "Version",
-        "cpu": "CPU (cores)",
+        "cpu": "CPU Usage",
         "memory": "Memory",
         "fds": "FDs"
       },
@@ -5161,7 +5161,9 @@
       "colBurn5m": "Burn 5m",
       "colBurnPage": "Page",
       "colBurnTicket": "Ticket",
-      "colTs": "Updated"
+      "colTs": "Updated",
+      "burnFiring": "Firing",
+      "burnNormal": "Normal"
     },
     "anomaly": {
       "colTime": "Time",
@@ -5180,7 +5182,8 @@
       "empty": "No tabs available for the current role."
     },
     "charts": {
-      "empty": "No data"
+      "empty": "No data",
+      "noSamplesInRange": "No samples in range"
     },
     "layout": {
       "windowSubtitle": "Window: {label}",

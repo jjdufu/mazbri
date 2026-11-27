@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  centsToYuanString,
   formatCodeFilePath,
   formatDateTime,
   formatDisplayDateYmd,
+  formatMoney,
   parseDisplayWallClockMs,
+  yuanToCentsExact,
 } from "../format";
 import { formatAxisTime } from "../ops/time-range";
 
@@ -39,5 +42,25 @@ describe("format utilities (Asia/Shanghai wall-clock SSOT)", () => {
       "mazbri-libs/mazbri-core/src/lib.rs",
     );
     assert.equal(formatCodeFilePath("src/main.rs"), "src/main.rs");
+  });
+
+  it("converts yuan to exact integer cents without IEEE-754 drift", () => {
+    assert.equal(yuanToCentsExact("100"), 10000);
+    assert.equal(yuanToCentsExact("19.99"), 1999);
+    assert.equal(yuanToCentsExact(19.99), 1999);
+    assert.equal(yuanToCentsExact("0.01"), 1);
+    assert.equal(yuanToCentsExact("1.999"), null);
+    assert.equal(yuanToCentsExact("-5"), null);
+    assert.equal(centsToYuanString(1999), "19.99");
+    assert.equal(centsToYuanString(1), "0.01");
+  });
+
+  it("formats DECIMAL(18,6) money strings with 2..6 adaptive decimals", () => {
+    assert.equal(formatMoney("5257"), "5,257.00");
+    assert.equal(formatMoney("2750.85"), "2,750.85");
+    assert.equal(formatMoney("0.700000"), "0.70");
+    assert.equal(formatMoney("0.000015"), "0.000015");
+    assert.equal(formatMoney("0.002500"), "0.0025");
+    assert.equal(formatMoney(null), "—");
   });
 });

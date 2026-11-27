@@ -212,7 +212,8 @@
           <ElInput
             v-model.number="rechargeForm.amount"
             type="number"
-            :min="1"
+            :min="0.01"
+            step="0.01"
             :placeholder="$t('tenant.account.rechargeAmountPlaceholder')"
             class="amount-input"
             style="width: 100%"
@@ -261,7 +262,9 @@
       width="450px"
       dialog-class="account-action-dialog"
       :confirm-text="$t('tenant.account.refundConfirm')"
-      :confirm-disabled="refundForm.amount > currentBalance"
+      :confirm-disabled="
+        refundCents === null || refundCents <= 0 || refundCents > maxRefundCents
+      "
       :saving="refunding"
       @confirm="handleSubmitRefund"
     >
@@ -285,8 +288,9 @@
           <ElInput
             v-model.number="refundForm.amount"
             type="number"
-            :min="1"
-            :max="maxRefundAmount"
+            :min="0.01"
+            step="0.01"
+            :max="currentBalance"
             :placeholder="$t('tenant.account.refundAmountPlaceholder')"
             class="amount-input"
             style="width: 100%"
@@ -329,7 +333,7 @@
         <div
           :class="[
             'dialog-preview-strip',
-            refundForm.amount > currentBalance ? 'warning' : '',
+            refundExceedsBalance ? 'warning' : '',
           ]"
         >
           <span class="dialog-balance-label">{{
@@ -341,7 +345,7 @@
           </span>
         </div>
         <CommonInlineHint
-          v-if="refundForm.amount > currentBalance"
+          v-if="refundExceedsBalance"
           block
           tone="warning"
           class="account-inline-alert"
@@ -389,8 +393,10 @@ import { logger } from "@/utils/sys";
 import type { ColumnOption, PaginationConfig } from "@/types/component";
 import {
   EMPTY_PLACEHOLDER,
+  centsToYuanString,
   formatMoney,
   formatDateTime,
+  yuanToCentsExact,
 } from "@/utils/format";
 defineOptions({ name: "AccountTab" });
 const props = defineProps<{
@@ -532,7 +538,7 @@ const refundRules: FormRules = {
     },
     {
       type: "number",
-      min: 1,
+      min: 0.01,
       message: $t("tenant.account.validation.refundAmountPositive"),
       trigger: "blur",
     },
@@ -548,12 +554,20 @@ const refundRules: FormRules = {
 const currentBalance = computed(() => {
   return parseFloat(account.value?.balance || "0");
 });
-const maxRefundAmount = computed(() => {
-  return Math.floor(currentBalance.value * 100);
+const maxRefundCents = computed(() => {
+  const raw = account.value?.balance;
+  if (!raw) return 0;
+  const parsed = yuanToCentsExact(raw);
+  if (parsed !== null) return parsed;
+  return Math.max(0, Math.round(currentBalance.value * 100));
 });
+const refundCents = computed(() => yuanToCentsExact(refundForm.amount));
+const refundExceedsBalance = computed(
+  () => refundCents.value !== null && refundCents.value > maxRefundCents.value,
+);
 const balanceAfterRefund = computed(() => {
-  const refundAmount = refundForm.amount / 100;
-  return Math.max(0, currentBalance.value - refundAmount);
+  if (refundCents.value === null) return account.value?.balance || "0";
+  return centsToYuanString(Math.max(0, maxRefundCents.value - refundCents.value));
 });
 
 const formatBalance = (balance: string | number | null | undefined) => {
@@ -667,10 +681,16 @@ const handleRecharge = () => {
 const handleSubmitRecharge = async () => {
   const valid = await rechargeFormRef.value?.validate().catch(() => false);
   if (!valid) return;
+  const cents = yuanToCentsExact(rechargeForm.amount);
+  if (cents === null || cents <= 0) {
+    ElMessage.error($t("tenant.account.validation.rechargeAmountPositive"));
+    return;
+  }
   recharging.value = true;
   try {
     const payload: RechargeRequest = {
       ...toRaw(rechargeForm),
+      amount: cents,
       description: composeReasonText(
         rechargeReasonCode.value,
         rechargeForm.description || "",
@@ -692,7 +712,8 @@ const handleSubmitRecharge = async () => {
   }
 };
 const handleRefund = () => {
-  refundForm.amount = Math.min(100, maxRefundAmount.value);
+  const defaultYuan = Math.min(100, currentBalance.value);
+  refundForm.amount = Number(defaultYuan.toFixed(2));
   refundForm.reason = "";
   refundReasonCode.value = "other";
   refundVisible.value = true;
@@ -700,7 +721,12 @@ const handleRefund = () => {
 const handleSubmitRefund = async () => {
   const valid = await refundFormRef.value?.validate().catch(() => false);
   if (!valid) return;
-  if (refundForm.amount > maxRefundAmount.value) {
+  const cents = yuanToCentsExact(refundForm.amount);
+  if (cents === null || cents <= 0) {
+    ElMessage.error($t("tenant.account.validation.refundAmountPositive"));
+    return;
+  }
+  if (cents > maxRefundCents.value) {
     ElMessage.error($t("tenant.messages.refundExceedsBalance"));
     return;
   }
@@ -708,6 +734,7 @@ const handleSubmitRefund = async () => {
   try {
     const payload: RefundRequest = {
       ...toRaw(refundForm),
+      amount: cents,
       reason: composeReasonText(
         refundReasonCode.value,
         refundForm.reason || "",

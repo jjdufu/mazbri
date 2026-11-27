@@ -3,7 +3,26 @@
     <div v-if="!nodes.length" class="service-hexagon-grid__empty">
       <slot name="empty">—</slot>
     </div>
-    <div v-else class="hexagon-grid">
+    <div v-else class="service-hexagon-grid__body">
+      <div class="hexagon-legend">
+        <span class="hexagon-legend__item">
+          <span class="status-dot is-healthy" />
+          {{ t("ops.components.statusName.healthy") }}
+        </span>
+        <span class="hexagon-legend__item">
+          <span class="status-dot is-degraded" />
+          {{ t("ops.components.statusName.degraded") }}
+        </span>
+        <span class="hexagon-legend__item">
+          <span class="status-dot is-down" />
+          {{ t("ops.components.statusName.down") }}
+        </span>
+        <span class="hexagon-legend__item">
+          <span class="status-dot is-unknown" />
+          {{ t("ops.components.statusName.unknown") }}
+        </span>
+      </div>
+      <div class="hexagon-grid">
       <ElTooltip
         v-for="node in nodes"
         :key="node.id"
@@ -52,11 +71,14 @@
           </div>
         </div>
       </ElTooltip>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from "vue-i18n";
+
 export type HexagonStatus = "healthy" | "degraded" | "down" | "unknown";
 
 export interface HexagonNode {
@@ -73,6 +95,8 @@ export interface HexagonNode {
 }
 
 defineOptions({ name: "ServiceHexagonGrid" });
+
+const { t } = useI18n();
 
 const props = withDefaults(
   defineProps<{
@@ -136,6 +160,40 @@ function onSelect(id: string) {
   padding: 16px 4px;
   color: var(--el-text-color-secondary);
   font-size: 13px;
+}
+
+.service-hexagon-grid__body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hexagon-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.hexagon-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+
+  .status-dot.is-healthy {
+    background: var(--art-success, #67c23a);
+  }
+  .status-dot.is-degraded {
+    background: var(--art-warning, #e6a23c);
+  }
+  .status-dot.is-down {
+    background: var(--art-danger, #f56c6c);
+  }
+  .status-dot.is-unknown {
+    background: var(--art-gray-400, #909399);
+  }
 }
 
 .hexagon-grid {

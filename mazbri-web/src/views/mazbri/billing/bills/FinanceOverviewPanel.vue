@@ -32,28 +32,43 @@
       <ElCol :xs="12" :sm="12" :md="8" :lg="6">
         <StatCard
           :label="t('ops.finance.revenue')"
-          :value="num(overview?.revenue_total)"
+          :value="
+            overview?.revenue_total != null
+              ? formatMoney(overview.revenue_total)
+              : null
+          "
+          :unit="t('common.currencies.cny')"
+          icon="ri:money-cny-circle-line"
           :hint="windowHint"
           :loading="loading"
-          :digits="2"
         />
       </ElCol>
       <ElCol :xs="12" :sm="12" :md="8" :lg="6">
         <StatCard
           :label="t('ops.finance.cost')"
-          :value="costUnavailable ? null : num(overview?.cost_total)"
+          :value="
+            costUnavailable || overview?.cost_total == null
+              ? null
+              : formatMoney(overview.cost_total)
+          "
+          :unit="t('common.currencies.cny')"
+          icon="ri:shopping-bag-3-line"
           :hint="costHint"
           :loading="loading"
-          :digits="2"
         />
       </ElCol>
       <ElCol :xs="12" :sm="12" :md="8" :lg="6">
         <StatCard
           :label="t('ops.finance.margin')"
-          :value="costUnavailable ? null : num(overview?.margin_total)"
+          :value="
+            costUnavailable || overview?.margin_total == null
+              ? null
+              : formatMoney(overview.margin_total)
+          "
+          :unit="t('common.currencies.cny')"
+          icon="ri:funds-box-line"
           :hint="costHint"
           :loading="loading"
-          :digits="2"
         />
       </ElCol>
       <ElCol :xs="12" :sm="12" :md="8" :lg="6">
@@ -61,6 +76,7 @@
           :label="t('ops.finance.marginRate')"
           :value="costUnavailable ? null : (overview?.margin_rate ?? null)"
           unit="%"
+          icon="ri:percent-line"
           :hint="costHint"
           :loading="loading"
           :digits="1"

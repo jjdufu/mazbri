@@ -40,6 +40,7 @@ const props = withDefaults(
     loading?: boolean;
     height?: string;
     horizontal?: boolean;
+    barMaxWidth?: number;
     unitType?: OpsChartUnitType;
     unit?: string;
     emptyText?: string;
@@ -50,6 +51,7 @@ const props = withDefaults(
     loading: false,
     height: "280px",
     horizontal: false,
+    barMaxWidth: undefined,
     unitType: "raw",
     unit: "",
     emptyText: undefined,
@@ -136,6 +138,8 @@ function buildOption(): EChartsOption {
       name: s.name,
       type: "bar",
       stack: s.stack,
+      barMaxWidth: props.barMaxWidth ?? (props.horizontal ? 20 : 32),
+      barGap: "20%",
       data: s.data,
       emphasis: { focus: "series" },
     })),
@@ -182,6 +186,8 @@ watch(
       props.loading,
       props.unitType,
       props.unit,
+      props.horizontal,
+      props.barMaxWidth,
       isEmpty.value,
       locale.value,
     ] as const,

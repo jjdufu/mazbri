@@ -126,15 +126,80 @@ function normalizeEpochToMs(n: number): number | null {
   return null;
 }
 
-/** 金额展示：千分位 + 两位小数；空值为「—」。 */
-export function formatMoney(amount?: string | number | null): string {
+/**
+ * 将十进制「元」字符串或数字无损换算为安全整数「分」（最多 2 位小数，正数）。
+ * 全程采用字符串拆分与补零拼接，杜绝 `19.99 * 100 = 1998.9999999999998` 浮点误差。
+ */
+export function yuanToCentsExact(
+  input: string | number | null | undefined,
+): number | null {
+  if (input === null || input === undefined || input === "") return null;
+  const raw = typeof input === "number" ? (Number.isFinite(input) ? String(input) : "") : input.trim();
+  if (!raw || !/^\d+(?:\.\d{1,2})?$/.test(raw)) return null;
+  const [intPart, fracPart = ""] = raw.split(".");
+  const paddedFrac = fracPart.padEnd(2, "0");
+  const cents = Number(intPart) * 100 + Number(paddedFrac);
+  if (!Number.isSafeInteger(cents)) return null;
+  return cents;
+}
+
+/** 将整数「分」格式化为精确两位小数的十进制「元」字符串（如 `1999 -> "19.99"`）。 */
+export function centsToYuanString(cents: number): string {
+  if (!Number.isFinite(cents)) return "0.00";
+  const sign = cents < 0 ? "-" : "";
+  const abs = Math.round(Math.abs(cents));
+  const yuan = Math.floor(abs / 100);
+  const rem = String(abs % 100).padStart(2, "0");
+  return `${sign}${yuan}.${rem}`;
+}
+
+export interface FormatMoneyOptions {
+  minDecimals?: number;
+  maxDecimals?: number;
+}
+
+/**
+ * 金额展示（纯十进制字符串算法，兼容 `DECIMAL(18,6)` 微元单价）：
+ * - 整数部分千分位分组；
+ * - 小数部分保底 `minDecimals`（默认 2）位，保留非零有效尾数至最高 `maxDecimals`（默认 6）位；
+ * - 空值或非法输入返回「—」。
+ */
+export function formatMoney(
+  amount?: string | number | null,
+  options?: FormatMoneyOptions,
+): string {
   if (amount == null || amount === "") return EMPTY;
-  const numericValue = typeof amount === "string" ? Number(amount) : amount;
-  if (!Number.isFinite(numericValue)) return EMPTY;
-  return new Intl.NumberFormat("zh-CN", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(numericValue);
+  const minDecimals = Math.max(0, options?.minDecimals ?? 2);
+  const maxDecimals = Math.max(minDecimals, options?.maxDecimals ?? 6);
+  let raw =
+    typeof amount === "number"
+      ? Number.isFinite(amount)
+        ? amount.toFixed(maxDecimals)
+        : ""
+      : amount.trim();
+  if (!raw) return EMPTY;
+  // 处理科学计数法字符串（如 1.5e-5）
+  if (/[eE]/.test(raw)) {
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return EMPTY;
+    raw = n.toFixed(maxDecimals);
+  }
+  const match = /^([+-]?)(\d+)(?:\.(\d+))?$/.exec(raw);
+  if (!match) return EMPTY;
+  const sign = match[1] === "-" ? "-" : "";
+  const intDigits = match[2].replace(/^0+(?=\d)/, "") || "0";
+  const fracDigits = (match[3] ?? "").slice(0, maxDecimals);
+  const trimmedFrac = fracDigits.replace(/0+$/, "");
+  const finalFrac =
+    trimmedFrac.length >= minDecimals
+      ? trimmedFrac
+      : trimmedFrac.padEnd(minDecimals, "0");
+  const groupedInt = intDigits.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  const isZero = intDigits === "0" && /^0*$/.test(finalFrac);
+  const effectiveSign = isZero ? "" : sign;
+  return finalFrac.length > 0
+    ? `${effectiveSign}${groupedInt}.${finalFrac}`
+    : `${effectiveSign}${groupedInt}`;
 }
 
 /**

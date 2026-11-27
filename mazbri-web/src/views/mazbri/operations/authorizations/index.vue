@@ -52,7 +52,9 @@
         />
       </template>
       <template #unit_price="{ row }">
-        {{ row.unit_price }} {{ t("common.currencies.cny") }}
+        <span class="tabular-nums"
+          >{{ formatMoney(row.unit_price) }} {{ t("common.currencies.cny") }}</span
+        >
       </template>
       <template #created_at="{ row }">
         {{ formatDate(row.created_at) }}
@@ -142,7 +144,11 @@ import { ElMessage } from "element-plus";
 import { logger } from "@/utils/sys";
 import type { ColumnConfig } from "@/composables/useResourceCsvImportExport";
 import type { ColumnOption } from "@/types/component";
-import { EMPTY_PLACEHOLDER, formatDateTime as formatDate } from "@/utils/format";
+import {
+  EMPTY_PLACEHOLDER,
+  formatDateTime as formatDate,
+  formatMoney,
+} from "@/utils/format";
 
 defineOptions({ name: "AuthorizationList" });
 

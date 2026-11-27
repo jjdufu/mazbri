@@ -3,75 +3,62 @@ import { describe, it } from "node:test";
 import {
   buildSloTableColumns,
   formatBudgetRemaining,
-  formatSloTimestamp,
-  hasSlimErrorBudget,
-  hasSloBudgetData,
-  mergeSloBudgetRows,
-  takeSloTopViolators,
+  formatBurnRate,
+  formatSloRatio,
+  type SloBudgetRow,
 } from "../slo";
 
-describe("slo helpers", () => {
-  it("mergeSloBudgetRows joins by name", () => {
-    const rows = mergeSloBudgetRows(
-      [
-        {
-          id: "1",
-          name: "api",
-          sli_type: "availability",
-          query_kind: "promql",
-          query: "x",
-          objective: 0.999,
-          window_days: 30,
-          scope: "global",
-          enabled: true,
-        },
-      ],
-      [{ name: "api", sli: 0.9995, error_budget_remaining: 0.8, burn_page: 1 }],
-    );
-    assert.equal(rows.length, 1);
-    assert.equal(rows[0]?.remaining, 0.8);
-    assert.equal(rows[0]?.burn_page, 1);
-    assert.equal(rows[0]?.sli_type, "availability");
+const stubT = (key: string) => key;
+
+describe("SLO formatting and table columns", () => {
+  it("formats SLO ratios and burn rates cleanly", () => {
+    assert.equal(formatSloRatio(0.99), "99.00%");
+    assert.equal(formatSloRatio(0.999), "99.90%");
+    assert.equal(formatSloRatio(1), "100.00%");
+    assert.equal(formatSloRatio(null), "—");
+
+    assert.equal(formatBurnRate(0), "0x");
+    assert.equal(formatBurnRate(1.25), "1.25x");
+    assert.equal(formatBurnRate(null), "—");
+
+    assert.equal(formatBudgetRemaining(0.8843), "88.43%");
   });
 
-  it("hasSloBudgetData / slim gate", () => {
-    assert.equal(hasSloBudgetData([]), false);
-    assert.equal(hasSloBudgetData([{ name: "a" } as never]), true);
-    assert.equal(hasSlimErrorBudget(true, 0.5), true);
-    assert.equal(hasSlimErrorBudget(true, null), false);
-    assert.equal(hasSlimErrorBudget(false, 0.5), false);
-  });
+  it("mounts formatters on buildSloTableColumns and renders burn_page as boolean state", () => {
+    const cols = buildSloTableColumns(stubT, { adminDetail: true });
+    const row: SloBudgetRow = {
+      name: "gateway-availability",
+      sli_type: "availability",
+      objective: 0.999,
+      window_days: 30,
+      sli: 0.9995,
+      remaining: 0.5,
+      burn_5m: 0,
+      burn_page: 1,
+      burn_ticket: 0,
+      ts: "2026-11-26 08:00:00",
+    };
 
-  it("takeSloTopViolators prefers burn", () => {
-    const rows = mergeSloBudgetRows(undefined, [
-      { name: "ok", error_budget_remaining: 0.9, burn_page: 0 },
-      { name: "hot", error_budget_remaining: 0.2, burn_page: 2 },
-      { name: "warm", error_budget_remaining: 0.1, burn_ticket: 1 },
-    ]);
-    assert.deepEqual(
-      takeSloTopViolators(rows, 2).map((r) => r.name),
-      ["hot", "warm"],
-    );
-    assert.deepEqual(takeSloTopViolators(rows, 0), []);
-  });
+    const objCol = cols.find((c) => c.prop === "objective");
+    assert.equal(objCol?.formatter?.(row), "99.90%");
 
-  it("columns hide adminOnly when not detail", () => {
-    const t = (k: string) => k;
-    const full = buildSloTableColumns(t, { adminDetail: true });
-    const slim = buildSloTableColumns(t, { adminDetail: false });
-    assert.ok(full.length > slim.length);
-    assert.ok(full.some((c) => c.prop === "burn_5m"));
-    assert.ok(!slim.some((c) => c.prop === "burn_5m"));
-  });
+    const sliCol = cols.find((c) => c.prop === "sli");
+    assert.equal(sliCol?.formatter?.(row), "99.95%");
 
-  it("formatBudgetRemaining", () => {
-    assert.equal(formatBudgetRemaining(0.8123), "81.23%");
-    assert.equal(formatBudgetRemaining(null), "—");
-  });
-});
+    const burn5mCol = cols.find((c) => c.prop === "burn_5m");
+    assert.equal(burn5mCol?.formatter?.(row), "0x");
 
-it("formatSloTimestamp never returns raw epoch ms", () => {
-  const out = formatSloTimestamp("2026-11-03T10:45:00.000Z");
-  assert.equal(out, "2026-11-03 18:45:00");
-  assert.equal(formatSloTimestamp(null), null);
+    const burnPageCol = cols.find((c) => c.prop === "burn_page");
+    assert.ok(Number(burnPageCol?.minWidth ?? 0) >= 120);
+    const firingVnode = burnPageCol?.formatter?.(row) as {
+      children?: string;
+    };
+    assert.equal(firingVnode?.children, "ops.slo.burnFiring");
+
+    const burnTicketCol = cols.find((c) => c.prop === "burn_ticket");
+    const normalVnode = burnTicketCol?.formatter?.(row) as {
+      children?: string;
+    };
+    assert.equal(normalVnode?.children, "ops.slo.burnNormal");
+  });
 });

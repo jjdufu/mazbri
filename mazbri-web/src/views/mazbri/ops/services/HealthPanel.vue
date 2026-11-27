@@ -205,7 +205,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, h, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
@@ -410,9 +410,26 @@ const overviewColumns = computed<ColumnOption<ServiceHealthRow>[]>(() => [
   {
     prop: "name",
     label: t("ops.services.columns.service"),
-    minWidth: 140,
+    minWidth: 160,
     showOverflowTooltip: true,
-    formatter: (row) => `${row.name || row.service} (${row.service})`,
+    formatter: (row) => {
+      const text = `${row.name || row.service} (${row.service})`;
+      if (!isAdmin.value || row.group !== "app") {
+        return text;
+      }
+      return h(
+        "button",
+        {
+          type: "button",
+          class: "ops-services-health-panel__service-link",
+          onClick: (event: MouseEvent) => {
+            event.stopPropagation();
+            openDetail(row);
+          },
+        },
+        [text, " ↗"],
+      );
+    },
   },
   {
     prop: "status",
@@ -430,14 +447,20 @@ const overviewColumns = computed<ColumnOption<ServiceHealthRow>[]>(() => [
   {
     prop: "cpu_cores",
     label: t("ops.services.columns.cpu"),
-    minWidth: 105,
+    minWidth: 112,
+    align: "right",
+    headerAlign: "right",
+    className: "tabular-nums",
     formatter: (row) =>
       formatCpuCoresDisplay(row.cpu_cores, t("ops.components.cores")),
   },
   {
     prop: "memory_bytes",
     label: t("ops.services.columns.memory"),
-    minWidth: 105,
+    minWidth: 112,
+    align: "right",
+    headerAlign: "right",
+    className: "tabular-nums",
     formatter: (row) =>
       row.memory_bytes !== null && row.memory_bytes !== undefined
         ? formatBytes(row.memory_bytes)
@@ -446,7 +469,10 @@ const overviewColumns = computed<ColumnOption<ServiceHealthRow>[]>(() => [
   {
     prop: "restarts_1h",
     label: t("ops.services.columns.restarts1h"),
-    width: 105,
+    width: 110,
+    align: "right",
+    headerAlign: "right",
+    className: "tabular-nums",
     formatter: (row) => fixed(row.restarts_1h, 0),
   },
   {
@@ -546,5 +572,19 @@ watch(reloadTick, () => {
 
 .ops-services-health-panel__muted {
   color: var(--el-text-color-secondary);
+}
+
+:deep(.ops-services-health-panel__service-link) {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--el-color-primary);
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+
+  &:hover {
+    text-decoration: underline;
+  }
 }
 </style>
