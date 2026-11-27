@@ -1,76 +1,71 @@
-# Step 07：免代码工作台紧凑屏自适应、暗色对比度提亮与平台设置单按钮脏状态闭环
+# Step 07：免代码工作台紧凑屏自适应、双主题 WCAG AA 校准与安全策略单事务保存
 
 ## 1. 覆盖问题清单与源码精确定位
 
-| 编号 | 关联审计项 | 级别 | 问题描述与核验纠偏 | 精确源码位置 |
+| 编号 | 关联审计项 | 级别 | 问题描述与全栈契约定位 | 精确源码位置 |
 | :--- | :---: | :---: | :--- | :--- |
-| **W07-1** | `B-09` | P1 | **超管强制发布逃生门禁守卫**：免代码工作台在 `1440×900` / `1366×768` / `1280×800` 笔记本紧凑高度下，上下 `Splitpanes` 死板按 `50%:50%` 平分，导致未试调时下方空白响应区空占 `340px`，而上方 `出站规格 -> 请求构造` 底部的核心开关「启用业务报文加解密与签名」被分割线拦腰硬裁切；同时顶栏门禁为红点 `0/1` 时右侧 `[发布]` 仍呈全高亮主按钮（注：不能简单加原生 `disabled` 封死 `force_publish` 与悬停提示） | [workbench.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/upstream-connectors/workbench.vue#L168-L210)、[workbench.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/upstream-connectors/workbench.vue#L540-L560)、[WorkbenchTopBar.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/upstream-connectors/WorkbenchTopBar.vue#L300-L325)、[useWorkbenchStore.ts](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/upstream-connectors/useWorkbenchStore.ts#L2111-L2134)、[CryptoProfileEditor.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/upstream-connectors/CryptoProfileEditor.vue#L245-L255) |
-| **W07-2** | `B-10` | P1 | 免代码工作台暗黑模式下（底色 `#131720` / `#161b26`），`workbench-tokens.scss` 定义的 `--wb-text-muted` 与 `--wb-text-faint` 亮度对比度仅约 `2.5:1 ~ 2.8:1`，远低于 WCAG AA `4.5:1` 标准，长时间联调时键值表占位符与辅助文案雾化难辨 | [workbench-tokens.scss](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/upstream-connectors/workbench-tokens.scss#L61-L85) |
-| **W07-3** | `D-03` | P1 | **前端脏字段联动提交纠偏**：`平台设置 -> 安全策略` 同页前 3 张卡由右下角 `[保存安全策略]` 提交，唯独第 4 张卡 `GlobalMfaCard` 内嵌独立 `[保存]` 按钮，管理员同时修改密码长度与 `TOTP 发行者名称` 后触发底部主按钮时，`TOTP 发行者名称` 的修改被静默丢弃；且设置页底部无吸底操作栏与脏数据离开提示，`平台授权` 页签禁用态 `[导入激活]` 缺原因提示、`剩余/还剩` 天数微文案不一 | [SecurityPolicyTab.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/control-panel/system/modules/SecurityPolicyTab.vue#L1-L45)、[GlobalMfaCard.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/control-panel/system/modules/GlobalMfaCard.vue#L13-L30)、[usePlatformSecurityPolicy.ts](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/control-panel/system/modules/usePlatformSecurityPolicy.ts#L96-L138)、[PlatformLicenseTab.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/control-panel/system/modules/PlatformLicenseTab.vue) |
-| **W07-4** | `G-07` | P1 | 个人安全设置抽屉（`PersonalSecurityDrawer`）默认 `520px` 宽度偏窄，首张卡片头部标题折成 `两步验证 / (MFA)` 两行，右侧 `[重置备用码]` 与 `[停用]` 纵向错位堆叠将头部撑高至 `90px` | [personal-security-drawer/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/components/common/personal-security-drawer/index.vue#L1-L55) |
+| **W07-1** | `B-09` | P1 | 免代码工作台（路由 `/#/operations/upstream-supply/workbench`）上下 `Splitpanes` 默认 `requestSize = 52`（且持久化在 `localStorage["mazbri:wb:ide-layout"]`），在 `1280×800` 下分为 `454px : 420px`，未试调时下方空闲区占半屏而上方 `.wb-req-body`（`h: 332px`）裁切底部「启用业务报文加解密与签名」开关；同时门禁为 `校验 0/1` 时顶栏 `[发布]` 仍呈全高亮主色，`canPublish` 仅判断单次试跑成功而未对齐 `gate.ok === gate.total` | [workbench.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/upstream-connectors/workbench.vue#L168-L210)、[workbench.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/upstream-connectors/workbench.vue#L1298-L1470)、[WorkbenchTopBar.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/upstream-connectors/WorkbenchTopBar.vue#L300-L325)、[WorkbenchPublishDrawer.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/upstream-connectors/WorkbenchPublishDrawer.vue#L1-L210)、[useWorkbenchStore.ts](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/upstream-connectors/useWorkbenchStore.ts#L170-L254)、[useWorkbenchStore.ts](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/upstream-connectors/useWorkbenchStore.ts#L613-L617)、[useWorkbenchStore.ts](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/upstream-connectors/useWorkbenchStore.ts#L2111-L2134) |
+| **W07-2** | `B-10` | P1 | **亮/暗双主题占位与辅助文案对比度不足**：`workbench-tokens.scss` 中暗色 `--wb-text-faint: #68758d` 在 `#161b26`/`#212838` 上对比度仅 `3.10:1 ~ 3.63:1`，而**亮色模式** `--wb-text-faint: #8b95a7` 在 `#ffffff`/`#eaeff8` 上对比度仅 **`2.62:1 ~ 3.02:1`**，双双低于 WCAG 2.1 AA `4.5:1` 标准 | [workbench-tokens.scss](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/upstream-connectors/workbench-tokens.scss#L12-L86) |
+| **W07-3** | `D-03` | P1 | **跨安全域分裂导致双保存按钮与 TOTP 重放死锁隐患**：`平台设置 -> 安全策略` 中密码策略（`PUT /settings/password-policy`，要求 `Category::Platform` MFA）与第 4 张卡 `GlobalMfaCard` 的 `totp_issuer`（`PUT /settings/mfa`，要求 `Category::Mfa` MFA）分属两个后端提权域，造成同页上下两个保存按钮（`top: 448` 与 `top: 663`）且点主按钮静默漏存 `totp_issuer`；设置页缺吸底栏与未保存拦截，`平台授权` 禁用态按钮缺提示且剩余天数微文案不一 | [password_policy_handlers.rs](file:///workspace/rust-proj/mazbri/mazbri-bin/mazbri-mgmt/src/handlers/password_policy_handlers.rs#L13-L55)、[mfa_settings_handlers.rs](file:///workspace/rust-proj/mazbri/mazbri-bin/mazbri-mgmt/src/handlers/mfa_settings_handlers.rs#L21-L65)、[SecurityPolicyTab.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/control-panel/system/modules/SecurityPolicyTab.vue#L1-L45)、[GlobalMfaCard.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/control-panel/system/modules/GlobalMfaCard.vue#L13-L30)、[usePlatformSecurityPolicy.ts](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/control-panel/system/modules/usePlatformSecurityPolicy.ts#L96-L138)、[PlatformLicenseTab.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/control-panel/system/modules/PlatformLicenseTab.vue) |
+| **W07-4** | `G-07` | P1 | `PersonalSecurityDrawer` 默认 `520px` 偏窄，首张 `<SettingsCard>` 内部委托渲染的子组件 `<SurfaceCardHeader>`（`.surface-card-actions`）中 `[重置备用码]`（`top: 133`）与 `[停用]`（`top: 175`）纵向错位折行，将 `.el-card__header` 撑高至 `103px` | [personal-security-drawer/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/components/common/personal-security-drawer/index.vue#L1-L62)、[surface-card-header/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/components/common/surface-card-header/index.vue#L25-L30) |
 
 ---
 
 ## 2. 第一性原理本质归因
 
-1. **视口预算按信息熵动态分配（Entropy-Proportional Viewport Allocation，公理 U4）**：在 IDE 型上下分栏界面中，尚未发起任何在线试调（`lastRun === null`）时，下半栏的信息熵趋近于零，而上半栏承载着 URL、认证、请求头、Body 编码与出站报文加解密等高密度必填表单。按静态 `50%:50%` 均分视口违反了信息熵配比原则，必然在 `<= 900px` 笔记本高度下截断底部安全开关。
-2. **意图原子化与最小后端扰动平衡（公理 U4 + 红队修正准则）**：用户在同一个「安全策略」页签编辑表单时，心智模型是单一表单提交。无需为了低频修改的 `totp_issuer` 破坏性重构后端 REST 接口与 `ts-rs` 绑定——在前端状态层记录初始快照 `initialSnapshot`，仅在脏字段集合非空时按需联动提交对应子接口并对失败子项精确保脏提示，即可在零后端接口破坏的前提下达成单按钮原子体验。
+1. **按字段安全敏感度正交归域，保障单事务单次 MFA 原子保存（公理 U4）**：若仅在前端删除 `GlobalMfaCard` 按钮并串行调用 `PUT /settings/password-policy`（`Category::Platform`）与 `PUT /settings/mfa`（`Category::Mfa`），不仅会连弹两次 MFA 弹窗，且管理员在第二个弹窗输入当前 30 秒窗口内的同一 6 位 TOTP 码时，会直接触发后端 `advance_totp_step` 防重放拦截报错 **`400 MFA_CODE_REUSED`** 锁死最多 30 秒！从领域本质看，`totp_issuer` 仅是验证器 App 展示的品牌发行方名称（非 `totp_digits` / `totp_period` 等密码学核心参数）。在后端将可选 `totp_issuer` 纳入 `Category::Platform` 守卫的安全策略单事务更新（同时保持 `PUT /settings/mfa` 继续由 `Category::Mfa` 保护底层算法参数），即可在不削弱安全边界的前提下达成真正的单请求、单事务、单次 MFA 原子保存。
+2. **视口预算按信息熵分配与持久化版本演进**：未执行在线试调前下半栏信息熵趋近于零，初始分配 `74 : 26` 可让 `1280×800` 下半栏保持紧凑待命而上半栏 `.wb-req-body`（可用高度 `~388px`）完整露出底部的业务报文加解密开关；由于旧默认值 `52` 已写入客户端 `localStorage`，必须通过提升存储键版本使新布局对存量浏览器立即生效。
 
 ---
 
 ## 3. 详尽可落地技术方案
 
-### 3.1 免代码工作台自适应分栏、滚动提示与发布门禁视觉校准（`mazbri-web`）
+### 3.1 免代码工作台分栏演进、门禁对齐与亮/暗双主题 WCAG AA 校准（`mazbri-web`）
 
-1. **未试调态与紧凑视口动态高度比（`W07-1`）**
-   - 修改 [useWorkbenchStore.ts](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/upstream-connectors/useWorkbenchStore.ts) 与 [workbench.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/upstream-connectors/workbench.vue#L168-L176)：
-     - 将初始默认 `requestSize` 由 `50` 提升至 **`74`**（即未手动拖拽且未产生试调响应前，请求编辑区占 `74%`、底部待命响应条占 `26%`，确保 `1280×800` / `1440×900` 下完整露出底部的「启用业务报文加解密与签名」开关）；
-     - 当用户首次执行「试调」拿到 `lastRun` 响应且此前未手动拖拽固定比例时，自动平滑展开至 `48 : 52` 便于检视响应报文；用户一旦手动拖拽分割条（`userResizedInner = true`），则尊重用户自定义比例。
-   - 为 `.wb-request` 滚动容器底部增加 CSS 渐隐阴影提示（利用 `background-attachment: local, local, scroll, scroll` 纯 CSS 滚动阴影，无 JS 开销），明确提示下方仍有可滚配置项；同步将 [CryptoProfileEditor.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/upstream-connectors/CryptoProfileEditor.vue#L249) 局部混用的 `size="small"` 控件对齐至工作台标准尺寸。
+1. **紧凑视口动态分栏与 `.wb-req-body` 滚动提示（`W07-1`）**
+   - 修改 [useWorkbenchStore.ts](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/upstream-connectors/useWorkbenchStore.ts#L170-L254)：
+     - 将持久化键升级为 `mazbri:wb:ide-layout:v2`（清理旧键 `mazbri:wb:ide-layout`），将未手动拖拽时的初始 `requestSize` 设为 **`74`**（请求区 `74%`、响应待命区 `26%`）；当首次试调返回 `lastRun` 且用户未手动拖拽分割线时，自动展开为 `48 : 52`；
+     - 在 [WorkbenchResponsePane.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/upstream-connectors/WorkbenchResponsePane.vue#L49-L73) 适度收敛 `.wb-res__idle` 空态上下内边距与图标尺寸，确保非全屏浏览器窗口（`700px` 净高）下 `26%` 底栏无溢出裁切。
+   - 在真实纵向滚动容器 **`.wb-req-body`**（[workbench.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/upstream-connectors/workbench.vue#L1460)，注意外层 `.wb-request` 为 `overflow: hidden` 且内部 `.wb-sheet` 不透明）底部挂载轻量 `position: sticky; bottom: 0` 渐隐阴影指示条（滚到底部时自动隐藏）；将 [CryptoProfileEditor.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/upstream-connectors/CryptoProfileEditor.vue#L249) 局部 `size="small"` 对齐至标准尺寸。
+2. **门禁就绪度与发布按钮视觉/交互联动**
+   - 修改 [WorkbenchTopBar.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/upstream-connectors/WorkbenchTopBar.vue#L311-L325) 与 [useWorkbenchStore.ts](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/upstream-connectors/useWorkbenchStore.ts#L613-L617)：
+     - 定义 `isGateReady = computed(() => gate.value.total > 0 && gate.value.ok >= gate.value.total)`；当 `!isGateReady` 时，为顶栏发布按钮施加次级描边受限样式 `.wb-topbar__primary-btn--gated` 并包裹 `<ElTooltip>` 陈述状态 `门禁未就绪（{ok}/{total}）`；
+     - 在 `openPublish()`（第 2111 行）中：若 `!isGateReady` 且当前用户具备 `canForcePublish`（`R_ADMIN` / `R_FINANCE`），允许打开 [WorkbenchPublishDrawer.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/upstream-connectors/WorkbenchPublishDrawer.vue) 并在抽屉顶部显式展示门禁未满警告、引导开启强制发布（触发后端 `Category::Platform` MFA）或补齐试调门禁。
+3. **亮/暗双主题 WCAG 2.1 AA 精确校准（`W07-2`）**
+   - 修改 [workbench-tokens.scss](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/upstream-connectors/workbench-tokens.scss#L27-L80)：
+     - **亮色模式**：保持 `--wb-text: #111827`、`--wb-text-muted: #4b5565`，将 `--wb-text-faint` 由 `#8b95a7`（`2.62:1`）加深为 **`#5e6878`**（在 `--wb-surface-hover: #eaeff8` 上对比度 **`4.68:1 >= 4.5:1`**，在 `#ffffff` 上 `5.65:1`）；
+     - **暗色模式**：保持已达标的 `--wb-text: #e6edf7`（`14.65:1`）与 `--wb-text-muted: #9aa6bc`（`7.02:1`），将 `--wb-text-faint` 由 `#68758d` 提亮为 **`#8493a8`**（在最浅暗色表面 `--wb-surface-hover: #212838` 上对比度 **`4.70:1 >= 4.5:1`**，在 `--wb-surface: #161b26` 上 `5.55:1`）。
 
-2. **门禁徽标与「发布」按钮视觉语义联动（保留超管 `force_publish`）**
-   - 修改 [WorkbenchTopBar.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/upstream-connectors/WorkbenchTopBar.vue#L311-L325) 与 [useWorkbenchStore.ts](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/upstream-connectors/useWorkbenchStore.ts#L2111-L2117)：
-     - 当 `!canPublish`（即门禁 `gate.ok < gate.total`）时，为发布按钮附加修饰类 `.wb-topbar__primary-btn--gated`（降级为克制的次级描边态而非高饱和实心蓝主色），包裹 `<ElTooltip>` 清晰提示门禁未就绪原因（纯状态陈述：`门禁校验未完成（{ok}/{total}）`，符合微文案规范）；
-     - 若当前角色具备 `canForcePublish`（超级管理员），在 `openPublish()` 中允许打开 `PublishModal` 并在弹窗内显式警告门禁未过、要求勾选强制发布开关与填写强制原因；普通业务角色未过门禁触发时则自动展开门禁清单浮层定位缺失项。
+### 3.2 平台安全策略后端单事务保存与个人安全抽屉排版收敛（`mazbri-mgmt` & `mazbri-web`）
 
-3. **提亮工作台暗色令牌至 WCAG AA 基线（`W07-2`）**
-   - 在 [workbench-tokens.scss](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/upstream-connectors/workbench-tokens.scss#L61-L85) 的 `html.dark .connector-workbench-page` 作用域下校准对比度：
-     - `--wb-text: #e5eaf3`（对比度 `~13.2:1`）；
-     - `--wb-text-muted: #94a3b8`（对比度 `~6.1:1`，用于次级标签与元信息）；
-     - `--wb-text-faint: #7c8ba1`（对比度 `~4.6:1 >= 4.5:1`，用于键值表占位符与空状态说明）；
-     - `--wb-divider: #283246`，并为激活编辑行增加微弱聚焦边框高亮。
-
-### 3.2 平台设置单保存按钮收敛、吸底操作栏与安全抽屉防折行（`mazbri-web`）
-
-1. **收敛 `SecurityPolicyTab` 唯一保存入口与脏状态守卫（`W07-3`）**
-   - 移除 [GlobalMfaCard.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/control-panel/system/modules/GlobalMfaCard.vue#L21-L28) 内嵌的独立 `[保存]` 按钮与 `@keyup.enter="saveIssuer"`。
-   - 重构 [usePlatformSecurityPolicy.ts](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/control-panel/system/modules/usePlatformSecurityPolicy.ts)：
-     - 在 `loadAll()` 成功后记录 `savedPolicyJson` 与 `savedIssuer` 快照，派生响应式计算属性 `isPolicyDirty`、`isIssuerDirty` 与总脏标志 `isDirty`；
-     - 在统一的 `savePolicy()` 中：先执行前端校验（特殊字符非空、`totp_issuer.trim()` 非空）；若 `!isDirty.value` 则无需重复请求；若 `isPolicyDirty` 则调用 `updatePasswordPolicy` 并更新 `savedPolicyJson`；若 `isIssuerDirty` 则紧接调用 `updateMfaSettings` 并更新 `savedIssuer`——若第二步因故失败，保留 `isIssuerDirty = true` 并明确提示未完成子项，不吞没脏状态；全部成功后弹出单次保存成功反馈。
-   - 为 `SecurityPolicyTab.vue` 与 `BasicSettings.vue` 统一挂载吸底操作栏 `.settings-sticky-footer`（半透明背景毛玻璃衬底 + 顶部分隔细线，左侧实时显示脏状态圆点提示 `有未保存更改`，右侧放置唯一主按钮 `保存`），并通过 `onBeforeRouteLeave` 拦截未保存离开。
-   - 在 [PlatformLicenseTab.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/control-panel/system/modules/PlatformLicenseTab.vue) 为未选文件禁用态的「导入激活」包裹 `<ElTooltip>`（提示 `未选择 .jws 授权文件`），并将全站有效期剩余天数词条统一对齐为 `剩余 {days} 天`。
-
-2. **拓宽 `PersonalSecurityDrawer` 并锁定卡片头单行基线（`W07-4`）**
-   - 修改 [personal-security-drawer/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/components/common/personal-security-drawer/index.vue#L2-L55) 与 [settings-card/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/components/common/settings-card/index.vue)：
-     - 将抽屉宽度由 `520px` 提升至标准表单抽屉档位 `560px`（移动端自适应 `min(560px, 92vw)`）；
-     - 为卡片头部标题区声明 `white-space: nowrap; flex-shrink: 0`，右侧 `#actions` 容器声明 `display: inline-flex; flex-wrap: nowrap; align-items: center; gap: 8px; flex-shrink: 0`，确保 `两步验证 (MFA)`、`已启用` 标签与 `[重置备用码]` `[停用]` 始终在同一水平基线利落排布。
+1. **后端单请求单事务收敛 `totp_issuer`（`W07-3`）**
+   - 在 [password_policy_handlers.rs](file:///workspace/rust-proj/mazbri/mazbri-bin/mazbri-mgmt/src/handlers/password_policy_handlers.rs#L13-L55) 的 `UpdatePasswordPolicyRequest` 新增可选字段 `pub totp_issuer: Option<String>`：
+     - 保持 `Category::Platform` 单次 MFA 校验与 `R_ADMIN` 角色守卫；
+     - 当 `totp_issuer` 非空时复用 `mfa_settings_service::validate_totp_issuer` 校验格式，在同一 PostgreSQL 事务内原子更新 `password_policies` 与 `mfa_settings.totp_issuer`，失效双缓存并记录单条完整审计日志（保持 `PUT /settings/mfa` 原有 `Category::Mfa` 守卫不变以保护 `totp_digits` / `totp_period`）。
+   - 前端重构 [GlobalMfaCard.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/control-panel/system/modules/GlobalMfaCard.vue) 与 [usePlatformSecurityPolicy.ts](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/control-panel/system/modules/usePlatformSecurityPolicy.ts)：
+     - 移除 `GlobalMfaCard` 内嵌的独立 `[保存]` 按钮；记录初始快照派生 `isDirty`，由底部唯一 `[保存]` 按钮单次调用 `updatePasswordPolicy` 一并提交密码策略与 `totp_issuer`；
+     - 为 `SecurityPolicyTab.vue` 与 `BasicSettings.vue` 挂载统一吸底栏 `.settings-sticky-footer`（左侧显示未保存状态点 `有未保存更改`，右侧放置 `保存` 按钮），在父级 `system/index.vue` 的 `<ElTabs :before-leave>`、路由 `onBeforeRouteLeave` 与 `window.beforeunload` 三处接入脏状态离开拦截；
+     - 在 [PlatformLicenseTab.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/control-panel/system/modules/PlatformLicenseTab.vue) 为未选文件时的禁用按钮包裹原因提示，统一全站剩余天数词条为 `剩余 {days} 天`。
+2. **拓宽 `PersonalSecurityDrawer` 并校准 `<SurfaceCardHeader>` 动作区（`W07-4`）**
+   - 将 [personal-security-drawer/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/components/common/personal-security-drawer/index.vue#L2-L50) 宽度调整为 `560px`（窄屏 `min(560px, 92vw)`），精简英文按钮词条为简洁动词（`"Backup Codes"` / `"Disable"`）。
+   - 在 [surface-card-header/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/components/common/surface-card-header/index.vue#L25-L30)（及配套全局表面样式）为 `.surface-card-actions` 设置 `display: inline-flex; flex-wrap: nowrap; align-items: center; gap: 8px; flex-shrink: 0;`，确保标题、状态标签与操作按钮在同一水平基线利落排布。
 
 ---
 
-## 4. 二阶、三阶影响与红队边界守卫
+## 4. 二阶、三阶影响与边界守卫
 
-| 风险场景与反例 | 连锁影响分析 | 防护与消解措施 |
+| 边界场景 | 连锁风险分析 | 消解与防护设计 |
 | :--- | :--- | :--- |
-| **反例 1：平台设置内切换子 Tab（`基础设置` ↔ `安全策略`）时未触发 `onBeforeRouteLeave`** | 同路由页签切换若通过内部 `v-model` 驱动而不改路由或仅改 query，Vue Router 的 `onBeforeRouteLeave` 不会拦截子页签切换丢脏数据。 | 同时在父级 `system/index.vue` 的 `:before-leave` 钩子与 `window.beforeunload` 接入子页签 `isDirty` 确认守卫，覆盖切 Tab、切菜单与关标签页三类离开路径。 |
-| **反例 2：`savePolicy` 串行调用双接口时的 Step-up MFA 弹窗次数** | `password_policy.update` 与 `mfa_settings.update` 同属管理安全策略类别。 | [mfa-dialog-service.ts](file:///workspace/rust-proj/mazbri/mazbri-web/src/utils/http/mfa-dialog-service.ts#L253-L261) 的 `ensureCategory` 按 `MfaCategory` 共享提权窗口期（提权一次后窗口期内有效），串行发起的第二个请求自动复用刚获得的会话提权票据，绝不会连续弹出两次 MFA 框。 |
+| **同路由切换设置子页签（`基础设置` ↔ `安全策略`）丢失未存改动** | 仅挂 `onBeforeRouteLeave` 无法拦截组件内 `ElTabs` 切换。 | 在父容器 `system/index.vue` 的 `<ElTabs :before-leave>` 同步检查当前激活子页签的 `isDirty` 引用并弹窗确认。 |
+| **存量浏览器 `localStorage` 残留 `requestSize: 52` 覆盖新默认值** | 旧键不升级会导致已访问过工作台的用户依然看到 `52 : 48` 裁切态。 | 布局存储键升版为 `mazbri:wb:ide-layout:v2`，首次加载自动应用 `74 : 26` 默认比例。 |
 
 ---
 
 ## 5. 验收门禁与实测清单
 
 1. **自动化单测必测项**
-   - 新增 `usePlatformSecurityPolicy` 脏状态与联动保存单测：① 仅改密码策略时只发 `updatePasswordPolicy`；② 同时改密码策略与 `totp_issuer` 时依次调用双接口并清零 `isDirty`；③ 第二接口报错时保留 `isIssuerDirty === true`。
-   - 新增暗色令牌 WCAG 对比度计算单测：解析 `workbench-tokens.scss` 暗色块中的 `--wb-bg` / `--wb-surface-input` 与 `--wb-text-faint` 计算相对亮度比，断言 `>= 4.5`。
-2. **构建、热替换与实机核验**
-   - 执行 `mazbri-web` `pnpm build && pnpm test` 与 `mazbri-bin -p mazbri-mgmt` 门禁，热替换重启 `mazbri-mazbri-mgmt-1`。
-   - 浏览器实测：① 在 `1280×800` 视口打开免代码工作台，确认首次进入时「启用业务报文加解密与签名」完整露出无裁切，暗黑模式键值表占位符清晰可读，门禁 `0/1` 时发布按钮呈受限次级态；② 在 `/#/control-panel/system?tab=security` 验证全页仅底部吸底栏一个「保存」按钮，同时修改密码策略与 `TOTP 发行者名称` 保存后刷新页面双项均持久化生效；③ 打开顶栏个人安全抽屉确认卡片头单行水平对齐无折行。
+   - 后端 `mazbri-mgmt` 单测：验证 `PUT /settings/password-policy` 携带 `totp_issuer` 时单事务同步更新密码策略与 `totp_issuer`，非法空串返回 `400` 整体回滚。
+   - 前端 WCAG 对比度单测：解析 `workbench-tokens.scss` 亮/暗双色块中 `--wb-text-faint` 对 `--wb-bg`、`--wb-surface`、`--wb-surface-input`、`--wb-surface-hover` 的全部组合相对亮度比，断言 100% `>= 4.5`。
+2. **构建、热替换与 `9224` 实机核验**
+   - 执行 `mazbri-web` `pnpm build && pnpm test` 与 `mazbri-bin -p mazbri-mgmt` 门禁，原子热替换重启 `mazbri-mazbri-mgmt-1`。
+   - 连接 `127.0.0.1:9224` 验证：① `1280×800` 访问 `/#/operations/upstream-supply/workbench`，确认「启用业务报文加解密与签名」完整可见无裁切、亮暗双模式占位符清晰可读、门禁 `0/1` 时发布按钮呈次级受限态；② `/#/control-panel/system?tab=security` 全页仅吸底栏一个「保存」按钮，同时修改密码长度与 `TOTP 发行者名称` 仅触发最多 1 次 MFA 即双项持久化成功；③ 打开个人安全抽屉确认卡片头单行水平对齐（高度收敛至 `~56px`）。

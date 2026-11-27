@@ -1,92 +1,77 @@
-# Step 04：表格底座契约闭环（`total`、数值右对齐、空态、行内动作降噪）与唯一主题管线
+# Step 04：表格自适应列宽解锁、分页契约闭环、唯一同步主题内核与行内降噪
 
 ## 1. 覆盖问题清单与源码精确定位
 
-| 编号 | 关联审计项 | 级别 | 问题描述与核验纠偏 | 精确源码位置 |
+| 编号 | 关联审计项 | 级别 | 问题描述与全栈契约定位 | 精确源码位置 |
 | :--- | :---: | :---: | :--- | :--- |
-| **W04-1** | `G-01` | P1 | `ResourceTablePageShell` 规范强制移除卡片头记录总数标签并约定“总条数统一由底部分页栏承担”，但底层 `ArtTable` 的 `constants.ts` 将 `"total"` 列入 `STRIP_LAYOUT_PARTS` 强制剔除，导致全站 20+ 张服务端分页表彻底丢失总记录数展示 | [constants.ts](file:///workspace/rust-proj/mazbri/mazbri-web/src/components/core/tables/art-table/constants.ts#L14-L25)、[art-table/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/components/core/tables/art-table/index.vue#L70-L145)、[resource-table-page-shell/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/components/common/resource-table-page-shell/index.vue#L1-L5) |
-| **W04-2** | `G-04` | P1 | 免代码工作台 `WorkbenchTopBar` 手写 `toggleTheme()` 直接调用 `settingStore.setGlopTheme` + `applyToDom()`，绕过了 `useTheme().switchThemeStyles()` 动态重算 `--el-color-primary-light-1..9` 暗色衍生色阶的管线，导致切暗色返回主控台后表格按钮残留刺眼亮白浅蓝底 `#ecf5ff` | [WorkbenchTopBar.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/upstream-connectors/WorkbenchTopBar.vue#L376-L383)、[useTheme.ts](file:///workspace/rust-proj/mazbri/mazbri-web/src/hooks/core/useTheme.ts#L30-L85) |
-| **W04-3** | `B-01` | P1 | **全局样式劫持纠偏**：`el-ui.scss` 第 763-848 行用 `!important` 强行把所有 `.el-table .el-button.is-link` 覆写为带实底与描边的彩色胶囊（且漏写 `:not(.is-disabled)` 导致禁用链接按钮仍高亮），制造满屏色块噪音与误触风险；此外租户列表 `tenant_code`、`tenant_id`、`name` 列宽分配局促 | [el-ui.scss](file:///workspace/rust-proj/mazbri/mazbri-web/src/assets/styles/core/el-ui.scss#L763-L848)、[table-action-row/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/components/common/table-action-row/index.vue#L21-L52)、[tenants/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/tenants/index.vue#L182-L210) |
-| **W04-4** | `G-05` | P1 | `ListQueryBar` 未聚焦宽度锁死 `180px` 腰斩多模块搜索占位符，聚焦下拉面板直接遮挡首行；全站 55 个含表视图中 54 个未对金额/数量/耗时列声明右对齐与 `tabular-nums` | [list-query-bar/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/components/common/list-query-bar/index.vue#L1266-L1340)、[art-table/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/components/core/tables/art-table/index.vue#L20-L59) |
-| **W04-5** | `B-11` | P2 | **禁用令牌根因纠偏**：`TableExportDropdown.vue` 实际已向内部 `<ElButton>` 透传 `:disabled="disabled"`，但全局默认白底按钮 `.is-disabled` 在浅色工具栏上字色/背景衰减度过弱，造成未禁用错觉；同时 `ArtTable` 默认 `#empty` 插槽仅渲染干瘪纯文本，未接入公共 `<EmptyState>` | [TableExportDropdown.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/components/table/TableExportDropdown.vue#L1-L25)、[el-ui.scss](file:///workspace/rust-proj/mazbri/mazbri-web/src/assets/styles/core/el-ui.scss#L87-L99)、[art-table/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/components/core/tables/art-table/index.vue#L63-L66) |
-| **W04-6** | `D-01`, `D-02` | P2 | `用户管理` 短枚举列（状态、MFA）未封顶宽度均摊留白，导致核心 `邮箱` 列（`minWidth: 132`）过早截断为 `.co...`；`证书管理` 指纹列手写 `28×28` 方框复制按钮，未复用全站标准 `CopyableText` | [users/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/control-panel/users/index.vue#L258-L300)、[certificates/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/control-panel/certificates/index.vue#L74-L95) |
+| **W04-1** | `B-07`, `B-01`, `D-01` | P1 | **自适应列宽启发式硬钳制**：[useAdaptiveTableColumns.ts](file:///workspace/rust-proj/mazbri/mazbri-web/src/composables/useAdaptiveTableColumns.ts#L221-L301) 对所有 `*_code`、`*_enabled`、`*status*` 列硬编码 `defaultMaxForKey = 110`，并在 `resolveEffectiveMin` 中执行 `Math.min(floored, effectiveMax)` 强行把业务页声明的 `minWidth` 压回 **`110px`**，导致 `1920×1080` 宽屏下供应商编码（`UPUPT-ENV-SC-SM4`）与租户编码全部被卡在 `110px` 截断，而旁侧无上限状态列空占 `634px`～`726px`；用户列表短枚举列均摊留白挤压邮箱列 | [useAdaptiveTableColumns.ts](file:///workspace/rust-proj/mazbri/mazbri-web/src/composables/useAdaptiveTableColumns.ts#L220-L305)、[suppliers/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/suppliers/index.vue#L186-L195)、[tenants/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/tenants/index.vue#L50-L54)、[callbacks/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/operations/callbacks/index.vue#L80-L85)、[users/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/control-panel/users/index.vue#L258-L300) |
+| **W04-2** | `G-01` | P1 | `ResourceTablePageShell` 移除卡片头计数后约定底部分页栏承担总条数展示，但 `ArtTable` 剥离了 `"total"`，且中间层 `ResourceTableShell` 声明了 `showTotal?: boolean` 却漏向 `<ArtTable>` 透传 `:show-total="props.showTotal"` | [constants.ts](file:///workspace/rust-proj/mazbri/mazbri-web/src/components/core/tables/art-table/constants.ts#L12-L25)、[art-table/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/components/core/tables/art-table/index.vue#L70-L145)、[art-table/types.ts](file:///workspace/rust-proj/mazbri/mazbri-web/src/components/core/tables/art-table/types.ts#L17-L25)、[resource-table-shell/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/components/common/resource-table-shell/index.vue#L67-L86) |
+| **W04-3** | `G-04` | P1 | **双轨主题管线分裂**：`themeStore.applyThemeToDom()` 同步维护 `<html class="dark" data-dark-theme="obsidian">` 与衍生变量，而主控台顶栏调用的旧管线 `useTheme().switchThemeStyles()` 独立重写了一套包裹在异步 `requestAnimationFrame` 中的 DOM 操作——**实机切暗色后直接把 `data-dark-theme` 抹为 `null`**、不清理 `"light"` 类（残留 `<html class="light dark">`），且 `el-ui.scss:4` 误写 `--el-color-black: white !important;`、`colors.ts:148` 暗色下仍与 `#ffffff` 混色 | [useTheme.ts](file:///workspace/rust-proj/mazbri/mazbri-web/src/hooks/core/useTheme.ts#L9-L152)、[theme.ts](file:///workspace/rust-proj/mazbri/mazbri-web/src/store/modules/theme.ts#L63-L88)、[colors.ts](file:///workspace/rust-proj/mazbri/mazbri-web/src/utils/ui/colors.ts#L141-L151)、[el-ui.scss](file:///workspace/rust-proj/mazbri/mazbri-web/src/assets/styles/core/el-ui.scss#L1-L5) |
+| **W04-4** | `B-01`, `B-11` | P1/P2 | `el-ui.scss:763-855` 用 `!important` 将表格行内 `.el-button.is-link` 强行覆写为实底彩色胶囊且漏写 `.is-disabled` 衰减；全局 `.el-button--default.is-disabled` 字色为 `#475569`、`opacity: 1` 无置灰反馈，另有 4 个页面直用 `TableExportDropdown` 漏传空表 `:disabled`；`ArtTable` 默认 `#empty` 未接入 `<EmptyState compact>` | [el-ui.scss](file:///workspace/rust-proj/mazbri/mazbri-web/src/assets/styles/core/el-ui.scss#L52-L68)、[el-ui.scss](file:///workspace/rust-proj/mazbri/mazbri-web/src/assets/styles/core/el-ui.scss#L763-L855)、[art-table/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/components/core/tables/art-table/index.vue#L63-L66) |
+| **W04-5** | `G-05`, `D-02` | P1/P2 | 全站 50+ 张表的金额/数量/耗时列缺少统一的声明式右对齐与等宽数字机制；`certificates/index.vue` 与 `CertificateDetailDrawer.vue` 指纹复制手写独立按钮，未复用 `<CopyableText>` | [useTableComposable.ts](file:///workspace/rust-proj/mazbri/mazbri-web/src/components/core/tables/art-table/useTableComposable.ts#L88-L95)、[certificates/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/control-panel/certificates/index.vue#L74-L95)、[CertificateDetailDrawer.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/control-panel/certificates/modules/CertificateDetailDrawer.vue#L136-L147) |
 
 ---
 
 ## 2. 第一性原理本质归因
 
-1. **主题状态单源派生不变量（Single Pipeline Derivation，公理 U3）**：Element Plus 的视觉色彩系统由「根类 `html.dark`」与「内联动态混色变量 `--el-color-primary-light-1..9`」共同构成。只要允许代码库中存在第二个不重算衍生变量就能改 `html.dark` 的入口，两套状态投影就会立即分裂。唯一根治方式是在 `settingStore.applyToDom()` / `themeStore.applyThemeToDom()` 底层直接内聚衍生色阶同步，并令 `WorkbenchTopBar` 统一调用 `useTheme()`。
-2. **契约在底座层闭合而非业务层重复劳动**：分页总数展示、空状态组件、数值列右对齐 + 等宽数字、表格操作按钮降噪与默认按钮禁用对比度，均属于全站 50+ 张表的共性契约。将它们收敛进 `ArtTable` 与 `el-ui.scss` 底座，可用 `< 150` 行底座代码一次性消除数十个业务视图的重复散装修补。
+1. **显式契约优先于启发式猜测（Explicit Contract over Heuristics，公理 U3）**：自适应列宽辅助函数的职责是在未指定宽度时提供兜底测量，绝不能用基于字段名后缀（`endsWith("_code")`）的 `110px` 死上限去反向腰斩业务列显式声明的 `minWidth`。同时，保持 `ListQueryBar` 既有的 `240px × 32px` `[不可更改]` 固定展开规范，才能确保窄屏工具栏右侧动作簇永不因聚焦动画发生折行抖动。
+2. **单一同步主题投影函数（Single Synchronous Theme Projection）**：DOM 根节点的类名（`dark` / `light`）、属性（`data-dark-theme="obsidian"`）与 Element Plus 衍生 CSS 变量必须由同一个同步幂等函数 `themeStore.applyThemeToDom()` 原子写入。`useTheme()` 仅作为附加过渡动画控制的外观门面委托调用 `themeStore`，即可根除双管线状态漂移。
 
 ---
 
 ## 3. 详尽可落地技术方案
 
-### 3.1 打通唯一主题切换管线并加固按钮/表格全局样式令牌（`mazbri-web`）
+### 3.1 解锁 `useAdaptiveTableColumns` 列宽钳制并落地声明式数值列（`mazbri-web`）
 
-1. **收口工作台主题切换与初始化自愈（`W04-2`）**
-   - 修改 [WorkbenchTopBar.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/upstream-connectors/WorkbenchTopBar.vue#L379-L383)：移除手写的 `settingStore.setGlopTheme` + `applyToDom()`，统一改为 `useTheme().switchThemeStyles(next)`。
-   - 同时在 `themeStore.applyThemeToDom()`（或应用挂载入口）确保根据当前 `isDark` 幂等同步 `--el-color-primary-light-1..9`，即使从本地存储恢复暗色态也绝不残留亮色混色值。
+1. **修复列宽上限钳制与各主表列宽平衡（`W04-1`）**
+   - 修改 [useAdaptiveTableColumns.ts](file:///workspace/rust-proj/mazbri/mazbri-web/src/composables/useAdaptiveTableColumns.ts#L220-L305)：
+     - 从 `defaultMaxForKey` 中移除 `key === "code" || key.endsWith("_code")` 的 `110px` 窄上限（提升业务编码默认上限至 `240px`）；
+     - 在 `resolveEffectiveMin` 中，当业务列显式传入 `column.width` 或 `column.minWidth` 时，严格保证 `effectiveMax >= declaredMin`（禁止未显式传 `maxWidth` 的猜测值向下吞没 `minWidth`）。
+   - 校准主表列宽与截断：
+     - [suppliers/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/suppliers/index.vue)：`supplier_code` 设 `minWidth: 200`，为短枚举 `status` 列设定固定 `width: 110`（释放 `634px` 冗余留白给编码、名称与地址列）；
+     - [tenants/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/tenants/index.vue) 与 [callbacks/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/operations/callbacks/index.vue#L80-L85)：放宽 `tenant_code`（`minWidth: 140`）与 `tenant_id`（`minWidth: 190`），移除 18 字符可读账号上的 `compact` 中间省略，为 `status` 列设固定 `width: 104`；
+     - [users/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/control-panel/users/index.vue)：为 `status`、`mfa_enabled`、`mfa_required` 设精确 `width: 100`～`112`，将 `email` 提升至 `minWidth: 220`。
 
-2. **重构表格行内链接按钮与全局默认禁用按钮令牌（`W04-3`, `W04-5`）**
-   - 修改 [el-ui.scss](file:///workspace/rust-proj/mazbri/mazbri-web/src/assets/styles/core/el-ui.scss#L763-L848) 中的 `.el-table .el-button.is-link`：
-     - 移除常态下的高饱和实底背景与实线边框（`background-color: transparent !important; border-color: transparent !important;`），恢复纯净紧凑的语义色文字链接态；仅在 `:hover:not(.is-disabled)` 时浮现柔和微底纹（`var(--el-fill-color-light)` 或 `color-mix(in srgb, currentColor 10%, transparent)`）；
-     - 显式增加 `&.is-disabled` 守卫：`color: var(--el-text-color-disabled) !important; background-color: transparent !important; cursor: not-allowed !important;`，修复禁用链接按钮仍呈亮色的缺陷；
-     - 对高危 `删除` 操作，在 `TableActionRow` 中当同行按钮数 `>= 3` 时与前序常规操作拉开分隔线间距（或提供轻量竖线分隔），降低误触概率。
-   - 在 [el-ui.scss](file:///workspace/rust-proj/mazbri/mazbri-web/src/assets/styles/core/el-ui.scss) 为非彩色默认按钮补充清晰的禁用态视觉衰减：
-     ```scss
-     .el-button--default.is-disabled:not(.is-link):not(.is-text) {
-       background-color: var(--el-fill-color-light) !important;
-       border-color: var(--el-border-color-lighter) !important;
-       color: var(--el-text-color-disabled) !important;
-       opacity: 0.68;
-     }
-     ```
-     使 `TableExportDropdown` 等所有默认白底按钮在无数据禁用时一眼可辨。
+2. **声明式 `numeric: true` 列属性与指纹复制统一（`W04-5`）**
+   - 在 [types/component/index.ts](file:///workspace/rust-proj/mazbri/mazbri-web/src/types/component/index.ts#L75-L100) 的 `ColumnOption` 新增 `numeric?: boolean`。
+   - 在 [useTableComposable.ts](file:///workspace/rust-proj/mazbri/mazbri-web/src/components/core/tables/art-table/useTableComposable.ts#L88-L95) 的 `cleanColumnProps(col)` 中：若 `col.numeric === true`，执行 `delete columnProps.numeric`，注入 `columnProps.align = col.align ?? "right"`、`columnProps.headerAlign = col.headerAlign ?? "right"`，并合并 `columnProps.className = [col.className, "tabular-nums"].filter(Boolean).join(" ")`。
+   - 为全站核心表（产品排行、租户流水、产品授权单价、通道成本价与限流、账单列表、对账差异、调用监控耗时与重试列）批量标注 `numeric: true`。
+   - 将 [certificates/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/control-panel/certificates/index.vue#L74-L95) 与 [CertificateDetailDrawer.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/control-panel/certificates/modules/CertificateDetailDrawer.vue#L136-L147) 中手写的指纹复制按钮统一替换为 `<CopyableText>`。
 
-### 3.2 恢复 `ArtTable` 底部分页 `total`、统一 `<EmptyState>` 与声明式数值列（`mazbri-web`）
+### 3.2 打通底部分页 `total` 透传链路与 `<EmptyState compact>`（`W04-2`, `W04-4`）
 
-1. **底部分页栏恢复总记录数展示（`W04-1`）**
-   - 在 [art-table/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/components/core/tables/art-table/index.vue#L75-L87) 的 `.pagination-bar` 最左侧（`ElPagination` 尺寸选择器旁）显式渲染受控总数单元（受 `showTotal !== false` 控制）：
-     ```vue
-     <span
-       v-if="showPaginationTotal"
-       class="pagination-total tabular-nums"
-     >
-       {{ formattedTotalText }}
-     </span>
-     ```
-   - 支持可选 `pagination.totalCapped?: boolean`（当海量日志表返回封顶计数时渲染 `共 10,000+ 条`，常规实体表渲染 `共 24 条` / `Total 24`），在 `zh.json` / `en.json` 补齐 `common.pagination.total` 与 `common.pagination.totalCapped`。
+1. **闭环 `ResourceTableShell` ➔ `ArtTable` 总条数展示**
+   - 在 [art-table/types.ts](file:///workspace/rust-proj/mazbri/mazbri-web/src/components/core/tables/art-table/types.ts#L17-L25) 声明 `showTotal?: boolean`（默认 `true`），并在 [resource-table-shell/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/components/common/resource-table-shell/index.vue#L67-L86) 向 `<ArtTable>` 补传 `:show-total="props.showTotal"`。
+   - 在 `PaginationConfig` 支持可选 `queryMode?: "full" | "latest"`：在 [art-table/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/components/core/tables/art-table/index.vue#L75-L87) `.pagination-bar` 左侧当 `props.showTotal !== false` 时渲染 `<span class="pagination-total tabular-nums">`——常规精确分页渲染 `共 {total} 条` / `Total {total}`；当调用监控传入后端 `query_mode === "latest"` 且触顶 `universe_size`（`10,000`）时渲染 `共 10,000+ 条` / `Total 10,000+`（并在 `CallMonitorTable.vue` 开启总数展示）。
+2. **统一默认空态与导出禁用态**
+   - 将 [art-table/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/components/core/tables/art-table/index.vue#L63-L66) 默认 `#empty` 升级为 `<EmptyState compact :description="emptyText" />`。
+   - 为直用 `<TableExportDropdown>` 的 [audit-logs/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/control-panel/audit-logs/index.vue#L40-L44)、[CallMonitorTable.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/ops/traffic/modules/CallMonitorTable.vue#L42-L49)、[user-routes/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/operations/user-routes/index.vue#L29) 与 [whitelist.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/tenants/%5Bcode%5D/tabs/whitelist.vue#L13) 补齐空数据禁用条件 `:disabled="exporting || rows.length === 0"`。
 
-2. **`ArtTable` 默认空状态统一桥接 `<EmptyState compact>`（`W04-5`）**
-   - 将 [art-table/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/components/core/tables/art-table/index.vue#L63-L66) 的 `#empty` 插槽升级为：优先渲染外部传入的 `$slots.empty`，未传时统一渲染 `<EmptyState compact :description="emptyText" />`，一次性统一回调订阅、投递任务等全站空表视觉体验。
+### 3.3 收敛唯一同步主题内核与行内/禁用按钮令牌（`W04-3`, `W04-4`）
 
-3. **声明式数值列对齐与全站核心表批量校准（`W04-4`, `W04-6`）**
-   - 在 `ColumnOption` 类型（[types/component](file:///workspace/rust-proj/mazbri/mazbri-web/src/types/component)）新增可选语义标记 `numeric?: boolean`：在 `ArtTable` 的 `cleanColumnProps(col)` 中，凡 `col.numeric === true` 自动默认注入 `align: col.align ?? "right"`、`headerAlign: col.headerAlign ?? "right"`，并合并 `className: "tabular-nums"`。
-   - 批量为全站金额、单价、余额、调用次数、耗时、QPS、错误数、端口/实例数列补齐 `numeric: true`（覆盖全局总览 `ProductTopN`、租户账户流水、产品授权单价、通道成本价、账单管理、用量对账、调用监控耗时列等）。
-   - 优化 `ListQueryBar` 与列宽细节：
-     - 将 [list-query-bar/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/components/common/list-query-bar/index.vue) 默认宽度由死值 `180px` 调整为响应式 `clamp(210px, 18vw, 250px)`（聚焦展开至 `300px`），精简各模块超长占位符为字段名词组（如 `编码 / 账号 / 名称`），语法说明收入聚焦浮层头部并控制浮层最大高度不遮蔽多行数据；同步更新 [AGENTS.md](file:///workspace/rust-proj/mazbri/AGENTS.md#L49) 对应宽度描述；
-     - [tenants/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/tenants/index.vue)：将 `tenant_code` 放宽至 `minWidth: 130`、`tenant_id` 放宽至 `minWidth: 190`（移除 18 字符业务账号上的过早 `compact` 截断）、`name` 放宽至 `minWidth: 180`；
-     - [users/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/control-panel/users/index.vue)：为 `status`、`mfa_enabled`、`mfa_required` 锁定精确 `width: 96`～`108`，将 `email` 提升至 `minWidth: 220`；
-     - [certificates/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/control-panel/certificates/index.vue#L74-L95)：删除 `.cert-fingerprint-cell` 手写复制按钮，统一替换为 `<CopyableText :value="row.fingerprint" :display="formatShortFingerprint(row.fingerprint)" />`。
+1. **收口 `useTheme.ts` 至 `themeStore.applyThemeToDom()`**
+   - 修改 [colors.ts](file:///workspace/rust-proj/mazbri/mazbri-web/src/utils/ui/colors.ts#L141-L151)：暗色模式下 `--el-color-primary-custom-1..15` 改为与深色基底 `#141414` 混色（替代无条件与 `#ffffff` 混色）；修正 [el-ui.scss](file:///workspace/rust-proj/mazbri/mazbri-web/src/assets/styles/core/el-ui.scss#L4) 中错误的 `--el-color-black: white !important;` 为 `#000000`。
+   - 重构 [useTheme.ts](file:///workspace/rust-proj/mazbri/mazbri-web/src/hooks/core/useTheme.ts)：删除内部重复且漏设 `data-dark-theme="obsidian"` 与残留 `"light"` 类的异步 `requestAnimationFrame` 色阶循环，令 `setSystemTheme` / `switchThemeStyles` 直接同步调用 `settingStore.setGlopTheme(theme, themeMode)` + `settingStore.applyToDom()`（仅用 `disableTransitions` / `requestAnimationFrame(enableTransitions)` 包裹 CSS 过渡抑制），并将 `prefersDark` 监听改为常驻生效；`WorkbenchTopBar.vue` 同步调用 `useTheme().switchThemeStyles(next)`，实现全站唯一同步主题管线。
+2. **行内链接按钮降噪与默认按钮禁用对比度加固**
+   - 修改 [el-ui.scss](file:///workspace/rust-proj/mazbri/mazbri-web/src/assets/styles/core/el-ui.scss#L763-L855)：移除 `.el-table .el-button.is-link` 常态下的高饱和实底与描边，恢复透明背景文字链接态（仅 `:hover:not(.is-disabled)` 浮现柔和底纹），显式补齐 `&.is-disabled` 置灰与 `cursor: not-allowed`；在 `TableActionRow` 中为行尾高危 `删除` 拉开间距或轻量竖线分隔。
+   - 在 [el-ui.scss](file:///workspace/rust-proj/mazbri/mazbri-web/src/assets/styles/core/el-ui.scss#L52-L68) 为 `.el-button--default.is-disabled:not(.is-link):not(.is-text)` 补齐 `background-color: var(--el-fill-color-light) !important; border-color: var(--el-border-color-lighter) !important; color: var(--el-text-color-disabled) !important; opacity: 0.65;`，使空表时禁用的「导出」按钮一目了然。
 
 ---
 
-## 4. 二阶、三阶影响与红队边界守卫
+## 4. 二阶、三阶影响与边界守卫
 
-| 风险场景与反例 | 连锁影响分析 | 防护与消解措施 |
+| 边界场景 | 连锁风险分析 | 消解与防护设计 |
 | :--- | :--- | :--- |
-| **反例 1：卡片内嵌无分页迷你表（如 Dashboard Top 5）误渲染底部分页或大尺寸空插画** | `ArtTable` 同时用于整页资源表与监控小卡片，若空插画过高会撑破小卡片。 | `showPagination` 仅在传入 `pagination` 对象时激活；默认 `#empty` 强制采用 `EmptyState` 的 `compact` 紧凑模式（高度可控在 `120px` 内），不破坏小卡片高度。 |
-| **反例 2：表格操作列去除实底背景后紧凑屏列宽留白偏大** | 原操作列宽度按带框胶囊计算，纯链接态视觉体积更轻盈。 | 保持 `28px` 触控热区与 `8px~12px` 间距，巡检租户、产品、供应商、通道、用户、证书 6 张主表操作列宽，确保中英双语均单行不折行且右侧无空旷脱节。 |
-| **反例 3：验证全站分页接口 `pagination.total` 真值性** | 若个别列表前端传了假 `total: data.length`，显示 `共 X 条` 会在翻页前误导管理员。 | 静态核查全部挂载 `ResourceTablePageShell` / `ResourceTableShell` 的视图，确认 `pagination.total` 100% 绑定后端响应的 `res.total` 字段。 |
+| **Node 原生测试环境无浏览器 `document` 对象** | `pnpm test` 运行于 Node `tsx`（无 `jsdom`），直接测 DOM 会抛 `ReferenceError`。 | 将主题类名/色阶计算与列属性转换提取为可注入桩对象或纯函数断言，保证 Node 原生单测 100% 纯净可跑。 |
+| **内嵌无分页迷你表（如 Top 5 卡片）空态高度** | 若空插画过高会撑高 Dashboard 局部小卡片。 | `ArtTable` 默认空态强制使用 `<EmptyState compact>`（紧凑高度），无 `pagination` 对象时不渲染底部分页栏。 |
 
 ---
 
 ## 5. 验收门禁与实测清单
 
 1. **自动化单测必测项**
-   - 新增 `ArtTable` 组件/辅助函数单测：① 传入 `pagination = { current: 1, size: 10, total: 245 }` 时渲染 `共 245 条` / `Total 245`；② 列定义含 `numeric: true` 时自动派生 `align === "right"` 与 `"tabular-nums"` 类名。
-   - 新增 `useTheme` 回归单测：断言调用 `switchThemeStyles(DARK)` 后 `document.documentElement` 同时具备 `dark` 类与重算后的 `--el-color-primary-light-9` 暗色值。
-2. **构建、热替换与实机核验**
-   - 执行 `mazbri-web` `pnpm build && pnpm test` 与 `mazbri-bin -p mazbri-mgmt` 门禁，热替换重启 `mazbri-mazbri-mgmt-1`。
-   - 浏览器实测：① 进入免代码工作台切换亮/暗主题后返回 `/#/operations/upstream-supply?tab=channels`，确认暗黑模式下行内按钮无亮白眩光色斑；② 核验租户、审计日志、产品、账单列表底部分页栏均清晰展示总条数，数值列严格右对齐等宽；③ 在 `/#/operations/callbacks` 空表态核验 `<EmptyState compact>` 与置灰明显的「导出」禁用态；④ 核验用户管理邮箱完整展示、证书管理指纹复制交互与全站一致。
+   - 新增列宽与 `cleanColumnProps` 单测：① 断言 `supplier_code` 传入 `minWidth: 200` 时经 `useAdaptiveTableColumns` 计算后最小宽度严格 `>= 200`（不再被压回 `110`）；② 断言 `numeric: true` 自动生成 `align: "right"`、`tabular-nums` 且剥离 `numeric` 键。
+   - 新增主题同步单测：使用轻量 DOM 桩验证通过 `switchThemeStyles(DARK)` 切换后同步写入 `class="dark"`、`data-dark-theme="obsidian"` 与暗色 `--el-color-primary-light-9`。
+2. **构建、热替换与 `9224` 实机核验**
+   - 执行 `mazbri-web` `pnpm build && pnpm test` 与 `mazbri-bin -p mazbri-mgmt` 门禁，原子热替换重启 `mazbri-mazbri-mgmt-1`。
+   - 连接 `127.0.0.1:9224` 验证：① 在主控台顶栏与 `/#/operations/upstream-supply/workbench` 双向切换亮/暗主题，确认两侧均完整保留 `data-dark-theme="obsidian"` 且表格行内链接按钮清爽无眩光色块；② 供应商列表 `UPUPT-ENV-SC-SM4` 完整展示无截断，各列表底部分页栏准确渲染真实总条数；③ `/#/operations/callbacks` 空表呈现 `<EmptyState compact>` 且「导出」按钮置灰清晰。

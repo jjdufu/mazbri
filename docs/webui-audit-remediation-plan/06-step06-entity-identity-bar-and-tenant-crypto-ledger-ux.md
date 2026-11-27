@@ -1,73 +1,65 @@
-# Step 06：轻量实体身份顶栏原语、全站状态圆点徽标统一与租户/产品/供应商详情精修
+# Step 06：轻量实体身份顶栏、全站状态圆点双射、连接器草稿 RBAC 门控与详情精修
 
 ## 1. 覆盖问题清单与源码精确定位
 
-| 编号 | 关联审计项 | 级别 | 问题描述与核验纠偏 | 精确源码位置 |
+| 编号 | 关联审计项 | 级别 | 问题描述与全栈契约定位 | 精确源码位置 |
 | :--- | :---: | :---: | :--- | :--- |
-| **W06-1** | `B-06`, `B-08` | P1 | **组合优于重型壳纠偏**：产品详情手写 `.product-detail-shell`（首 Tab 误标为 `产品信息与限流` 却无任何限流属性，`内部ID` 未用 `CopyableText`，修改/删除按钮图标风格不一）；供应商详情手写 `.supplier-detail-page`（缺失顶部实体名称与编码身份条，卡片右上角重复渲染 `[启用]` Tag 与刺眼实心红删除按钮，`ElDescriptions` 窄标签把「密钥仓」拆出孤字 `钥仓`，编辑态残留复合动作文案 `saveAndBack`） | [products/[id]/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/products/%5Bid%5D/index.vue#L1-L95)、[suppliers/[id]/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/suppliers/%5Bid%5D/index.vue#L35-L115) |
-| **W06-2** | `B-07` | P1 | `上游供给 -> 供应商列表` 编码列定宽过窄，将 `UPUPT-ENV-CC`、`UPUPT-ENV-GCM`、`UPUPT-ENV-SM4` 等 7 个不同套件的供应商截成一模一样的 `UPUPT-EN...`；全站行内「启用/停用」生命周期状态分裂为方框 `<ElTag>`、圆点 `<StatusIndicator>` 与无圆点纯绿字三种视觉形态 | [suppliers/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/suppliers/index.vue#L60-L92)、[channels/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/channels/index.vue#L70-L80) |
-| **W06-3** | `B-02` | P1 | 租户详情 `概览 360` 五张指标卡无差异化语义图标、`时段内消费` 缺失货币单位且仅单卡带时间窗副标题；下方仅两列的 `错误分布` 表横向拉伸 `1740px` 造成 `850px+` 跨列空白；`API 密钥` 与 `IP 白名单` 子表内联表单项未清零底部边距；`page-templates.md` 关于详情 Tab 控件的文档描述与 8-Tab `ElTabs` 实现脱节 | [overview360.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/tenants/%5Bcode%5D/tabs/overview360.vue#L1-L65)、[page-templates.md](file:///workspace/rust-proj/mazbri/mazbri-web/docs/page-templates.md#L42-L53) |
-| **W06-4** | `B-03` | P1 | **状态显式化纠偏**：租户详情 `传输加密` 中 `CryptoSuiteSelect` 代码虽已实现双向互斥清空，但界面以“推荐套件下拉框为空 + 高级折叠面板展开”隐式表达自定义模式，用户难以感知二选一边界；且左右 `50%:50%` 对称网格在左高（`~790px`）右矮（`~190px`）时产生 `600px` 右下空白 | [CryptoSuiteSelect.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/components/crypto/CryptoSuiteSelect.vue#L1-L121)、[transport-encryption.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/tenants/%5Bcode%5D/tabs/transport-encryption.vue#L31-L242) |
-| **W06-5** | `B-04`, `B-05` | P1/P2 | 租户 `账户余额` 状态词裸浮无标签、中部 `1100px` 空白断层、流水 `余额变化` 用除号斜杠 `/` 替代流向箭头 `→`；`产品治理` 目录表仅 5 列跨屏留白 `350px+` 却隐藏了 `超时时间` 与 `高级熔断` 关键治理字段 | [account.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/tenants/%5Bcode%5D/tabs/account.vue#L20-L95)、[products/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/products/index.vue#L169-L204) |
+| **W06-1** | `B-06`, `B-08` | P1 | 产品详情（3-Tab：`产品信息与限流` / `路由规则` / `已授权租户`）首 Tab 词条误写「限流」文不对题（且 `zh.json` 残留死键 `advancedInfoTitle`），`内部ID` 未挂 `<CopyableText>`，修改按钮缺图标；供应商详情缺失顶部实体身份条、卡片头重复渲染 `[启用]` Tag 与实心红删除按钮、`ElDescriptions` 窄标签把「密钥仓」拆出孤字 `钥仓`；同时 `TenantDetailShell` 的 `.tenant-detail-shell__identity` 锁死 `max-height: 28px` | [products/[id]/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/products/%5Bid%5D/index.vue#L1-L95)、[products/[id]/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/products/%5Bid%5D/index.vue#L428-L437)、[suppliers/[id]/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/suppliers/%5Bid%5D/index.vue#L35-L195)、[tenant-detail-shell/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/components/common/tenant-detail-shell/index.vue#L50-L58) |
+| **W06-2** | `B-07`, `B-05` | P1 | 全站生命周期状态分裂为方框 `<ElTag>`（供应商、产品、用户、证书抽屉、账单、静默配置）、圆点 `<StatusIndicator>`（通道）与纯文本（经营概览余额表）三种形态；`产品目录` 表仅 5 列（`启用状态` 列空占 `726px`），未展示 DTO 已携带的 `timeout_secs` 与 `cb_pro_enabled`，且对只读 `R_VIEWER` 仍渲染多选勾选列；**`上游供给 -> 草稿箱`（`drafts.vue`）对 `R_VIEWER` 裸露新建、导入、批量删除与行内删除写控件** | [suppliers/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/suppliers/index.vue#L60-L92)、[products/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/products/index.vue#L129-L235)、[drafts.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/upstream-connectors/drafts.vue#L8-L55)、[drafts.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/upstream-connectors/drafts.vue#L140-L196) |
+| **W06-3** | `B-02` | P1 | 租户详情 `概览 360` 五张指标卡共用默认图标、`时段内消费` 缺失货币单位，且前 4 卡（`近 24 小时`）与第 5 卡（`近 30 日`）统计时间窗标注不对称；下方两列 `错误分布` 表横向拉伸 `1740px`；`API 密钥` 与 `IP 白名单` 工具栏内联表单项未清零底部边距 | [overview360.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/tenants/%5Bcode%5D/tabs/overview360.vue#L1-L145)、[api-keys.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/tenants/%5Bcode%5D/tabs/api-keys.vue)、[whitelist.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/tenants/%5Bcode%5D/tabs/whitelist.vue) |
+| **W06-4** | `B-03`, `B-04` | P1/P2 | 租户 `传输加密` 以「推荐套件为空 + 折叠面板展开」隐式表达自定义算法模式，缺乏显式二选一控制器与弱算法（4 种 Legacy 密码 + `hmac-md5`）风险提示，且右栏仅单行密钥表下方留空 `600px`；`账户余额` 顶部状态词裸浮无圆点徽标、中部 `1100px` 空白断层、流水 `余额变化` 用除号 `/` 替代箭头 `→` | [CryptoSuiteSelect.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/components/crypto/CryptoSuiteSelect.vue#L1-L121)、[cryptoCatalog.ts](file:///workspace/rust-proj/mazbri/mazbri-web/src/components/crypto/cryptoCatalog.ts#L209-L254)、[transport-encryption.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/tenants/%5Bcode%5D/tabs/transport-encryption.vue#L31-L435)、[account.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/tenants/%5Bcode%5D/tabs/account.vue#L20-L95) |
 
 ---
 
 ## 2. 第一性原理本质归因
 
-1. **轻量原语组合优于上帝壳层继承（Composition over God-Shell，红队修正准则）**：租户（8-Tab 运营工作空间）、产品（双页签属性与绑定）、供应商（原地读写切换表单 + 工作台跳板）的主体交互流拓扑完全不同。强行抽象单一重型详情布局壳会导致条件插槽膨胀；真正跨实体恒定的契约是**顶栏实体身份锚点（名称 + 可复制业务编码 + 生命周期状态徽标 + 右侧主次动作簇）**与**标准页外边距 `var(--ops-page-padding, 16px)`**。
-2. **视觉符号双射原则（Bijective Visual Encoding，公理 U3）**：在同一设计系统内，「运行/启停状态」与「静态枚举分类（如协议类型、计费模式）」必须映射到互不相交的视觉原语：前者绑定圆点徽标 `<StatusIndicator>`，后者绑定方框标签 `<ElTag effect="plain">`，消除视觉词法歧义。
-3. **有限状态机显式投射**：当领域模型为互斥和类型 `Suite(id) | CustomPrimitives(data_alg, mac_alg)` 时，UI 必须提供显式二选一模式控制器（`<ElSegmented>`），禁止依赖“清空 A 控件表示激活 B 控件”的隐式约定。
+1. **轻量身份原语组合优于重型壳继承（Composition over God-Shell，公理 U3）**：租户（8-Tab 运营空间）、产品（3-Tab 属性/路由/租户绑定）、供应商（原地读写表单 + 工作台入口）的主体拓扑各异；跨实体真正恒定的契约是**顶栏实体身份条 `<EntityIdentityBar>`**（名称 + 可复制编码 + `<StatusIndicator>` + 右侧 `32px` 简洁动作按钮）。
+2. **视觉原语双射与统计窗口诚实性（公理 U2 / U3）**：「启停/冻结运行态」唯一映射至圆点 `<StatusIndicator>`，「协议/计费分类枚举」唯一映射至 `<ElTag effect="plain">`；同屏异构时间窗指标（`24h` 实时流量质量 vs. `30d` 累计账务消费）必须各自诚实标注真实窗口，严禁强行合并右上角标签伪造统计口径。
 
 ---
 
 ## 3. 详尽可落地技术方案
 
-### 3.1 抽离 `<EntityIdentityBar>` 组合原语并统一全站 `<StatusIndicator>` 规范（`mazbri-web`）
+### 3.1 抽离 `<EntityIdentityBar>`、统一 `<StatusIndicator>` 与补齐 `drafts.vue` 权限（`mazbri-web`）
 
-1. **新建公共组件 `components/common/entity-identity-bar/index.vue`（`W06-1`）**
-   - Props：`name: string`、`code?: string`、`codeLabel?: string`、`statusType?: StatusType`、`statusText?: string`；Slots：`tags`（附加分类枚举标签）、`actions`（右侧标准 `32px` 操作按钮组）。
-   - 在 `TenantDetailShell`、[products/[id]/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/products/%5Bid%5D/index.vue) 与 [suppliers/[id]/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/suppliers/%5Bid%5D/index.vue) 统一挂载 `<EntityIdentityBar>`：
-     - **产品详情**：修正 `zh.json` / `en.json` 首 Tab 词条为准确的 `基本信息` / `Overview`；为 `内部ID` 挂载 `<CopyableText>` 并移除描述表内与顶栏完全重复的编码展示；为「修改」按钮补齐 `ri:edit-line` 图标，与旁侧浅红描边「删除」（`type="danger" plain`）保持视觉对称。
-     - **供应商详情**：顶栏展示供应商名称、可复制 `supplier_code` 与 `<StatusIndicator>` 状态，右侧收敛 `[工作台编辑] [编辑] [删除(plain danger)]`（编辑态切换为简洁的 `[取消] [保存]`，清除违反微文案规范的复合回调词条 `保存并返回`）；移除卡片头重复的 `[启用]` Tag，为下方 `ElDescriptions` 显式设置 `:label-width="168"` 与标签样式 `word-break: keep-all`，根除「密钥仓」孤字断行。
-   - 同步更新 [page-templates.md](file:///workspace/rust-proj/mazbri/mazbri-web/docs/page-templates.md)：明确 ≤4 个紧凑切换项可用 `ElSegmented`，≥5 个详情页签统一使用 `ElTabs`，并补充 `<EntityIdentityBar>` 与 `<StatusIndicator>` 规范说明。
+1. **新建 `components/common/entity-identity-bar/index.vue` 并对齐三类详情顶栏（`W06-1`）**
+   - Props：`name: string`、`code?: string`、`statusType?: StatusType`、`statusText?: string`；Slots：`tags`、`actions`。
+   - 解除 [tenant-detail-shell/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/components/common/tenant-detail-shell/index.vue#L54) `.tenant-detail-shell__identity` 上的 `max-height: 28px` 限制（改为 `min-height: 32px`），并在租户详情、产品详情、供应商详情统一挂载 `<EntityIdentityBar>`：
+     - **产品详情（保留完整 3-Tab `info` / `routes` / `tenants`）**：将 `zh.json` / `en.json` 首 Tab 词条更正为 `基本信息` / `Overview`，删除废弃词条 `advancedInfoTitle`；为 `内部ID` 挂载 `<CopyableText>`，移除描述表内重复编码行，为「修改」补齐 `ri:edit-line` 图标（与浅红描边「删除」视觉对称）。
+     - **供应商详情**：顶栏展示名称、可复制 `supplier_code` 与 `<StatusIndicator>`，右侧动作按钮严格遵循 Clean-Craft 2–4 字规范排布 `[工作台] [编辑] [删除]`（编辑态切换为 `[取消] [保存]`）；移除卡片头与描述表内重复的启用标签，为 `ElDescriptions` 设置 `:label-width="168"` 与 `word-break: keep-all` 消除「密钥仓」断词。
+2. **全站生命周期状态圆点化、产品列表补列与 `drafts.vue` 只读门控（`W06-2`）**
+   - 将全站列表与抽屉中的启停/正常/冻结状态列统一收敛为 `<StatusIndicator>`：覆盖 `suppliers/index.vue`、`products/index.vue`、`control-panel/users/index.vue`、`UserDetailDrawer.vue`、`CertificateDetailDrawer.vue`、`BillListPanel.vue`、`FinanceOverviewPanel.vue`（余额表状态列）、`tenants/[code]/tabs/products.vue`、`SilencesPanel.vue`。
+   - 在 [products/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/products/index.vue#L169-L235)：仅在 `canWrite` 为真时注入 `{ type: "selection", width: 48 }`；补入 `超时时间`（`numeric: true`，`{timeout_secs}s`）与 `高级熔断`（`<StatusIndicator>`）列，为 `enabled` 锁定 `width: 108`（消除 `726px` 留白断层），并在第 227 行 `getProductCellText` 同步补齐新列宽度测量分支。
+   - **修复 [drafts.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/upstream-connectors/drafts.vue#L15-L196) RBAC 漏口**：引入 `canWriteBusiness`（`ROLES_BIZ`），将顶部 `<TableStandardActionBar>` 的 `:show-primary`、`:show-import`、`:show-delete`、表格 `selection` 列及行内 `删除` 按钮全部绑定 `canWriteBusiness`，确保 `R_VIEWER` 零越权写入口暴露。
 
-2. **统一行内生命周期状态与前缀密集编码展示（`W06-2`, `W06-5`）**
-   - 全站巡检将表格行内「启用 / 停用 / 正常 / 冻结」状态列（含 [suppliers/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/suppliers/index.vue#L88-L90)、[products/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/products/index.vue#L185-L189) 及账单相关状态列）统一收敛为 `<StatusIndicator>` 圆点徽标；`<ElTag>` 仅保留给 `透明代理 / 微服务`、`按量计费` 等分类枚举。
-   - 放宽 [suppliers/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/suppliers/index.vue) 的 `supplier_code` 列 `minWidth: 200`（完整展示 `UPUPT-ENV-SM4` 等 20 字符内编码），并在 `CopyableText` 支持超长编码（`> 24` 字符）保留首部 8 字符 + 尾部 8 字符高熵区分段，防止同前缀编码坍缩。
-   - 在 [products/index.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/products/index.vue#L169-L203) 补入产品实体已携带的 `超时时间`（右对齐，`{timeout_secs}s`）与 `高级熔断`（`<StatusIndicator>`）列，消除 5 列跨屏留白断层。
+### 3.2 租户详情 `概览 360`、`传输加密` 与 `账户余额` 深度精修（`W06-3`, `W06-4`）
 
-### 3.2 租户详情 `概览 360`、`传输加密` 与 `账户余额` 深度精修（`W06-3`, `W06-4`, `W06-5`）
-
-1. **`概览 360` 语义图标、货币单位与双栏错误分布（[overview360.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/tenants/%5Bcode%5D/tabs/overview360.vue)）**
-   - 为 5 张 `StatCard` 分别传入语义图标（调用量 `ri:exchange-box-line`、成功率 `ri:checkbox-circle-line`、P95 `ri:timer-flash-line`、时段内消费 `ri:money-cny-circle-line`、健康分 `ri:heart-pulse-line`）。
-   - 为 `时段内消费` 补齐币种前缀/单位并复用 Step 03 的 `minDigits: 2, maxDigits: 4` 自适应精度（如 `¥84.00` 或亚分 `¥0.0045`），将统计时间窗移至卡片组右上角统一展示，对齐 5 卡底部基线。
-   - 将 `错误分布` 升级为双栏编排（有数据时左栏渲染紧凑横向占比条形图 `CategoryBarChart horizontal`，右栏渲染含 `错误码`、`次数`、`占比` 三列的紧凑右对齐明细表），消除两列横跨 `1740px` 的空旷割裂；同步清零 `api-keys.vue` 与 `whitelist.vue` 工具栏内 `.el-form-item` 底部边距。
-
-2. **`传输加密` 显式二选一模式切换与 `7:5` 重心平衡（[CryptoSuiteSelect.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/components/crypto/CryptoSuiteSelect.vue) & [transport-encryption.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/tenants/%5Bcode%5D/tabs/transport-encryption.vue)）**
-   - 在 `CryptoSuiteSelect.vue` 顶部引入显式模式切换 `<ElSegmented v-model="selectionMode" :options="[{ label: $t('tenant.transportEncryption.modeSuite'), value: 'suite' }, { label: $t('tenant.transportEncryption.modeCustom'), value: 'custom' }]" />`：
-     - `suite` 模式下展示推荐套件选择器并以只读胶囊回显其对应的底层数据加密与 MAC 算法三元组，隐藏自定义下拉框；
-     - `custom` 模式下直接平铺展开数据算法与 MAC 算法选择器（移除易产生歧义的折叠框外壳），并在选中 Legacy 弱算法（如 `des-cbc-pkcs5`、`aes-128-ecb`）时紧随渲染醒目合规风险提示条。
-   - 在 `transport-encryption.vue` 将双栏比例优化为 `minmax(0, 7fr) minmax(0, 5fr)`（移动端自动单栏），并在右栏 `传输密钥管理` 下方补充紧凑的「当前生效接入契约摘要」只读预览卡（汇总当前加密模式、生效算法组、激活密钥版本、签名要求与重放窗口），既辅助租户联调自检又自然平衡左右栏高度。
-
-3. **`账户余额` 四栏指标条与账本流向符号（[account.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/tenants/%5Bcode%5D/tabs/account.vue)）**
-   - 将 `账户概览` 重构为水平对齐的 4 栏紧凑指标组（`现金余额` | `授信 / 可用额度` | `账户状态`（挂载 `<StatusIndicator>` 承托「正常 / 冻结」） | `近期消费`）+ 右侧对齐的 `[充值]` `[退款]` 按钮组，消除中部 `1100px` 空白断层。
-   - 将下方交易记录表中 `余额变化` 列的分隔符由易误读为除法的 `' / '` 替换为语义清晰的流向箭头 `' → '`（如 `999.90 → 1,989.81`），并为 `金额` 与 `余额变化` 开启右对齐与 `tabular-nums`。
+1. **`概览 360` 语义图标、双时间窗诚实标注与错误占比双栏视图（[overview360.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/tenants/%5Bcode%5D/tabs/overview360.vue)）**
+   - 为 5 张 `StatCard` 传入差异化图标（调用量 `ri:exchange-box-line`、成功率 `ri:checkbox-circle-line`、P95 `ri:timer-flash-line`、消费 `ri:money-cny-circle-line`、健康分 `ri:heart-pulse-line`），消费金额经 `formatMoney` 格式化并补齐 `元` / `CNY` 单位；为前 4 卡统一补齐紧凑副标题 `近 24 小时`、第 5 卡保留 `近 30 日`（日期区间），使 5 卡底部基线齐平且统计口径 100% 真实；在 `< 1360px` 视口下将 `.tenant-kpi-grid` 平滑降为 3 列防卡片内数字挤压。
+   - 基于 Step 02 修复别名遮蔽后的真实失败数据集 `errors`：无错误记录时渲染紧凑正向空态 `近 24 小时无错误记录`；有错误记录时双栏展示左侧横向占比条图（`CategoryBarChart horizontal`）与右侧 `错误码 / 次数 / 占比` 右对齐明细表；清零 `api-keys.vue` 与 `whitelist.vue` 工具栏 `.el-form-item` 底部外边距。
+2. **`传输加密` 显式模式切换、全量弱算法提示与双栏重心平衡（`CryptoSuiteSelect.vue` & `transport-encryption.vue`）**
+   - 在 [CryptoSuiteSelect.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/components/crypto/CryptoSuiteSelect.vue) 顶部引入 `<ElSegmented v-model="selectionMode">`（`推荐套件` / `自定义算法`）：
+     - 独立维护组件内 `selectionMode`：外部载入初始值时若 `!modelValue.suite && modelValue.dataAlg` 则初始化为 `'custom'`，否则为 `'suite'`；用户手动切至 `'custom'` 时不触发回跳 `'suite'` 的死循环，切回 `'suite'` 时显式回填默认套件并清空 `dataAlg` / `macAlg`；
+     - 查询 [cryptoCatalog.ts](file:///workspace/rust-proj/mazbri/mazbri-web/src/components/crypto/cryptoCatalog.ts#L209-L254) 的 `DATA_ALGS` 与 `MAC_ALGS` 元数据，当选中的加密算法或 MAC 算法带有 `legacy: true`（覆盖 `aes-256-ecb`、`aes-128-ecb`、`sm4-ecb-pkcs7`、`des-cbc-pkcs5` 及 **`hmac-md5`** 共 5 项）时，紧随展示合规风险提示条。
+   - 保持 `transport-encryption.vue` 外层 `<SettingsCardGrid>` 既有 `[不可更改]` 的 `1fr : 1fr` 等宽双栏（确保右栏 6 列 `808px` 传输密钥表不被压窄），在右栏密钥管理卡片下方新增只读「生效接入契约摘要」卡片（汇总当前加密模式、生效算法三元组、激活密钥版本、签名与时间窗参数），自然填补右下留白。
+3. **`账户余额` 四栏紧凑概览与流向箭头（[account.vue](file:///workspace/rust-proj/mazbri/mazbri-web/src/views/mazbri/tenants/%5Bcode%5D/tabs/account.vue)）**
+   - 将顶部 `账户概览` 收敛为水平对齐的 4 栏指标块（`现金余额` | `授信 / 可用额度` | `账户状态` `<StatusIndicator>` | `近 30 日消费`）+ 右侧 `[充值]` `[退款]` 按钮；下方交易表 `余额变化` 分隔符由 `' / '` 改为 `' → '` 并启用 `numeric: true` 右对齐等宽。
 
 ---
 
-## 4. 二阶、三阶影响与红队边界守卫
+## 4. 二阶、三阶影响与边界守卫
 
-| 风险场景与反例 | 连锁影响分析 | 防护与消解措施 |
+| 边界场景 | 连锁风险分析 | 消解与防护设计 |
 | :--- | :--- | :--- |
-| **反例 1：存量租户已持久化自定义算法（`suite: null, data_alg: 'des-cbc-pkcs5'`）反开页面时的模式回显** | 若 `selectionMode` 默认硬编码初始化为 `'suite'`，存量自定义算法租户打开页面会看到错误的模式页签甚至在误点保存时清空原配置。 | `selectionMode` 通过 `watch(() => [modelValue.suite, modelValue.dataAlg], ..., { immediate: true })` 精确派生：凡 `dataAlg` 非空且 `suite` 为空时自动定位至 `'custom'`，无损兼容全部存量数据库记录。 |
-| **反例 2：供应商详情切换至 `editing` 编辑态时的焦点与离开保护** | 将操作按钮移至顶部 `<EntityIdentityBar #actions>` 后，需确保表单校验引用 `formRef` 仍然直接连通。 | `<EntityIdentityBar>` 为纯受控展示与事件透传组件（`@edit`、`@save`、`@cancel`、`@delete`），表单状态与校验实例完全保留在 `suppliers/[id]/index.vue` 自身作用域内，零跨组件状态耦合。 |
+| **`CryptoSuiteSelect` 用户点击切换「自定义算法」瞬间的状态稳定性** | 若用响应式 `computed` 直接按 `Boolean(dataAlg)` 派生模式，用户刚点「自定义」尚未选算法时会被瞬间弹回「推荐套件」。 | `selectionMode` 采用本地 `ref`，仅在外部 prop 数据源发生实质身份切换时同步初始化，手动切模式保持稳定停留。 |
+| **`transport-encryption` 右侧 6 列密钥表在小屏下的可读性** | 密钥表含固定右侧 `230px` 操作列，缩窄右栏比例会挤压指纹与版本列。 | 保持桌面 `1fr : 1fr` 等宽、`< 1200px` 自动上下单栏堆叠，靠右下契约摘要卡平衡高度而非压缩右栏宽度。 |
 
 ---
 
 ## 5. 验收门禁与实测清单
 
 1. **自动化单测必测项**
-   - 为 `CryptoSuiteSelect` 状态派生逻辑编写单测：验证 `{ suite: 'suite/tenant-default-2026-11', dataAlg: null }` 初始化为 `'suite'` 模式，`{ suite: null, dataAlg: 'des-cbc-pkcs5' }` 初始化为 `'custom'` 模式，且切换至 `'suite'` 选定套件后 `dataAlg` 与 `macAlg` 保持 `null` 正交契约。
-2. **构建、热替换与实机核验**
-   - 执行 `mazbri-web` `pnpm build && pnpm test` 与 `mazbri-bin -p mazbri-mgmt` 门禁，热替换重启 `mazbri-mazbri-mgmt-1`。
-   - 浏览器巡检：① 对比租户详情、产品详情、供应商详情顶栏身份条一致性，验证产品详情首 Tab 显示 `基本信息`、供应商详情无孤字断行与重复状态标签；② 在 `/#/operations/upstream-supply` 确认 7 个 `UPUPT-ENV-*` 供应商编码完整可辨、各模块行内启用状态统一为圆点徽标；③ 核验租户 `概览 360`、`传输加密` 与 `账户余额` 三页签在双分辨率与亮暗双主题下的排版平衡。
+   - 新增 `CryptoSuiteSelect` 模式状态机单测：覆盖套件态初始化、存量 `des-cbc-pkcs5` 自定义态初始化、手动切换 `'custom'` 不回跳及 5 种 `legacy: true` 算法风险判定。
+2. **构建、热替换与 `9224` 实机核验**
+   - 执行 `mazbri-web` `pnpm build && pnpm test` 与 `mazbri-bin -p mazbri-mgmt` 门禁，原子热替换重启 `mazbri-mazbri-mgmt-1`。
+   - 连接 `127.0.0.1:9224` 验证：① 租户、产品（完整 3-Tab，首 Tab 为 `基本信息`）、供应商详情顶栏 `<EntityIdentityBar>` 统一对齐，供应商详情无孤字断行与重复标签；② 以 `R_VIEWER` 访问 `/#/operations/upstream-supply?tab=drafts` 确认无新建/导入/删除写控件且控制台零 `403`；③ 核验租户 `概览 360`、`传输加密`、`账户余额` 双分辨率与明暗双主题排版。
