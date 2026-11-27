@@ -1,4 +1,4 @@
-import { reactive, ref } from "vue";
+import { computed, reactive, ref, toRaw } from "vue";
 import { ElMessage } from "element-plus";
 import { fetchSystemSettings, updateSystemSettings } from "@/api/settings";
 import { $t } from "@/locales";
@@ -24,6 +24,7 @@ export function useSystemSettings() {
   const settingStore = useSettingStore();
   const loading = ref(false);
   const systemSaving = ref(false);
+  const loadedSnapshot = ref<string | null>(null);
 
   const systemForm = reactive<BasicSystemFormState>({
     site_name: "",
@@ -34,6 +35,12 @@ export function useSystemSettings() {
     enable_audit_log: true,
     watermark_visible: false,
   });
+
+  const isBasicDirty = computed(
+    () =>
+      loadedSnapshot.value !== null &&
+      loadedSnapshot.value !== JSON.stringify(toRaw(systemForm)),
+  );
 
   const validateBeforeSave = (): string | null => {
     const siteUrl = systemForm.site_url.trim();
@@ -63,6 +70,7 @@ export function useSystemSettings() {
         enable_audit_log: res.enable_audit_log ?? true,
         watermark_visible: Boolean(res.watermark_visible),
       });
+      loadedSnapshot.value = JSON.stringify(toRaw(systemForm));
     }).catch((error) => {
       logger.error("Failed to load system settings:", error);
     });
@@ -90,6 +98,7 @@ export function useSystemSettings() {
       };
       await updateSystemSettings(payload);
       await settingStore.loadSystemSettings(true);
+      loadedSnapshot.value = JSON.stringify(toRaw(systemForm));
       saved = true;
       if (!options?.silent) {
         ElMessage.success($t("systemSettings.messages.savedSuccess"));
@@ -110,6 +119,7 @@ export function useSystemSettings() {
     loading,
     systemSaving,
     systemForm,
+    isBasicDirty,
     loadSystemData,
     saveSystemSettings,
     handleSystemSave,

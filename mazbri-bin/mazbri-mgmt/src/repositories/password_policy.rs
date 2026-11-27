@@ -57,10 +57,13 @@ pub struct UpdatePasswordPolicyParams<'a> {
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub async fn update_password_policy(
-    pool: &PgPool,
+pub async fn update_password_policy_exec<'e, E>(
+    executor: E,
     params: UpdatePasswordPolicyParams<'_>,
-) -> Result<PasswordPolicyRow, sqlx::Error> {
+) -> Result<PasswordPolicyRow, sqlx::Error>
+where
+    E: sqlx::PgExecutor<'e>,
+{
     sqlx::query_as::<
         _,
         PasswordPolicyRow,
@@ -93,8 +96,18 @@ pub async fn update_password_policy(
         .bind(params.max_login_attempts)
         .bind(params.lockout_duration_minutes)
         .bind(params.updated_by)
-        .fetch_one(pool)
+        .fetch_one(executor)
         .await
+}
+
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+pub async fn update_password_policy(
+    pool: &PgPool,
+    params: UpdatePasswordPolicyParams<'_>,
+) -> Result<PasswordPolicyRow, sqlx::Error> {
+    update_password_policy_exec(pool, params).await
 }
 /// 读取策略；缺失或读取失败时返回 `None`（调用方回落默认值）。
 pub async fn load_policy_fields(pool: &PgPool) -> Option<PasswordPolicyRow> {

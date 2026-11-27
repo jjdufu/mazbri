@@ -23,6 +23,7 @@ pub struct UpdatePasswordPolicyRequest {
     pub prevent_reuse_count: Option<i32>,
     pub max_login_attempts: Option<i32>,
     pub lockout_duration_minutes: Option<i32>,
+    pub totp_issuer: Option<String>,
 }
 pub async fn get_password_policy(State(state): State<AppState>) -> axum::response::Response {
     service::get_policy(&state.admin_db).await
@@ -69,7 +70,9 @@ pub async fn update_password_policy(
         prevent_reuse_count: payload.prevent_reuse_count,
         max_login_attempts: payload.max_login_attempts,
         lockout_duration_minutes: payload.lockout_duration_minutes,
+        totp_issuer: payload.totp_issuer,
     };
+    let updated_issuer = input.totp_issuer.is_some();
     let resp = service::update_policy(
         &state.admin_db,
         &state.audit,
@@ -81,6 +84,10 @@ pub async fn update_password_policy(
     .await;
     if resp.status().is_success() {
         state.password_policy_cache.invalidate().await;
+        if updated_issuer {
+            state.mfa_settings_cache.invalidate().await;
+            state.mfa_cache.invalidate().await;
+        }
     }
     resp
 }

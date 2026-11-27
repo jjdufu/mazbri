@@ -906,7 +906,9 @@
     },
     "messages": {
       "savedSuccess": "Basic settings saved"
-    }
+    },
+    "unsavedChanges": "Unsaved changes",
+    "unsavedLeaveConfirm": "You have unsaved changes. Leave and discard them?"
   },
   "securityPolicy": {
     "actions": {
@@ -4281,7 +4283,8 @@
       "probe_connectivity": "Probe",
       "probe_contract": "Contract probe"
     },
-    "workbench": "Workbench"
+    "workbench": "Workbench",
+    "gateNotReadyTip": "Gate not ready ({ok}/{total})"
   },
   "listQueryBar": {
     "tooltip": "Search & filters",
@@ -4490,8 +4493,8 @@
     "actions": {
       "bind": "Set up MFA",
       "enable": "Enable",
-      "disable": "Disable MFA",
-      "regenerateCodes": "Regenerate backup codes",
+      "disable": "Disable",
+      "regenerateCodes": "Backup Codes",
       "copy": "Copy",
       "copyAll": "Copy all",
       "changePassword": "Change password",

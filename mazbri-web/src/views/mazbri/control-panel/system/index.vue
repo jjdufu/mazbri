@@ -5,6 +5,7 @@
   >
     <ElTabs
       :model-value="activeTab"
+      :before-leave="handleBeforeTabLeave"
       class="platform-settings-tabs"
       @tab-change="handleTabChange"
     >
@@ -17,6 +18,7 @@
           :model-value="systemForm"
           :loading="loading"
           :saving="systemSaving"
+          :dirty="isBasicDirty"
           @update:model-value="handleSystemFormUpdate"
           @save="handleSystemSave"
         />
@@ -27,7 +29,7 @@
         :label="$t('systemSettings.tabs.security')"
         lazy
       >
-        <SecurityPolicyTab />
+        <SecurityPolicyTab ref="securityTabRef" />
       </ElTabPane>
 
       <ElTabPane
@@ -42,7 +44,10 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, watch } from "vue";
+import { onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { onBeforeRouteLeave } from "vue-router";
+import { ElMessageBox } from "element-plus";
+import { $t } from "@/locales";
 import ControlPanelPageShell from "@/components/common/control-panel-page-shell/index.vue";
 import { useTabRouteSync } from "@/composables/useTabRouteSync";
 import BasicSettings from "./modules/BasicSettings.vue";
@@ -66,9 +71,48 @@ const {
   loading,
   systemSaving,
   systemForm,
+  isBasicDirty,
   loadSystemData,
   handleSystemSave,
 } = useSystemSettings();
+
+const securityTabRef = ref<{ isDirty?: boolean } | null>(null);
+
+const isCurrentTabDirty = (): boolean => {
+  if (activeTab.value === "basic") return isBasicDirty.value;
+  if (activeTab.value === "security") return Boolean(securityTabRef.value?.isDirty);
+  return false;
+};
+
+const confirmDiscardDirty = async (): Promise<boolean> => {
+  if (!isCurrentTabDirty()) return true;
+  try {
+    await ElMessageBox.confirm(
+      $t("systemSettings.unsavedLeaveConfirm"),
+      $t("common.tips"),
+      { type: "warning" },
+    );
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const handleBeforeTabLeave = async (
+  nextName: string | number,
+  oldName: string | number,
+): Promise<boolean> => {
+  if (nextName === oldName) return true;
+  return confirmDiscardDirty();
+};
+
+const onBeforeUnload = (event: BeforeUnloadEvent) => {
+  if (!isCurrentTabDirty()) return;
+  event.preventDefault();
+  event.returnValue = "";
+};
+
+onBeforeRouteLeave(async () => confirmDiscardDirty());
 
 let basicLoaded = false;
 
@@ -84,6 +128,11 @@ const handleSystemFormUpdate = (nextValue: BasicSystemFormState) => {
 
 onMounted(() => {
   ensureBasicLoaded();
+  window.addEventListener("beforeunload", onBeforeUnload);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener("beforeunload", onBeforeUnload);
 });
 
 watch(activeTab, () => {

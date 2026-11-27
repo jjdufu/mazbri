@@ -308,20 +308,26 @@
           <span>{{ $t("upstreamConnector.gateShort") }} {{ gate.ok }}/{{ gate.total }}</span>
         </button>
 
-        <button
-          type="button"
-          class="wb-topbar__primary-btn"
-          :disabled="publishing"
-          :title="
-            canPublish
-              ? $t('upstreamConnector.publish')
-              : $t('upstreamConnector.publishNeedRun')
+        <ElTooltip
+          :disabled="isGateReady"
+          :content="
+            $t('upstreamConnector.gateNotReadyTip', {
+              ok: gate.ok,
+              total: gate.total,
+            })
           "
-          @click="emit('publish')"
         >
-          <ArtSvgIcon icon="ri:upload-cloud-2-line" />
-          <span>{{ $t("upstreamConnector.publish") }}</span>
-        </button>
+          <button
+            type="button"
+            class="wb-topbar__primary-btn"
+            :class="{ 'wb-topbar__primary-btn--gated': !isGateReady }"
+            :disabled="publishing"
+            @click="emit('publish')"
+          >
+            <ArtSvgIcon icon="ri:upload-cloud-2-line" />
+            <span>{{ $t("upstreamConnector.publish") }}</span>
+          </button>
+        </ElTooltip>
       </template>
     </div>
   </header>
@@ -378,6 +384,9 @@ import { useTheme } from "@/hooks/core/useTheme";
 const settingStore = useSettingStore();
 const { switchThemeStyles } = useTheme();
 const isDark = computed(() => Boolean(settingStore.isDark));
+const isGateReady = computed(
+  () => props.gate.total > 0 && props.gate.ok >= props.gate.total,
+);
 
 function toggleTheme() {
   const next = isDark.value ? SystemThemeEnum.LIGHT : SystemThemeEnum.DARK;
@@ -758,6 +767,18 @@ async function onEnvFilePicked(ev: Event) {
   &:hover:not(:disabled) {
     background: var(--wb-primary-hover);
     border-color: var(--wb-primary-hover);
+  }
+
+  &--gated {
+    color: var(--wb-text-muted);
+    background: var(--wb-surface-subtle);
+    border-color: var(--wb-divider);
+
+    &:hover:not(:disabled) {
+      color: var(--wb-text);
+      background: var(--wb-surface-hover);
+      border-color: var(--wb-divider);
+    }
   }
 
   &:active:not(:disabled) {

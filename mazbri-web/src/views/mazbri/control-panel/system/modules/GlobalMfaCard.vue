@@ -10,23 +10,12 @@
       mobile-stack
       :label="$t('securityPolicy.fields.issuerName')"
     >
-      <div class="issuer-inline">
-        <ElInput
-          v-model="mfaForm.totp_issuer"
-          class="setting-input"
-          :disabled="issuerSaving"
-          :placeholder="$t('securityPolicy.placeholders.issuerName')"
-          @keyup.enter="saveIssuer"
-        />
-        <ElButton
-          type="primary"
-          plain
-          :loading="issuerSaving"
-          @click="saveIssuer"
-        >
-          {{ $t("common.save") }}
-        </ElButton>
-      </div>
+      <ElInput
+        v-model="mfaForm.totp_issuer"
+        class="setting-input"
+        :disabled="saving"
+        :placeholder="$t('securityPolicy.placeholders.issuerName')"
+      />
     </CommonSettingRow>
     <CommonSettingRow
       mode="inline"
@@ -49,8 +38,7 @@ import { usePlatformSecurityPolicy } from "./usePlatformSecurityPolicy";
 
 defineOptions({ name: "GlobalMfaCard" });
 
-const { mfaForm, loading, issuerSaving, saveIssuer } =
-  usePlatformSecurityPolicy();
+const { mfaForm, loading, saving } = usePlatformSecurityPolicy();
 </script>
 
 <style scoped lang="scss">

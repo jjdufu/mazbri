@@ -906,7 +906,9 @@
     },
     "messages": {
       "savedSuccess": "基础设置已保存"
-    }
+    },
+    "unsavedChanges": "有未保存更改",
+    "unsavedLeaveConfirm": "当前页签有未保存的更改，确定离开并放弃吗？"
   },
   "securityPolicy": {
     "actions": {
@@ -4281,7 +4283,8 @@
       "probe_connectivity": "连通探测",
       "probe_contract": "契约探测"
     },
-    "workbench": "工作台"
+    "workbench": "工作台",
+    "gateNotReadyTip": "门禁未就绪（{ok}/{total}）"
   },
   "listQueryBar": {
     "tooltip": "搜索与筛选",

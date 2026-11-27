@@ -1,11 +1,10 @@
-import { inject, provide, reactive, ref, toRaw } from "vue";
-import type { InjectionKey, Ref } from "vue";
+import { computed, inject, provide, reactive, ref, toRaw } from "vue";
+import type { ComputedRef, InjectionKey, Ref } from "vue";
 import { ElMessage } from "element-plus";
 import { runWithLoading } from "@/composables/useAsyncState";
 import {
   fetchMfaSettings,
   fetchPasswordPolicy,
-  updateMfaSettings,
   updatePasswordPolicy,
   type MfaSettings,
   type UpdatePasswordPolicyRequest,
@@ -20,10 +19,9 @@ export interface PlatformSecurityPolicyState {
   mfaForm: MfaSettings;
   loading: Ref<boolean>;
   saving: Ref<boolean>;
-  issuerSaving: Ref<boolean>;
+  isDirty: ComputedRef<boolean>;
   loadAll: () => Promise<void>;
   savePolicy: () => Promise<void>;
-  saveIssuer: () => Promise<void>;
 }
 
 const PLATFORM_SECURITY_POLICY_KEY: InjectionKey<PlatformSecurityPolicyState> =
@@ -32,7 +30,7 @@ const PLATFORM_SECURITY_POLICY_KEY: InjectionKey<PlatformSecurityPolicyState> =
 function createPlatformSecurityPolicy(): PlatformSecurityPolicyState {
   const loading = ref(false);
   const saving = ref(false);
-  const issuerSaving = ref(false);
+  const loadedSnapshot = ref<string | null>(null);
 
   const policyForm = reactive<UpdatePasswordPolicyRequest>({
     min_length: 8,
@@ -55,6 +53,19 @@ function createPlatformSecurityPolicy(): PlatformSecurityPolicyState {
     totp_period: 30,
     backup_codes_count: 10,
   });
+
+  function currentSnapshot(): string {
+    return JSON.stringify({
+      ...toRaw(policyForm),
+      totp_issuer: mfaForm.totp_issuer,
+    });
+  }
+
+  const isDirty = computed(
+    () =>
+      loadedSnapshot.value !== null &&
+      loadedSnapshot.value !== currentSnapshot(),
+  );
 
   async function loadPolicy(): Promise<void> {
     const response = await fetchPasswordPolicy();
@@ -88,6 +99,7 @@ function createPlatformSecurityPolicy(): PlatformSecurityPolicyState {
   async function loadAll(): Promise<void> {
     await runWithLoading(loading, async () => {
       await Promise.all([loadPolicy(), loadMfa()]);
+      loadedSnapshot.value = currentSnapshot();
     }).catch((error) => {
       logger.error("Failed to load platform security policy:", error);
     });
@@ -101,37 +113,24 @@ function createPlatformSecurityPolicy(): PlatformSecurityPolicyState {
       ElMessage.warning($t("securityPolicy.messages.specialCharsRequired"));
       return;
     }
-    await runWithLoading(saving, async () => {
-      const policyPayload: UpdatePasswordPolicyRequest = {
-        ...toRaw(policyForm),
-        special_chars: (policyForm.special_chars || "").trim(),
-      };
-      await updatePasswordPolicy(policyPayload);
-      ElMessage.success($t("securityPolicy.messages.savedSuccess"));
-    }).catch((error) => {
-      if (!isMfaStepUpCancelled(error)) {
-        logger.error("Failed to save platform security policy:", error);
-      }
-    });
-  }
-
-  async function saveIssuer(): Promise<void> {
     const issuer = mfaForm.totp_issuer.trim();
     if (!issuer) {
       ElMessage.warning($t("securityPolicy.messages.issuerRequired"));
       return;
     }
-    await runWithLoading(issuerSaving, async () => {
-      const updated = await updateMfaSettings({ totp_issuer: issuer });
-      if (updated?.data?.totp_issuer) {
-        mfaForm.totp_issuer = updated.data.totp_issuer;
-      } else {
-        mfaForm.totp_issuer = issuer;
-      }
+    await runWithLoading(saving, async () => {
+      const policyPayload: UpdatePasswordPolicyRequest = {
+        ...toRaw(policyForm),
+        special_chars: (policyForm.special_chars || "").trim(),
+        totp_issuer: issuer,
+      };
+      await updatePasswordPolicy(policyPayload);
+      mfaForm.totp_issuer = issuer;
+      loadedSnapshot.value = currentSnapshot();
       ElMessage.success($t("securityPolicy.messages.savedSuccess"));
     }).catch((error) => {
       if (!isMfaStepUpCancelled(error)) {
-        logger.error("Failed to update global MFA issuer:", error);
+        logger.error("Failed to save platform security policy:", error);
       }
     });
   }
@@ -141,10 +140,9 @@ function createPlatformSecurityPolicy(): PlatformSecurityPolicyState {
     mfaForm,
     loading,
     saving,
-    issuerSaving,
+    isDirty,
     loadAll,
     savePolicy,
-    saveIssuer,
   };
 }
 

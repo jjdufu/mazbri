@@ -51,16 +51,23 @@
         </ElForm>
 
         <div class="button-row">
-          <ElButton
+          <ElTooltip
             v-for="button in actionButtons"
             :key="button.key"
-            :type="button.type"
-            :loading="button.loading"
-            :disabled="button.disabled"
-            @click="button.onClick"
+            :disabled="!button.disabled"
+            :content="$t('certificate.authorizationManagement.filePicker.hint')"
           >
-            {{ button.label }}
-          </ElButton>
+            <span>
+              <ElButton
+                :type="button.type"
+                :loading="button.loading"
+                :disabled="button.disabled"
+                @click="button.onClick"
+              >
+                {{ button.label }}
+              </ElButton>
+            </span>
+          </ElTooltip>
         </div>
       </ElCard>
     </ElCol>

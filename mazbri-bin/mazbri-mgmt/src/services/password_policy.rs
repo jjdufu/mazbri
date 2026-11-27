@@ -299,8 +299,14 @@ pub struct UpdatePasswordPolicyInput {
     pub prevent_reuse_count: Option<i32>,
     pub max_login_attempts: Option<i32>,
     pub lockout_duration_minutes: Option<i32>,
+    pub totp_issuer: Option<String>,
 }
 fn validate_update_fields(input: &UpdatePasswordPolicyInput) -> Option<axum::response::Response> {
+    if let Some(issuer) = &input.totp_issuer
+        && let Some(err) = crate::services::mfa_settings_service::validate_totp_issuer(issuer)
+    {
+        return Some(err);
+    }
     if let Some(min) = input.min_length
         && !(6..=32).contains(&min)
     {
@@ -372,8 +378,15 @@ pub async fn update_policy(
     if let Some(err_resp) = validate_update_fields(input) {
         return err_resp;
     }
-    match repo::update_password_policy(
-        db,
+    let mut tx = match db.begin().await {
+        Ok(tx) => tx,
+        Err(e) => {
+            error!("Failed to begin password policy transaction: {}", e);
+            return ApiResponse::err(StatusCode::INTERNAL_SERVER_ERROR, "更新密码策略失败");
+        }
+    };
+    let row = match repo::update_password_policy_exec(
+        &mut *tx,
         repo::UpdatePasswordPolicyParams {
             min_length: input.min_length,
             max_length: input.max_length,
@@ -392,28 +405,82 @@ pub async fn update_policy(
     )
     .await
     {
-        Ok(row) => {
-            info!("Password policy updated by admin {}", user_id_str);
-            audit.log(create_audit_log(
-                user_id_uuid,
-                AuditAction::PasswordPolicyUpdate,
-                AuditResourceType::System,
-                Some("global".to_string()),
-                serde_json::json!(
-                    { "min_length" : row.min_length, "max_length" : row
-                    .max_length, "require_uppercase" : row.letter_case.require_uppercase,
-                    "require_lowercase" : row.letter_case.require_lowercase, "require_digit"
-                    : row.require_digit, "require_special_char" : row
-                    .require_special_char, "max_age_days" : row.max_age_days,
-                    "max_login_attempts" : row.max_login_attempts, }
-                ),
-                client_ip,
-            ));
-            policy_row_response(&row)
-        }
+        Ok(row) => row,
         Err(e) => {
             error!("Failed to update password policy: {}", e);
-            ApiResponse::err(StatusCode::INTERNAL_SERVER_ERROR, "更新密码策略失败")
+            return ApiResponse::err(StatusCode::INTERNAL_SERVER_ERROR, "更新密码策略失败");
         }
+    };
+    let updated_issuer = if let Some(issuer) = input.totp_issuer.as_deref() {
+        let trimmed = issuer.trim().to_string();
+        if let Err(e) = crate::repositories::mfa_settings::update_mfa_settings_exec(
+            &mut *tx,
+            crate::repositories::mfa_settings::UpdateMfaSettingsParams {
+                totp_issuer: Some(trimmed.clone()),
+                totp_digits: None,
+                totp_period: None,
+                backup_codes_count: None,
+                updated_by: user_id_str,
+            },
+        )
+        .await
+        {
+            error!("Failed to update TOTP issuer in security policy transaction: {}", e);
+            return ApiResponse::err(StatusCode::INTERNAL_SERVER_ERROR, "更新密码策略失败");
+        }
+        Some(trimmed)
+    } else {
+        None
+    };
+    if let Err(e) = tx.commit().await {
+        error!("Failed to commit password policy transaction: {}", e);
+        return ApiResponse::err(StatusCode::INTERNAL_SERVER_ERROR, "更新密码策略失败");
+    }
+    info!("Password policy updated by admin {}", user_id_str);
+    audit.log(create_audit_log(
+        user_id_uuid,
+        AuditAction::PasswordPolicyUpdate,
+        AuditResourceType::System,
+        Some("global".to_string()),
+        serde_json::json!(
+            {
+                "min_length": row.min_length,
+                "max_length": row.max_length,
+                "require_uppercase": row.letter_case.require_uppercase,
+                "require_lowercase": row.letter_case.require_lowercase,
+                "require_digit": row.require_digit,
+                "require_special_char": row.require_special_char,
+                "max_age_days": row.max_age_days,
+                "max_login_attempts": row.max_login_attempts,
+                "totp_issuer": updated_issuer,
+            }
+        ),
+        client_ip,
+    ));
+    policy_row_response(&row)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_update_fields_rejects_empty_totp_issuer() {
+        let input = UpdatePasswordPolicyInput {
+            totp_issuer: Some("   ".to_string()),
+            ..Default::default()
+        };
+        let err = validate_update_fields(&input).expect("empty totp_issuer must fail");
+        assert_eq!(err.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[test]
+    fn validate_update_fields_accepts_valid_totp_issuer() {
+        let input = UpdatePasswordPolicyInput {
+            min_length: Some(10),
+            totp_issuer: Some("Mazbri Platform".to_string()),
+            ..Default::default()
+        };
+        assert!(validate_update_fields(&input).is_none());
     }
 }

@@ -1,7 +1,7 @@
 <template>
   <AdaptiveDrawer
     v-model="personalSecurityStore.drawerVisible"
-    size="520px"
+    size="min(560px, 92vw)"
     destroy-on-close
   >
     <template #header>

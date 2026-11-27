@@ -44,6 +44,7 @@ export interface UpdatePasswordPolicyRequest {
   prevent_reuse_count?: number;
   max_login_attempts?: number;
   lockout_duration_minutes?: number;
+  totp_issuer?: string;
 }
 export function updatePasswordPolicy(data: UpdatePasswordPolicyRequest) {
   return request.put<{

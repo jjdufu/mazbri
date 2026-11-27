@@ -139,7 +139,9 @@ export interface EndpointTabRuntime {
 }
 
 const WORKBENCH_PATH = "/operations/upstream-supply/workbench";
-const LAYOUT_STORAGE_KEY = "mazbri:wb:ide-layout";
+const LEGACY_LAYOUT_STORAGE_KEY = "mazbri:wb:ide-layout";
+const LAYOUT_STORAGE_KEY = "mazbri:wb:ide-layout:v2";
+const DEFAULT_REQUEST_SIZE = 74;
 const RUN_HTTP = { showErrorMessage: false as const, timeout: 120_000 };
 
 function createDefaultTabRuntime(): EndpointTabRuntime {
@@ -167,10 +169,13 @@ function readPersistedIdeLayout(): {
     responseCollapsed: false,
     responseSplitDir: "horizontal" as SplitDirection,
     sidebarSize: 22,
-    requestSize: 52,
+    requestSize: DEFAULT_REQUEST_SIZE,
   };
   if (typeof localStorage === "undefined") return defaults;
   try {
+    if (localStorage.getItem(LEGACY_LAYOUT_STORAGE_KEY)) {
+      localStorage.removeItem(LEGACY_LAYOUT_STORAGE_KEY);
+    }
     const raw = localStorage.getItem(LAYOUT_STORAGE_KEY);
     if (!raw) return defaults;
     const p = JSON.parse(raw) as Record<string, unknown>;
@@ -196,9 +201,9 @@ function readPersistedIdeLayout(): {
       requestSize:
         typeof p.requestSize === "number" &&
         p.requestSize >= 24 &&
-        p.requestSize <= 78
+        p.requestSize <= 82
           ? p.requestSize
-          : 52,
+          : DEFAULT_REQUEST_SIZE,
     };
   } catch {
     return defaults;
@@ -615,6 +620,12 @@ export function useWorkbenchStore() {
       runs.value.some((r) => isSuccessfulSend(r)) ||
       isSuccessfulSend(lastRun.value),
   );
+
+  watch(lastRun, (nextRun) => {
+    if (nextRun && requestSize.value === DEFAULT_REQUEST_SIZE) {
+      requestSize.value = 48;
+    }
+  });
 
   const gate = computed(() => {
     const projected = projectEndpointsForPayload();
@@ -2110,7 +2121,7 @@ export function useWorkbenchStore() {
 
   async function openPublish() {
     if (!canWriteWorkbench.value) return;
-    if (!canPublish.value) {
+    if (!canPublish.value && !canForcePublish.value) {
       ElMessage.warning($t("upstreamConnector.publishNeedRun"));
       return;
     }

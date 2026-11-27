@@ -102,10 +102,15 @@
     </template>
   </SettingsCardGrid>
 
-  <div class="tab-save-bar">
+  <div class="settings-sticky-footer">
+    <span v-if="dirty" class="settings-dirty-indicator">
+      <span class="settings-dirty-dot" />
+      {{ $t("systemSettings.unsavedChanges") }}
+    </span>
+    <span v-else />
     <ElButton type="primary" :loading="saving" @click="emit('save')">
       <template #icon><ArtSvgIcon icon="ri:save-line" /></template>
-      {{ $t("systemSettings.form.saveBasicSettings") }}
+      {{ $t("common.actions.save") }}
     </ElButton>
   </div>
 </template>
@@ -125,10 +130,12 @@ const props = withDefaults(
     modelValue: BasicSystemFormState;
     loading?: boolean;
     saving?: boolean;
+    dirty?: boolean;
   }>(),
   {
     loading: false,
     saving: false,
+    dirty: false,
   },
 );
 
@@ -150,9 +157,32 @@ const handleUpdate = <K extends keyof BasicSystemFormState>(
 </script>
 
 <style scoped lang="scss">
-.tab-save-bar {
+.settings-sticky-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
   display: flex;
-  justify-content: flex-end;
-  padding-top: 4px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 12px 16px;
+  background: var(--art-main-bg-color, var(--el-bg-color));
+  border-top: 1px solid var(--el-border-color-lighter);
+}
+
+.settings-dirty-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--el-color-warning);
+}
+
+.settings-dirty-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--el-color-warning);
 }
 </style>

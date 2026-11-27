@@ -547,16 +547,16 @@ async function copyVal(val: string) {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   align-items: center;
   justify-content: center;
-  padding: 16px;
+  padding: 10px 16px;
   color: var(--wb-text-muted);
   text-align: center;
 }
 
 .wb-res__spin {
-  font-size: 22px;
+  font-size: 20px;
   color: var(--wb-primary);
   animation: wb-res-spin 0.8s linear infinite;
 }
@@ -568,7 +568,7 @@ async function copyVal(val: string) {
 }
 
 .wb-res__idle-icon {
-  font-size: 28px;
+  font-size: 22px;
   color: var(--wb-text-faint);
 }
 

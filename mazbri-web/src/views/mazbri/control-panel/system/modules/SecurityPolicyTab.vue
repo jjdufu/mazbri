@@ -10,10 +10,15 @@
     </template>
   </SettingsCardGrid>
 
-  <div class="tab-save-bar">
+  <div class="settings-sticky-footer">
+    <span v-if="isDirty" class="settings-dirty-indicator">
+      <span class="settings-dirty-dot" />
+      {{ $t("systemSettings.unsavedChanges") }}
+    </span>
+    <span v-else />
     <ElButton type="primary" :loading="saving" @click="savePolicy">
       <template #icon><ArtSvgIcon icon="ri:save-line" /></template>
-      {{ $t("securityPolicy.actions.savePolicy") }}
+      {{ $t("common.actions.save") }}
     </ElButton>
   </div>
 </template>
@@ -29,7 +34,9 @@ import { providePlatformSecurityPolicy } from "./usePlatformSecurityPolicy";
 
 defineOptions({ name: "SecurityPolicyTab" });
 
-const { saving, loadAll, savePolicy } = providePlatformSecurityPolicy();
+const { saving, isDirty, loadAll, savePolicy } = providePlatformSecurityPolicy();
+
+defineExpose({ isDirty });
 
 onMounted(() => {
   void loadAll();
@@ -37,9 +44,32 @@ onMounted(() => {
 </script>
 
 <style scoped lang="scss">
-.tab-save-bar {
+.settings-sticky-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
   display: flex;
-  justify-content: flex-end;
-  padding-top: 4px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 12px 16px;
+  background: var(--art-main-bg-color, var(--el-bg-color));
+  border-top: 1px solid var(--el-border-color-lighter);
+}
+
+.settings-dirty-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--el-color-warning);
+}
+
+.settings-dirty-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--el-color-warning);
 }
 </style>

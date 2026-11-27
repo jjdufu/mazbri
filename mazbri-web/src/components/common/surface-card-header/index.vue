@@ -82,6 +82,14 @@ const headerClasses = computed(() => [
   align-items: flex-start;
 }
 
+.surface-card-actions {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
 .surface-card-meta {
   color: var(--art-gray-600);
   font-size: 12px;

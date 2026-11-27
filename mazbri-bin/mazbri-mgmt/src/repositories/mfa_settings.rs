@@ -35,10 +35,13 @@ pub struct UpdateMfaSettingsParams<'a> {
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub async fn update_mfa_settings(
-    pool: &PgPool,
+pub async fn update_mfa_settings_exec<'e, E>(
+    executor: E,
     params: UpdateMfaSettingsParams<'_>,
-) -> Result<MfaSettingsRow, sqlx::Error> {
+) -> Result<MfaSettingsRow, sqlx::Error>
+where
+    E: sqlx::PgExecutor<'e>,
+{
     sqlx::query_as::<_, MfaSettingsRow>(
         r"
         UPDATE mfa_settings SET
@@ -54,6 +57,16 @@ pub async fn update_mfa_settings(
     .bind(params.totp_period)
     .bind(params.backup_codes_count)
     .bind(params.updated_by)
-    .fetch_one(pool)
+    .fetch_one(executor)
     .await
+}
+
+/// # Errors
+///
+/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
+pub async fn update_mfa_settings(
+    pool: &PgPool,
+    params: UpdateMfaSettingsParams<'_>,
+) -> Result<MfaSettingsRow, sqlx::Error> {
+    update_mfa_settings_exec(pool, params).await
 }

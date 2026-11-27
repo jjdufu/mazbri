@@ -246,7 +246,7 @@
       <div class="field-block">
         <div class="field-label-row">
           <div class="field-label">{{ $t("upstreamConnector.cryptoSlots") }}</div>
-          <ElButton size="small" text :disabled="disabled" @click="addSlot">
+          <ElButton text :disabled="disabled" @click="addSlot">
             {{ $t("upstreamConnector.cryptoAddSlot") }}
           </ElButton>
         </div>

@@ -12,14 +12,21 @@ pub struct UpdateMfaSettingsInput {
     pub backup_codes_count: Option<i32>,
 }
 #[must_use]
-pub fn validate_update_fields(input: &UpdateMfaSettingsInput) -> Option<axum::response::Response> {
-    if let Some(issuer) = &input.totp_issuer
-        && issuer.trim().is_empty()
-    {
+pub fn validate_totp_issuer(issuer: &str) -> Option<axum::response::Response> {
+    if issuer.trim().is_empty() {
         return Some(ApiResponse::err(
             StatusCode::BAD_REQUEST,
             "发行者名称不能为空",
         ));
+    }
+    None
+}
+#[must_use]
+pub fn validate_update_fields(input: &UpdateMfaSettingsInput) -> Option<axum::response::Response> {
+    if let Some(issuer) = &input.totp_issuer
+        && let Some(err) = validate_totp_issuer(issuer)
+    {
+        return Some(err);
     }
     if let Some(digits) = input.totp_digits
         && digits != 6
