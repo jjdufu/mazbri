@@ -38,14 +38,25 @@ function copyWithExecCommand(value: string): boolean {
   textarea.style.left = "-9999px";
   textarea.style.top = "0";
   textarea.style.opacity = "0";
-  document.body.appendChild(textarea);
+
+  const prevActive =
+    typeof HTMLElement !== "undefined" &&
+    document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+  const host = prevActive?.closest?.("[role=\"dialog\"]") ?? document.body;
+  host.appendChild(textarea);
   try {
     textarea.focus();
     textarea.select();
+    if (typeof textarea.setSelectionRange === "function") {
+      textarea.setSelectionRange(0, value.length);
+    }
     return document.execCommand("copy");
   } catch {
     return false;
   } finally {
-    document.body.removeChild(textarea);
+    host.removeChild(textarea);
+    prevActive?.focus?.({ preventScroll: true });
   }
 }

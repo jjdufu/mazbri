@@ -120,7 +120,7 @@ export function SettingsSectionCard({
       data-testid={testId}
       className={cn("flex flex-col h-full overflow-hidden", className)}
     >
-      <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3 shrink-0">
+      <div className="flex items-center justify-between gap-3 border-b border-border-subtle px-4 py-3 shrink-0">
         <div className="flex items-center gap-2 min-w-0 text-sm font-semibold text-foreground">
           {icon && (
             <span className="shrink-0 text-primary">{icon}</span>

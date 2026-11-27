@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { Outlet, useLocation } from "react-router";
-import { useT } from "@/locales";
+import { useEffect, useState } from "react";
+import { Outlet } from "react-router";
 import { useAuthStore } from "@/stores/auth";
 import { useMfaStepUpStore } from "@/stores/mfa-step-up";
 import { useWatermarkStore } from "@/stores/watermark";
@@ -10,7 +9,6 @@ import { PersonalSecurityDrawer } from "./PersonalSecurityDrawer";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 import { WatermarkOverlay } from "./WatermarkOverlay";
-import { resolveMenuPageHeader } from "./menuConfig";
 
 const SIDEBAR_COLLAPSED_KEY = "mazbri-sidebar-collapsed";
 
@@ -24,8 +22,6 @@ function readInitialCollapsed(): boolean {
 }
 
 export function AppShell() {
-  const location = useLocation();
-  const { t } = useT();
   const isLogin = useAuthStore((s) => s.isLogin);
   const [collapsed, setCollapsed] = useState<boolean>(readInitialCollapsed);
 
@@ -65,32 +61,23 @@ export function AppShell() {
       .catch(() => undefined);
   }, [isLogin]);
 
-  const pageHeader = useMemo(
-    () => resolveMenuPageHeader(location.pathname),
-    [location.pathname],
-  );
-
   return (
-    <div className="flex flex-col h-screen w-full overflow-hidden bg-background text-foreground">
-      <Topbar
+    <div className="flex h-screen w-full overflow-hidden bg-app-frame text-foreground">
+      <Sidebar
         collapsed={collapsed}
         onToggleCollapse={() => setCollapsed((prev) => !prev)}
       />
-      <div className="flex flex-1 min-h-0 overflow-hidden">
-        <Sidebar collapsed={collapsed} />
-        <main className="flex flex-col flex-1 overflow-auto bg-canvas-bg px-6 py-5 min-w-0">
-          {pageHeader && (
-            <div className="mb-4 flex items-center gap-2 shrink-0">
-              <h1 className="text-base font-semibold tracking-tight text-foreground">
-                {t(pageHeader.titleKey)}
-              </h1>
-            </div>
-          )}
+
+      {/* Right-Hand Floating Rounded Inset Workspace Sheet (Scheme A) */}
+      <div className="flex-1 min-w-0 flex flex-col bg-canvas-bg md:my-2 md:mr-2 md:rounded-lg md:shadow-[0_1px_3px_rgba(15,23,42,0.05),0_0_0_1px_var(--border)] dark:md:shadow-[0_0_0_1px_var(--border)] overflow-hidden">
+        <Topbar />
+        <main className="flex flex-col flex-1 overflow-auto px-5 pb-5 pt-2 md:px-6 md:pb-6 min-w-0">
           <div className="flex flex-col flex-1 min-h-0 min-w-0">
             <Outlet />
           </div>
         </main>
       </div>
+
       <PersonalSecurityDrawer />
       <LockScreen />
       <WatermarkOverlay />

@@ -324,7 +324,7 @@ export function SupplierListTab({
         cell: (row) => {
           const isTransparent = resolveUpstreamType(row) === "transparent";
           return (
-            <Badge variant={isTransparent ? "xblue" : "outline"}>
+            <Badge variant={isTransparent ? "neutral" : "outline"}>
               {isTransparent
                 ? t("supplier.upstreamOptions.transparent")
                 : t("supplier.upstreamOptions.microservice")}

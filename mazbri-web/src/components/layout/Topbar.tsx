@@ -1,19 +1,18 @@
-import { useMemo, useState } from "react";
-import { Link } from "react-router";
+import React, { useMemo, useState } from "react";
+import { Link, useLocation } from "react-router";
 import {
   Check,
   ChevronDown,
-  ChevronsLeft,
-  ChevronsRight,
+  ChevronRight,
   Languages,
   Lock,
   LogOut,
-  Monitor,
   Moon,
   ShieldCheck,
   Sun,
 } from "lucide-react";
 import {
+  AutoThemeIcon,
   Badge,
   ConfirmDialog,
   IconButton,
@@ -28,14 +27,15 @@ import { useLockScreenStore } from "@/stores/lockscreen";
 import { usePersonalSecurityStore } from "@/stores/personal-security";
 import { useThemeStore, type ThemeMode } from "@/stores/theme";
 import { ROLE_ADMIN, ROLE_FINANCE, ROLE_VIEWER } from "@/utils/ops/roles";
-import { resolveDefaultHomePath } from "./menuConfig";
+import { resolveBreadcrumbs, resolveMenuPageHeader } from "./menuConfig";
 
 export interface TopbarProps {
-  collapsed: boolean;
-  onToggleCollapse: () => void;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
 }
 
-export function Topbar({ collapsed, onToggleCollapse }: TopbarProps) {
+export function Topbar(_props: TopbarProps = {}) {
+  const location = useLocation();
   const { t, locale, toggleLocale } = useT();
   const info = useAuthStore((s) => s.info);
   const isLoggingOut = useAuthStore((s) => s.isLoggingOut);
@@ -49,9 +49,13 @@ export function Topbar({ collapsed, onToggleCollapse }: TopbarProps) {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
 
-  const homePath = useMemo(
-    () => resolveDefaultHomePath(info.role),
-    [info.role],
+  const breadcrumbs = useMemo(
+    () => resolveBreadcrumbs(location.pathname, t),
+    [location.pathname, t],
+  );
+  const pageHeader = useMemo(
+    () => resolveMenuPageHeader(location.pathname),
+    [location.pathname],
   );
 
   const username = info.username || info.userName || "User";
@@ -66,15 +70,6 @@ export function Topbar({ collapsed, onToggleCollapse }: TopbarProps) {
           : "";
 
   const isZh = locale === LanguageEnum.ZH;
-
-  const collapseLabel = collapsed
-    ? isZh
-      ? "展开导航栏 (⌘B)"
-      : "Expand sidebar (⌘B)"
-    : isZh
-      ? "收起导航栏 (⌘B)"
-      : "Collapse sidebar (⌘B)";
-
   const localeTooltip = isZh ? "切换为 English" : "Switch to 中文";
 
   const themeTooltip =
@@ -93,12 +88,12 @@ export function Topbar({ collapsed, onToggleCollapse }: TopbarProps) {
   const themeOptions: {
     mode: ThemeMode;
     label: string;
-    icon: typeof Monitor;
+    icon: React.ComponentType<{ className?: string }>;
   }[] = [
     {
       mode: "auto",
       label: isZh ? "跟随系统" : "System",
-      icon: Monitor,
+      icon: AutoThemeIcon,
     },
     {
       mode: "light",
@@ -121,47 +116,53 @@ export function Topbar({ collapsed, onToggleCollapse }: TopbarProps) {
     <>
       <header
         data-testid="app-topbar"
-        className="sticky top-0 z-30 h-12 border-b border-border bg-card/95 backdrop-blur-xs flex items-center justify-between gap-2 shrink-0"
+        className="sticky top-0 z-30 h-12 bg-canvas-bg/92 backdrop-blur-md px-5 md:px-6 flex items-center justify-between gap-3 shrink-0"
       >
-        <div className="h-full flex items-center shrink-0">
-          <Link
-            to={homePath}
-            className={cn(
-              "h-full flex items-center border-r border-border transition-all shrink-0",
-              collapsed ? "w-[60px] justify-center px-0" : "w-52 justify-start px-3.5",
-            )}
-          >
-            <div className="flex items-center gap-2 min-w-0 select-none">
-              <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-xblue text-white text-xs font-bold tracking-tight shrink-0">
-                M
-              </span>
-              {!collapsed && (
-                <span className="text-[15px] font-semibold tracking-tight text-foreground truncate">
-                  Mazbri
-                </span>
-              )}
-            </div>
-          </Link>
-
-          <div className="pl-2 flex items-center">
-            <Tooltip content={collapseLabel} side="bottom">
-              <IconButton
-                size="sm"
-                onClick={onToggleCollapse}
-                aria-label={collapseLabel}
-                data-testid="sidebar-collapse-btn"
-              >
-                {collapsed ? (
-                  <ChevronsRight className="h-4 w-4" />
-                ) : (
-                  <ChevronsLeft className="h-4 w-4" />
+        {/* Left: Clean Borderless Breadcrumb & Primary Page Title */}
+        <nav
+          aria-label="Breadcrumb"
+          className="flex items-center gap-1.5 min-w-0 truncate"
+        >
+          <span className="sr-only">Mazbri</span>
+          {breadcrumbs.map((crumb, idx) => {
+            const isLast = idx === breadcrumbs.length - 1;
+            return (
+              <React.Fragment key={`${crumb.label}-${idx}`}>
+                {idx > 0 && (
+                  <ChevronRight
+                    aria-hidden="true"
+                    className="h-3.5 w-3.5 text-muted-foreground/60 shrink-0"
+                  />
                 )}
-              </IconButton>
-            </Tooltip>
-          </div>
-        </div>
+                {isLast ? (
+                  pageHeader ? (
+                    <h1 className="text-[15px] font-semibold tracking-tight text-foreground truncate">
+                      {crumb.label}
+                    </h1>
+                  ) : (
+                    <span className="text-xs font-semibold text-foreground truncate">
+                      {crumb.label}
+                    </span>
+                  )
+                ) : crumb.path ? (
+                  <Link
+                    to={crumb.path}
+                    className="text-xs text-muted-foreground hover:text-foreground transition-colors truncate"
+                  >
+                    {crumb.label}
+                  </Link>
+                ) : (
+                  <span className="text-xs text-muted-foreground truncate hidden sm:inline">
+                    {crumb.label}
+                  </span>
+                )}
+              </React.Fragment>
+            );
+          })}
+        </nav>
 
-        <div className="pr-4 flex items-center gap-1.5 shrink-0">
+        {/* Right: Unified Borderless Action Cluster (Lock + Locale + Auto-A Theme + User Pill) */}
+        <div className="flex items-center gap-1 shrink-0">
           <Tooltip content={t("topBar.user.lockScreen")} side="bottom">
             <IconButton
               size="md"
@@ -169,7 +170,7 @@ export function Topbar({ collapsed, onToggleCollapse }: TopbarProps) {
               aria-label={t("topBar.user.lockScreen")}
               data-testid="topbar-lock-btn"
             >
-              <Lock className="h-4 w-4" />
+              <Lock className="h-4 w-4 shrink-0" />
             </IconButton>
           </Tooltip>
 
@@ -180,7 +181,7 @@ export function Topbar({ collapsed, onToggleCollapse }: TopbarProps) {
               aria-label={localeTooltip}
               data-testid="topbar-locale-btn"
             >
-              <Languages className="h-4 w-4 text-xblue" />
+              <Languages className="h-4 w-4 shrink-0" />
             </IconButton>
           </Tooltip>
 
@@ -194,16 +195,17 @@ export function Topbar({ collapsed, onToggleCollapse }: TopbarProps) {
               <Tooltip content={themeTooltip} side="bottom" disabled={themeMenuOpen}>
                 <IconButton
                   size="md"
+                  active={themeMenuOpen}
                   onClick={() => setThemeMenuOpen((prev) => !prev)}
                   aria-label={themeTooltip}
                   data-testid="topbar-theme-btn"
                 >
                   {theme === "auto" ? (
-                    <Monitor className="h-4 w-4" />
+                    <AutoThemeIcon className="h-4 w-4 shrink-0" />
                   ) : theme === "dark" ? (
-                    <Moon className="h-4 w-4" />
+                    <Moon className="h-4 w-4 shrink-0" />
                   ) : (
-                    <Sun className="h-4 w-4" />
+                    <Sun className="h-4 w-4 shrink-0" />
                   )}
                 </IconButton>
               </Tooltip>
@@ -226,7 +228,7 @@ export function Topbar({ collapsed, onToggleCollapse }: TopbarProps) {
                       "flex w-full h-8 items-center justify-between gap-2 rounded-md px-2.5 text-xs transition-colors cursor-pointer text-left",
                       active
                         ? "bg-xblue-soft text-xblue font-medium"
-                        : "text-foreground hover:bg-hover-bg",
+                        : "text-foreground hover:bg-nav-hover-bg",
                     )}
                   >
                     <span className="inline-flex items-center gap-2 min-w-0">
@@ -240,8 +242,6 @@ export function Topbar({ collapsed, onToggleCollapse }: TopbarProps) {
             </div>
           </Popover>
 
-          <div className="h-4 w-px bg-border mx-0.5" aria-hidden="true" />
-
           <Popover
             open={userMenuOpen}
             onOpenChange={setUserMenuOpen}
@@ -252,20 +252,32 @@ export function Topbar({ collapsed, onToggleCollapse }: TopbarProps) {
               <button
                 type="button"
                 data-testid="topbar-user-menu-btn"
+                aria-expanded={userMenuOpen}
+                aria-haspopup="menu"
                 onClick={() => setUserMenuOpen((prev) => !prev)}
-                className="inline-flex h-8 items-center gap-2 rounded-md border border-border bg-card pl-1.5 pr-2 text-xs text-foreground hover:bg-hover-bg hover:border-border-hover active:bg-active-bg transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-xblue/45"
+                className={cn(
+                  "inline-flex h-8 items-center gap-1.5 rounded-md pl-1.5 pr-2 text-xs transition-all duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-xblue/45 ml-0.5 active:scale-[0.95]",
+                  userMenuOpen
+                    ? "bg-xblue-soft text-xblue"
+                    : "text-foreground/82 hover:bg-hover-bg hover:text-foreground active:bg-active-bg",
+                )}
               >
-                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-xblue-soft text-xblue font-semibold text-[11px] shrink-0">
+                <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-xblue-soft text-xblue font-semibold text-[11px] shrink-0">
                   {avatarInitial}
                 </span>
-                <span className="font-medium max-w-[120px] truncate">
+                <span className="hidden sm:inline font-medium max-w-[120px] truncate">
                   {username}
                 </span>
-                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                <ChevronDown
+                  className={cn(
+                    "h-3.5 w-3.5 text-muted-foreground shrink-0 transition-transform",
+                    userMenuOpen && "rotate-180 text-xblue",
+                  )}
+                />
               </button>
             }
           >
-            <div className="px-2.5 py-2 border-b border-border mb-1">
+            <div className="px-2.5 py-2 border-b border-border-subtle mb-1">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs font-semibold text-foreground truncate">
                   {info.display_name || username}
@@ -290,15 +302,15 @@ export function Topbar({ collapsed, onToggleCollapse }: TopbarProps) {
                 setUserMenuOpen(false);
                 openSecurityDrawer("mfa");
               }}
-              className="flex w-full h-8 items-center gap-2 rounded-md px-2.5 text-xs text-foreground hover:bg-hover-bg transition-colors cursor-pointer text-left"
+              className="flex w-full h-8 items-center gap-2 rounded-md px-2.5 text-xs text-foreground hover:bg-nav-hover-bg transition-colors cursor-pointer text-left"
             >
-              <ShieldCheck className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <ShieldCheck className="h-3.5 w-3.5 text-xblue shrink-0" />
               <span className="truncate">
                 {t("accountSecurity.drawer.title")}
               </span>
             </button>
 
-            <div className="my-1 border-t border-border" />
+            <div className="my-1 border-t border-border-subtle" />
 
             <button
               type="button"
@@ -307,7 +319,7 @@ export function Topbar({ collapsed, onToggleCollapse }: TopbarProps) {
                 setUserMenuOpen(false);
                 setLogoutConfirmOpen(true);
               }}
-              className="flex w-full h-8 items-center gap-2 rounded-md px-2.5 text-xs text-red-600 dark:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer text-left"
+              className="flex w-full h-8 items-center gap-2 rounded-md px-2.5 text-xs text-danger-fg hover:bg-[var(--status-err-bg)] transition-colors cursor-pointer text-left"
             >
               <LogOut className="h-3.5 w-3.5 shrink-0" />
               <span className="truncate">{t("topBar.user.logout")}</span>

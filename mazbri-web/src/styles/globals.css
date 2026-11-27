@@ -3,75 +3,149 @@
 @layer base {
   :root {
     color-scheme: light;
-    --sidebar-bg: #ffffff;
-    --sidebar-fg: #52525b;
-    --sidebar-muted: #a1a1aa;
-    --sidebar-hover: #f4f4f5;
-    --sidebar-active: #eff6ff;
-    --sidebar-active-fg: #2563eb;
-    --canvas-bg: #ffffff;
+    --app-frame: #eef1f6;
+    --brand-hero-bg: #0b1120;
+    --sidebar-bg: #eef1f6;
+    --sidebar-fg: #475569;
+    --sidebar-muted: #64748b;
+    --sidebar-hover: rgba(30, 64, 175, 0.105);
+    --sidebar-active: #ffffff;
+    --sidebar-active-fg: #1e50d8;
+    --canvas-bg: #f5f7fb;
     --background: #ffffff;
     --card: #ffffff;
     --panel-bg: #ffffff;
-    --foreground: #09090b;
-    --card-foreground: #09090b;
-    --muted: #f4f4f5;
-    --muted-foreground: #64748b;
-    --border: #e4e4e7;
-    --border-subtle: #f1f1f4;
-    --border-hover: #a1a1aa;
-    --input: #d4d4d8;
-    --hover-bg: #f4f4f5;
-    --active-bg: #e4e4e7;
+    --foreground: #0f172a;
+    --card-foreground: #0f172a;
+    --muted: #f1f4f9;
+    --muted-foreground: #475569;
+    --control-bg: #f1f4f9;
+    --control-hover: #e1e7f2;
+    --control-border: rgba(15, 23, 42, 0.09);
+    --border: rgba(15, 23, 42, 0.09);
+    --border-subtle: rgba(15, 23, 42, 0.06);
+    --border-hover: rgba(37, 99, 235, 0.42);
+    --input: rgba(15, 23, 42, 0.16);
+    --hover-bg: rgba(30, 64, 175, 0.09);
+    --nav-hover-bg: rgba(30, 64, 175, 0.105);
+    --active-bg: rgba(30, 64, 175, 0.16);
+    --row-hover: rgba(37, 99, 235, 0.055);
     --primary: #2563eb;
     --primary-hover: #1d4ed8;
     --primary-foreground: #ffffff;
-    --primary-soft: #eff6ff;
-    --primary-soft-hover: #dbeafe;
-    --xblue: var(--primary);
-    --xblue-hover: var(--primary-hover);
-    --xblue-soft: var(--primary-soft);
-    --xblue-soft-hover: var(--primary-soft-hover);
+    --primary-soft: #eef4ff;
+    --primary-soft-hover: #dbe8ff;
+    --xblue: #1e50d8;
+    --xblue-hover: #1e40af;
+    --xblue-soft: #eef4ff;
+    --xblue-soft-hover: #dbe8ff;
     --accent-primary: var(--primary);
-    --warning-fg: #b45309;
-    --warning-bg: rgba(180, 83, 9, 0.08);
-    --warning-border: rgba(180, 83, 9, 0.22);
-    --danger-fg: #dc2626;
-    --success-fg: #059669;
+    --status-ok-bg: rgba(16, 185, 129, 0.12);
+    --status-ok-border: rgba(5, 150, 105, 0.28);
+    --status-ok-fg: #047857;
+    --status-warn-bg: rgba(245, 158, 11, 0.13);
+    --status-warn-border: rgba(217, 119, 6, 0.32);
+    --status-warn-fg: #b45309;
+    --status-err-bg: rgba(239, 68, 68, 0.12);
+    --status-err-border: rgba(220, 38, 38, 0.3);
+    --status-err-fg: #b91c1c;
+    --warning-fg: var(--status-warn-fg);
+    --warning-bg: var(--status-warn-bg);
+    --warning-border: var(--status-warn-border);
+    --danger-fg: var(--status-err-fg);
+    --success-fg: var(--status-ok-fg);
   }
 
   .dark {
     color-scheme: dark;
-    --sidebar-bg: #0d1017;
-    --sidebar-fg: #a1a1aa;
-    --sidebar-muted: #71717a;
-    --sidebar-hover: rgba(148, 163, 184, 0.10);
-    --sidebar-active: rgba(59, 130, 246, 0.16);
-    --sidebar-active-fg: #60a5fa;
-    --canvas-bg: #090b10;
-    --background: #090b10;
-    --card: #11141d;
-    --panel-bg: #11141d;
-    --foreground: #fafafa;
-    --card-foreground: #fafafa;
-    --muted: #171b26;
-    --muted-foreground: #a1a1aa;
-    --border: rgba(148, 163, 184, 0.18);
-    --border-subtle: rgba(148, 163, 184, 0.10);
-    --border-hover: rgba(148, 163, 184, 0.45);
-    --input: rgba(148, 163, 184, 0.24);
-    --hover-bg: #1c2230;
-    --active-bg: #262f45;
-    --primary: #3b82f6;
-    --primary-hover: #60a5fa;
+    --app-frame: #07090e;
+    --brand-hero-bg: #070b14;
+    --sidebar-bg: #07090e;
+    --sidebar-fg: #b8c7dc;
+    --sidebar-muted: #8ea0b8;
+    --sidebar-hover: rgba(148, 184, 248, 0.13);
+    --sidebar-active: #141a25;
+    --sidebar-active-fg: #8ab4f8;
+    --canvas-bg: #0c1018;
+    --background: #0c1018;
+    --card: #141a25;
+    --panel-bg: #141a25;
+    --foreground: #f8fafc;
+    --card-foreground: #f8fafc;
+    --muted: #1e2738;
+    --muted-foreground: #b8c7dc;
+    --control-bg: #202a3c;
+    --control-hover: #2e3d56;
+    --control-border: rgba(226, 232, 240, 0.22);
+    --border: rgba(226, 232, 240, 0.16);
+    --border-subtle: rgba(226, 232, 240, 0.11);
+    --border-hover: rgba(138, 180, 248, 0.72);
+    --input: rgba(226, 232, 240, 0.34);
+    --hover-bg: rgba(148, 184, 248, 0.18);
+    --nav-hover-bg: rgba(148, 184, 248, 0.13);
+    --active-bg: rgba(148, 184, 248, 0.28);
+    --row-hover: rgba(138, 180, 248, 0.11);
+    --primary: #3367d6;
+    --primary-hover: #4378ea;
     --primary-foreground: #ffffff;
-    --primary-soft: rgba(59, 130, 246, 0.15);
-    --primary-soft-hover: rgba(59, 130, 246, 0.24);
-    --warning-fg: #fbbf24;
-    --warning-bg: rgba(251, 191, 36, 0.14);
-    --warning-border: rgba(251, 191, 36, 0.30);
-    --danger-fg: #f87171;
-    --success-fg: #34d399;
+    --primary-soft: rgba(138, 180, 248, 0.18);
+    --primary-soft-hover: rgba(138, 180, 248, 0.28);
+    --xblue: #8ab4f8;
+    --xblue-hover: #b0ceff;
+    --xblue-soft: rgba(138, 180, 248, 0.18);
+    --xblue-soft-hover: rgba(138, 180, 248, 0.28);
+    --accent-primary: #8ab4f8;
+
+    /* Okabe-Ito / GitHub Dark-Colorblind Semantic Status Tokens (WCAG AAA >= 8.9:1, zero dark green) */
+    --status-ok-bg: rgba(56, 189, 248, 0.16);
+    --status-ok-border: rgba(103, 232, 249, 0.48);
+    --status-ok-fg: #67e8f9;
+    --status-warn-bg: rgba(250, 204, 21, 0.16);
+    --status-warn-border: rgba(253, 224, 71, 0.5);
+    --status-warn-fg: #fde047;
+    --status-err-bg: rgba(255, 122, 69, 0.18);
+    --status-err-border: rgba(255, 158, 117, 0.54);
+    --status-err-fg: #ff9e75;
+    --warning-fg: var(--status-warn-fg);
+    --warning-bg: var(--status-warn-bg);
+    --warning-border: var(--status-warn-border);
+    --danger-fg: var(--status-err-fg);
+    --success-fg: var(--status-ok-fg);
+
+    /* Remap Tailwind emerald/green/teal/red/amber scales in Dark Mode off the red-green confusion axis */
+    --color-emerald-50: #ecfeff;
+    --color-emerald-100: #cffafe;
+    --color-emerald-200: #a5f3fc;
+    --color-emerald-300: #7dd3fc;
+    --color-emerald-400: #67e8f9;
+    --color-emerald-500: #38bdf8;
+    --color-emerald-600: #0284c7;
+    --color-emerald-700: #0369a1;
+    --color-emerald-800: #075985;
+    --color-emerald-900: #0c4a6e;
+    --color-emerald-950: #082f49;
+
+    --color-green-300: #7dd3fc;
+    --color-green-400: #67e8f9;
+    --color-green-500: #38bdf8;
+    --color-green-600: #0284c7;
+    --color-green-700: #0369a1;
+
+    --color-teal-300: #7dd3fc;
+    --color-teal-400: #67e8f9;
+    --color-teal-500: #38bdf8;
+    --color-teal-600: #0284c7;
+
+    --color-red-300: #ffbfa3;
+    --color-red-400: #ff9e75;
+    --color-red-500: #ff7a45;
+    --color-red-600: #ea580c;
+    --color-red-700: #c2410c;
+
+    --color-amber-300: #fef08a;
+    --color-amber-400: #fde047;
+    --color-amber-500: #facc15;
+    --color-amber-600: #eab308;
   }
 }
 
@@ -80,6 +154,8 @@
   --radius-lg: 10px;
   --radius-full: 9999px;
 
+  --color-app-frame: var(--app-frame);
+  --color-brand-hero-bg: var(--brand-hero-bg);
   --color-sidebar-bg: var(--sidebar-bg);
   --color-sidebar-fg: var(--sidebar-fg);
   --color-sidebar-muted: var(--sidebar-muted);
@@ -94,8 +170,13 @@
   --color-foreground: var(--foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
+  --color-control-bg: var(--control-bg);
+  --color-control-hover: var(--control-hover);
+  --color-control-border: var(--control-border);
   --color-hover-bg: var(--hover-bg);
+  --color-nav-hover-bg: var(--nav-hover-bg);
   --color-active-bg: var(--active-bg);
+  --color-row-hover: var(--row-hover);
   --color-border: var(--border);
   --color-border-subtle: var(--border-subtle);
   --color-border-hover: var(--border-hover);
@@ -137,7 +218,6 @@
     -moz-osx-font-smoothing: grayscale;
   }
 
-  /* Remove native OS spin buttons on numeric inputs */
   input[type="number"]::-webkit-inner-spin-button,
   input[type="number"]::-webkit-outer-spin-button {
     -webkit-appearance: none;
@@ -149,7 +229,7 @@
     appearance: textfield;
   }
 
-  /* Unified theme-aware checkbox styling */
+  /* Unified high-contrast theme-aware checkbox styling */
   input[type="checkbox"] {
     -webkit-appearance: none;
     appearance: none;
@@ -159,7 +239,7 @@
     min-height: 14px;
     border-radius: 4px;
     border: 1px solid var(--input);
-    background-color: var(--card);
+    background-color: var(--control-bg);
     display: inline-grid;
     place-content: center;
     cursor: pointer;
@@ -168,11 +248,12 @@
   }
 
   input[type="checkbox"]:hover:not(:disabled) {
-    border-color: var(--primary);
+    border-color: var(--xblue);
+    background-color: var(--control-hover);
   }
 
   input[type="checkbox"]:focus-visible {
-    outline: 2px solid color-mix(in srgb, var(--primary) 45%, transparent);
+    outline: 2px solid color-mix(in srgb, var(--xblue) 45%, transparent);
     outline-offset: 1px;
   }
 
@@ -212,7 +293,6 @@
     cursor: not-allowed;
   }
 
-  /* Theme-aware date/time picker indicators */
   input[type="date"]::-webkit-calendar-picker-indicator,
   input[type="datetime-local"]::-webkit-calendar-picker-indicator {
     cursor: pointer;
@@ -224,14 +304,13 @@
     opacity: 1;
   }
 
-  /* Subtle custom scrollbars aligned to light/dark themes */
   * {
     scrollbar-width: thin;
     scrollbar-color: rgba(148, 163, 184, 0.35) transparent;
   }
 
   .dark * {
-    scrollbar-color: rgba(148, 163, 184, 0.24) transparent;
+    scrollbar-color: rgba(148, 163, 184, 0.26) transparent;
   }
 
   *::-webkit-scrollbar {
@@ -249,7 +328,7 @@
   }
 
   .dark *::-webkit-scrollbar-thumb {
-    background-color: rgba(148, 163, 184, 0.24);
+    background-color: rgba(148, 163, 184, 0.26);
   }
 
   *::-webkit-scrollbar-thumb:hover {
@@ -260,7 +339,7 @@
     background: transparent;
   }
 
-  /* diff2html light & dark harmonization */
+  /* diff2html light & CVD-safe dark harmonization */
   .d2h-wrapper {
     color: var(--foreground);
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
@@ -277,7 +356,7 @@
 
   .d2h-file-header {
     background-color: var(--muted);
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--border-subtle);
     color: var(--foreground);
     padding: 6px 12px;
     height: auto;
@@ -293,7 +372,7 @@
   .d2h-code-side-linenumber {
     background-color: var(--muted);
     color: var(--muted-foreground);
-    border-color: var(--border);
+    border-color: var(--border-subtle);
   }
 
   .d2h-code-line-ctn {
@@ -309,49 +388,49 @@
 
   .dark .d2h-file-header {
     background-color: var(--muted);
-    border-bottom-color: var(--border);
+    border-bottom-color: var(--border-subtle);
     color: var(--foreground);
   }
 
   .dark .d2h-code-linenumber,
   .dark .d2h-code-side-linenumber {
-    background-color: #141a28;
+    background-color: #182030;
     color: var(--muted-foreground);
-    border-color: var(--border);
+    border-color: var(--border-subtle);
   }
 
   .dark .d2h-info {
-    background-color: rgba(93, 135, 255, 0.14);
-    color: #93b4ff;
+    background-color: rgba(138, 180, 248, 0.14);
+    color: #8ab4f8;
     border-color: var(--border);
   }
 
   .dark .d2h-del {
-    background-color: rgba(248, 113, 113, 0.14);
-    border-color: rgba(248, 113, 113, 0.25);
+    background-color: rgba(255, 122, 69, 0.16);
+    border-color: rgba(255, 158, 117, 0.35);
   }
 
   .dark .d2h-del del,
   .dark .d2h-code-line del {
-    background-color: rgba(248, 113, 113, 0.34);
-    color: #fecaca;
+    background-color: rgba(255, 122, 69, 0.34);
+    color: #ffd8c7;
   }
 
   .dark .d2h-ins {
-    background-color: rgba(52, 211, 153, 0.14);
-    border-color: rgba(52, 211, 153, 0.25);
+    background-color: rgba(56, 189, 248, 0.16);
+    border-color: rgba(103, 232, 249, 0.35);
   }
 
   .dark .d2h-ins ins,
   .dark .d2h-code-line ins {
-    background-color: rgba(52, 211, 153, 0.32);
-    color: #a7f3d0;
+    background-color: rgba(56, 189, 248, 0.32);
+    color: #cffafe;
   }
 
   .dark .d2h-emptyplaceholder,
   .dark .d2h-code-side-emptyplaceholder {
     background-color: rgba(148, 163, 184, 0.06);
-    border-color: var(--border);
+    border-color: var(--border-subtle);
   }
 
   .dark .d2h-tag {

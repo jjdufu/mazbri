@@ -71,7 +71,7 @@ export function EntityDetailLayout<K extends string = string>({
                 onClick={onBack}
                 aria-label={resolvedBackLabel}
                 title={resolvedBackLabel}
-                className="mt-0.5 border border-border bg-card"
+                className="mt-0.5 border border-control-border bg-control-bg hover:bg-control-hover hover:border-border-hover"
               >
                 <ArrowLeft className="h-4 w-4" />
               </IconButton>
@@ -150,7 +150,7 @@ export function EntityDetailCard({
 }: EntityDetailCardProps) {
   return (
     <Card data-testid={testId} className={cn("overflow-hidden", className)}>
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border-subtle px-4 py-3">
         <div className="flex items-center gap-2 min-w-0 text-sm font-semibold text-foreground">
           {icon && (
             <span className="shrink-0 text-muted-foreground">{icon}</span>

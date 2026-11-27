@@ -26,6 +26,29 @@ import {
 import { cn } from "./cn";
 import { useUiTx } from "./tx";
 
+export function AutoThemeIcon({
+  className,
+  ...props
+}: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.85}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className={cn("h-4 w-4 shrink-0", className)}
+      {...props}
+    >
+      <path d="M12 2.2L14.8 5H19V9.2L21.8 12L19 14.8V19H14.8L12 21.8L9.2 19H5V14.8L2.2 12L5 9.2V5H9.2L12 2.2Z" />
+      <path d="M9.4 15.3L12 8.3L14.6 15.3" />
+      <path d="M10.25 13.35H13.75" />
+    </svg>
+  );
+}
+
 export function Card({
   className,
   ...props
@@ -33,7 +56,7 @@ export function Card({
   return (
     <div
       className={cn(
-        "rounded-lg border border-border bg-card text-card-foreground",
+        "rounded-lg border border-border bg-card text-card-foreground shadow-[0_1px_2px_rgba(15,23,42,0.025)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.055)]",
         className,
       )}
       {...props}
@@ -63,26 +86,26 @@ export function Button({
     <button
       disabled={isDisabled}
       className={cn(
-        "inline-flex items-center justify-center gap-1.5 rounded-md font-medium whitespace-nowrap shrink-0 transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/45 active:scale-[0.98] disabled:pointer-events-none cursor-pointer",
+        "inline-flex items-center justify-center gap-1.5 rounded-md font-medium whitespace-nowrap shrink-0 transition-all duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-xblue/45 disabled:pointer-events-none cursor-pointer",
         size === "xs" && "h-6 px-2 text-xs",
         size === "sm" && "h-7 px-2.5 text-xs",
         size === "md" && "h-8 px-3 text-xs",
         variant === "primary" &&
-          "bg-primary text-primary-foreground hover:bg-primary-hover hover:shadow-sm shadow-2xs disabled:bg-muted disabled:text-muted-foreground disabled:border disabled:border-border disabled:shadow-none",
+          "bg-primary text-primary-foreground border border-white/12 shadow-[0_1px_2px_rgba(0,0,0,0.14),inset_0_1px_0_rgba(255,255,255,0.2)] hover:bg-primary-hover hover:-translate-y-[1px] hover:shadow-[0_4px_12px_color-mix(in_srgb,var(--primary)_40%,transparent),inset_0_1px_0_rgba(255,255,255,0.28)] active:translate-y-0 active:scale-[0.97] disabled:bg-muted disabled:text-muted-foreground disabled:border-border disabled:shadow-none",
         variant === "outline" &&
           (active
-            ? "border border-primary/60 bg-primary-soft text-primary hover:bg-primary-soft-hover hover:border-primary disabled:opacity-45"
-            : "border border-border bg-card text-foreground hover:bg-hover-bg hover:border-border-hover active:bg-active-bg disabled:opacity-45"),
+            ? "border border-xblue/45 bg-xblue-soft text-xblue hover:bg-xblue-soft-hover hover:-translate-y-[1px] active:translate-y-0 active:scale-[0.97] disabled:opacity-45"
+            : "border border-control-border bg-control-bg text-foreground/95 hover:bg-control-hover hover:text-foreground hover:border-border-hover hover:-translate-y-[1px] hover:shadow-[0_3px_8px_rgba(15,23,42,0.07)] dark:hover:shadow-[0_4px_12px_rgba(0,0,0,0.38)] active:translate-y-0 active:scale-[0.97] active:shadow-none disabled:opacity-50"),
         variant === "ghost" &&
           (active
-            ? "bg-primary-soft text-primary hover:bg-primary-soft-hover disabled:opacity-40"
-            : "text-muted-foreground hover:bg-hover-bg hover:text-foreground active:bg-active-bg disabled:opacity-40"),
+            ? "bg-xblue-soft text-xblue hover:bg-xblue-soft-hover active:scale-[0.97] disabled:opacity-45"
+            : "text-muted-foreground hover:bg-hover-bg hover:text-foreground active:bg-active-bg active:scale-[0.97] disabled:opacity-45"),
         variant === "danger" &&
-          "border border-danger-fg/45 bg-danger-fg/10 text-danger-fg hover:bg-danger-fg/20 hover:border-danger-fg/75 disabled:opacity-45",
+          "border border-[var(--status-err-border)] bg-[var(--status-err-bg)] text-[var(--status-err-fg)] hover:brightness-110 hover:-translate-y-[1px] active:translate-y-0 active:scale-[0.97] disabled:opacity-45",
         variant === "warning" &&
-          "border border-warning-border bg-warning-bg text-warning-fg hover:bg-warning-border/40 disabled:opacity-45",
+          "border border-[var(--status-warn-border)] bg-[var(--status-warn-bg)] text-[var(--status-warn-fg)] hover:brightness-110 hover:-translate-y-[1px] active:translate-y-0 active:scale-[0.97] disabled:opacity-45",
         variant === "link" &&
-          "bg-transparent text-primary hover:bg-primary-soft hover:text-primary-hover active:bg-primary-soft-hover disabled:opacity-45",
+          "bg-transparent text-xblue hover:bg-xblue-soft hover:text-xblue-hover active:bg-xblue-soft-hover active:scale-[0.97] disabled:opacity-45",
         className,
       )}
       {...props}
@@ -109,11 +132,11 @@ export function IconButton({
     <button
       type="button"
       className={cn(
-        "inline-flex items-center justify-center rounded-md transition-all duration-150 shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/45 active:scale-[0.96] disabled:pointer-events-none disabled:opacity-40 cursor-pointer",
+        "inline-flex items-center justify-center rounded-md transition-all duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-xblue/45 [&_svg]:transition-transform [&_svg]:duration-150 hover:[&_svg]:scale-108 active:scale-[0.94] disabled:pointer-events-none disabled:opacity-45 cursor-pointer",
         size === "sm" ? "h-7 w-7" : "h-8 w-8",
         active
-          ? "bg-primary-soft text-primary border border-primary/45 hover:bg-primary-soft-hover hover:border-primary"
-          : "text-muted-foreground hover:text-foreground hover:bg-hover-bg active:bg-active-bg",
+          ? "bg-xblue-soft text-xblue hover:bg-xblue-soft-hover"
+          : "text-foreground/78 hover:text-foreground hover:bg-hover-bg active:bg-active-bg",
         className,
       )}
       {...props}
@@ -137,11 +160,11 @@ export function ActionChip({
     <button
       type="button"
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-md border font-medium whitespace-nowrap shrink-0 transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/45 disabled:pointer-events-none disabled:opacity-45 cursor-pointer",
+        "inline-flex items-center gap-1.5 rounded-md border font-medium whitespace-nowrap shrink-0 transition-all duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-xblue/45 disabled:pointer-events-none disabled:opacity-45 cursor-pointer",
         size === "xs" ? "h-6 px-2 text-[11px]" : "h-7 px-2.5 text-xs",
         active
-          ? "border-primary/60 bg-primary-soft text-primary hover:bg-primary-soft-hover hover:border-primary"
-          : "border-border bg-card text-foreground/90 hover:bg-hover-bg hover:border-border-hover hover:text-foreground active:bg-active-bg",
+          ? "border-xblue/45 bg-xblue-soft text-xblue hover:bg-xblue-soft-hover hover:-translate-y-[1px] active:translate-y-0 active:scale-[0.97]"
+          : "border-control-border bg-control-bg text-foreground/95 hover:bg-control-hover hover:border-border-hover hover:text-foreground hover:-translate-y-[1px] active:translate-y-0 active:scale-[0.97]",
         className,
       )}
       {...props}
@@ -159,14 +182,17 @@ export function Badge({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-sans font-medium whitespace-nowrap shrink-0",
-        variant === "neutral" && "bg-muted text-muted-foreground",
-        variant === "xblue" && "bg-primary-soft text-primary",
+        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-sans font-medium whitespace-nowrap shrink-0",
+        variant === "neutral" && "border-border bg-muted text-foreground/90",
+        variant === "xblue" && "border-xblue/35 bg-xblue-soft text-xblue",
         variant === "outline" &&
-          "border border-border text-muted-foreground bg-transparent",
-        variant === "success" && "bg-success-fg/10 text-success-fg",
-        variant === "warning" && "bg-warning-bg text-warning-fg",
-        variant === "danger" && "bg-danger-fg/10 text-danger-fg",
+          "border-control-border bg-muted/75 text-foreground/86",
+        variant === "success" &&
+          "border-[var(--status-ok-border)] bg-[var(--status-ok-bg)] text-[var(--status-ok-fg)]",
+        variant === "warning" &&
+          "border-[var(--status-warn-border)] bg-[var(--status-warn-bg)] text-[var(--status-warn-fg)]",
+        variant === "danger" &&
+          "border-[var(--status-err-border)] bg-[var(--status-err-bg)] text-[var(--status-err-fg)]",
         className,
       )}
       {...props}
@@ -340,6 +366,24 @@ export function StatusBadge({
 
   return (
     <Badge variant={variant} className={className} {...props}>
+      {variant === "success" && (
+        <Check aria-hidden="true" className="h-3 w-3 stroke-[2.5] shrink-0" />
+      )}
+      {variant === "xblue" && (
+        <span
+          aria-hidden="true"
+          className="h-2 w-2 rounded-full border-[1.75px] border-current shrink-0"
+        />
+      )}
+      {variant === "warning" && (
+        <AlertTriangle
+          aria-hidden="true"
+          className="h-3 w-3 stroke-[2.25] shrink-0"
+        />
+      )}
+      {variant === "danger" && (
+        <X aria-hidden="true" className="h-3 w-3 stroke-[2.5] shrink-0" />
+      )}
       {content}
     </Badge>
   );
@@ -352,7 +396,7 @@ export function Input({
   return (
     <input
       className={cn(
-        "flex h-8 w-full rounded-md border border-input bg-card px-2.5 py-1 text-xs text-foreground placeholder:text-muted-foreground transition-colors hover:border-border-hover focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/30 disabled:opacity-50",
+        "flex h-8 w-full rounded-md border border-control-border bg-control-bg px-2.5 py-1 text-xs text-foreground placeholder:text-muted-foreground transition-all duration-150 hover:bg-control-hover hover:border-border-hover focus:outline-none focus:bg-card focus:border-xblue focus:ring-2 focus:ring-xblue/25 disabled:opacity-50",
         className,
       )}
       {...props}
@@ -683,8 +727,8 @@ export function Select({
         }}
         onKeyDown={handleKeyDown}
         className={cn(
-          "inline-flex h-8 items-center justify-between gap-2 rounded-md border border-input bg-card px-2.5 py-1 text-xs text-foreground transition-all duration-150 hover:bg-hover-bg hover:border-border-hover focus:outline-none focus:ring-2 focus:ring-primary/35 disabled:opacity-50 disabled:pointer-events-none cursor-pointer text-left",
-          open && "ring-2 ring-primary/35 border-primary",
+          "inline-flex h-8 items-center justify-between gap-2 rounded-md border border-control-border bg-control-bg px-2.5 py-1 text-xs text-foreground transition-all duration-150 hover:bg-control-hover hover:border-border-hover focus:outline-none focus:bg-card focus:ring-2 focus:ring-xblue/25 disabled:opacity-50 disabled:pointer-events-none cursor-pointer text-left",
+          open && "bg-card ring-2 ring-xblue/25 border-xblue",
           className,
         )}
       >
@@ -855,7 +899,7 @@ export function NumberInput({
   return (
     <div
       className={cn(
-        "flex w-full min-w-0 h-8 items-center rounded-md border border-input bg-card overflow-hidden hover:border-border-hover focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/30 transition-colors",
+        "flex w-full min-w-0 h-8 items-center rounded-md border border-control-border bg-control-bg overflow-hidden hover:bg-control-hover hover:border-border-hover focus-within:bg-card focus-within:border-xblue focus-within:ring-2 focus-within:ring-xblue/25 transition-all duration-150",
         disabled && "opacity-50 pointer-events-none",
         className,
       )}
@@ -946,7 +990,7 @@ export function Textarea({
   return (
     <textarea
       className={cn(
-        "flex w-full rounded-md border border-input bg-card px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground transition-colors hover:border-border-hover focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/30 disabled:opacity-50",
+        "flex w-full rounded-md border border-control-border bg-control-bg px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground transition-all duration-150 hover:bg-control-hover hover:border-border-hover focus:outline-none focus:bg-card focus:border-xblue focus:ring-2 focus:ring-xblue/25 disabled:opacity-50",
         className,
       )}
       {...props}
@@ -972,7 +1016,7 @@ export function PageHeader({
   return (
     <div
       className={cn(
-        "flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3",
+        "flex flex-wrap items-center justify-between gap-3 pb-1",
         className,
       )}
     >
@@ -1069,7 +1113,7 @@ export function Tabs<K extends string>({
     <div
       role="tablist"
       className={cn(
-        "flex items-center gap-1 border-b border-border overflow-x-auto",
+        "flex items-center gap-1 border-b border-border-subtle overflow-x-auto",
         className,
       )}
     >
@@ -1085,10 +1129,10 @@ export function Tabs<K extends string>({
             data-testid={item.testId}
             onClick={() => onChange(item.key)}
             className={cn(
-              "inline-flex items-center gap-1.5 rounded-t-md border-b-2 px-2.5 py-2 text-xs font-medium whitespace-nowrap shrink-0 transition-colors disabled:opacity-40 disabled:pointer-events-none cursor-pointer -mb-px",
+              "inline-flex items-center gap-1.5 rounded-t-md border-b-2 px-2.5 py-2 text-xs font-medium whitespace-nowrap shrink-0 transition-all duration-150 disabled:opacity-40 disabled:pointer-events-none cursor-pointer -mb-px [&_svg]:transition-colors",
               active
-                ? "border-primary text-primary font-semibold"
-                : "border-transparent text-muted-foreground hover:text-foreground hover:bg-hover-bg/75",
+                ? "border-xblue text-xblue font-semibold"
+                : "border-transparent text-muted-foreground hover:text-foreground hover:bg-nav-hover-bg hover:border-border-hover hover:[&_svg]:text-xblue",
             )}
           >
             {item.icon}
@@ -1127,7 +1171,7 @@ export function SegmentedControl<K extends string>({
     <div
       role="tablist"
       className={cn(
-        "inline-flex h-8 items-center gap-0.5 rounded-md border border-border bg-muted/60 p-0.5",
+        "inline-flex h-8 items-center gap-0.5 rounded-md border border-border-subtle bg-muted/85 p-0.5",
         className,
       )}
     >
@@ -1143,10 +1187,10 @@ export function SegmentedControl<K extends string>({
             data-testid={item.testId}
             onClick={() => onChange(item.key)}
             className={cn(
-              "inline-flex h-full items-center gap-1.5 rounded-md px-2.5 text-xs whitespace-nowrap shrink-0 transition-colors disabled:opacity-40 cursor-pointer",
+              "inline-flex h-full items-center gap-1.5 rounded-md px-2.5 text-xs whitespace-nowrap shrink-0 transition-all duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] disabled:opacity-40 cursor-pointer [&_svg]:transition-colors",
               active
-                ? "bg-primary-soft text-primary font-semibold shadow-2xs"
-                : "font-medium text-muted-foreground hover:text-foreground hover:bg-hover-bg",
+                ? "bg-card text-foreground font-semibold shadow-[0_1px_2px_rgba(15,23,42,0.08)] dark:bg-control-hover [&_svg]:text-xblue"
+                : "font-medium text-muted-foreground hover:text-foreground hover:bg-nav-hover-bg hover:[&_svg]:text-xblue active:scale-[0.97]",
             )}
           >
             {item.icon}

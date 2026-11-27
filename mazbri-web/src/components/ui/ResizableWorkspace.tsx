@@ -362,7 +362,7 @@ export function ResizableWorkspace({
                   <span
                     aria-hidden="true"
                     className={cn(
-                      "relative flex items-center justify-center rounded-full bg-[var(--border-subtle,var(--border))] transition-all duration-150",
+                      "relative flex items-center justify-center rounded-full bg-transparent transition-all duration-150",
                       direction === "horizontal"
                         ? "h-full w-px group-hover:w-[3px] group-hover:bg-[var(--primary)] group-focus-visible:w-[3px] group-focus-visible:bg-[var(--primary)] group-data-[separator=hover]:w-[3px] group-data-[separator=hover]:bg-[var(--primary)] group-data-[separator=active]:w-[3px] group-data-[separator=active]:bg-[var(--primary)]"
                         : "w-full h-px group-hover:h-[3px] group-hover:bg-[var(--primary)] group-focus-visible:h-[3px] group-focus-visible:bg-[var(--primary)] group-data-[separator=hover]:h-[3px] group-data-[separator=hover]:bg-[var(--primary)] group-data-[separator=active]:h-[3px] group-data-[separator=active]:bg-[var(--primary)]",

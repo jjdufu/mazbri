@@ -479,9 +479,9 @@ export function LoginPage() {
 
   return (
     <div className="min-h-screen w-full flex bg-canvas-bg text-foreground">
-      <section className="hidden lg:flex lg:w-[44%] xl:w-[46%] bg-sidebar-bg text-slate-200 flex-col justify-between p-10 relative overflow-hidden shrink-0">
+      <section className="hidden lg:flex lg:w-[44%] xl:w-[46%] bg-brand-hero-bg text-slate-200 flex-col justify-between p-10 relative overflow-hidden shrink-0">
         <div className="flex items-center gap-2.5">
-          <span className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-sidebar-active text-white">
+          <span className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
             <Shield className="h-4 w-4" />
           </span>
           <span className="text-base font-semibold tracking-tight text-white">
@@ -506,7 +506,7 @@ export function LoginPage() {
       <section className="flex-1 flex flex-col bg-canvas-bg min-w-0">
         <div className="flex items-center justify-between lg:justify-end gap-2 px-6 py-4 shrink-0">
           <div className="flex items-center gap-2 lg:hidden">
-            <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-sidebar-active text-white">
+            <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
               <Shield className="h-4 w-4" />
             </span>
             <span className="text-sm font-semibold text-foreground">

@@ -272,7 +272,7 @@ export function DataTablePage<T extends RowData>({
 
       <Card className="flex flex-col flex-1 min-h-0 overflow-hidden">
         {hasToolbar && (
-          <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-border px-4 py-3 shrink-0">
+          <div className="flex flex-wrap items-center justify-between gap-2.5 px-4 pt-3.5 pb-2.5 shrink-0">
             <div className="flex flex-wrap items-center gap-2 min-w-0">
               {filters}
               {hasSelection && (
@@ -323,7 +323,7 @@ export function DataTablePage<T extends RowData>({
                 {headerGroups.map((headerGroup) => (
                   <tr
                     key={headerGroup.id}
-                    className="border-b border-border bg-transparent text-muted-foreground"
+                    className="border-y border-border-subtle bg-muted/45 text-muted-foreground"
                   >
                     {headerGroup.headers.map((header) => {
                       const colId = header.column.id;
@@ -370,8 +370,8 @@ export function DataTablePage<T extends RowData>({
                         onRowClick ? () => onRowClick(row.original) : undefined
                       }
                       className={cn(
-                        "group/row transition-colors hover:bg-muted/50",
-                        selected && "bg-primary-soft/50 hover:bg-primary-soft/75",
+                        "group/row transition-colors hover:bg-row-hover",
+                        selected && "bg-xblue-soft/65 hover:bg-xblue-soft",
                         onRowClick && "cursor-pointer",
                         rowClassName?.(row.original),
                       )}
@@ -414,7 +414,7 @@ export function DataTablePage<T extends RowData>({
         </div>
 
         {showPagination && (
-          <div className="mt-auto border-t border-border px-4 py-2.5 shrink-0">
+          <div className="mt-auto border-t border-border-subtle px-4 py-2.5 shrink-0">
             <Pagination
               page={page}
               pageSize={pageSize}

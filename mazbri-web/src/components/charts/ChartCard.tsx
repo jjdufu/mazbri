@@ -40,7 +40,7 @@ export function ChartCard({
 
   const content = (
     <>
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-3.5 pb-1">
         <div className="flex items-center gap-1.5 min-w-0">
           <h3 className="text-xs font-semibold text-foreground truncate">
             {title}
