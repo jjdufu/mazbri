@@ -1,3 +1,16 @@
+<!-- migration-iron-laws:begin -->
+> **⚠️ 迁移期专属铁律生效中（仅在 `.migration/ACTIVE` 存在时生效，迁移结束自动失效）**
+>
+> 本仓库正处于 **WebUI React 19 + xBlueNode 架构破坏性迁移阶段**：
+> 1. 凡 `.migration/ACTIVE` 存在时，所有会话与 Subagent **必须优先且严格遵守**：
+>    - `.migration/MIGRATION_IRON_LAWS.md`（10 条迁移期硬铁律）
+>    - `.migration/MIGRATION_PLAN.md`（7 阶段蓝图与 Subagent 互斥分工）
+>    - `.migration/FEATURE_PARITY_LEDGER.md`（U1~U4 公理 + 12 大好用特性保真与 20 项审计缺陷核销）
+>    - `.migration/PROGRESS.md`（跨会话交接账本）
+> 2. 迁移期间，下文**第三节（旧 Vue / Element Plus / Art Design Pro 规范）**及**第二节中对齐 GitHub Actions CI 的表述**临时挂起（开发迁移期不触发 GitHub CI，全部以 `.migration/gates/` 本机门禁 + 容器 `/tmp` 原子热替换 + `chrome-devtools` MCP `127.0.0.1:9224` 实测为准）。
+> 3. **退场自毁机制**：Stage 7 通过 `.migration/gates/gate-4-sunset-check.mjs` 后，删除本哨兵块与 `.migration/` 目录，并用 `.migration/POST_MIGRATION_AGENTS_SECTION3.md` 替换下文第三节，**本迁移铁律随即永久失效**。
+<!-- migration-iron-laws:end -->
+
 # Mazbri 项目开发铁律
 
 ## 一、架构与重构原则
