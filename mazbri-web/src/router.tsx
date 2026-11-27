@@ -25,12 +25,17 @@ function RequireAuth() {
   const { t } = useT();
   const isLogin = useAuthStore((s) => s.isLogin);
   const userId = useAuthStore((s) => s.info.id);
+  const userRole = useAuthStore((s) => s.info.role);
   const setUserInfo = useAuthStore((s) => s.setUserInfo);
   const logOut = useAuthStore((s) => s.logOut);
-  const [hydrating, setHydrating] = useState(false);
+  const needsHydration = isLogin && (!userId || !userRole);
+  const [hydrating, setHydrating] = useState(needsHydration);
 
   useEffect(() => {
-    if (!isLogin || userId) return;
+    if (!needsHydration) {
+      setHydrating(false);
+      return;
+    }
     let active = true;
     setHydrating(true);
     fetchGetUserInfo()
@@ -46,7 +51,7 @@ function RequireAuth() {
     return () => {
       active = false;
     };
-  }, [isLogin, userId, setUserInfo, logOut]);
+  }, [needsHydration, setUserInfo, logOut]);
 
   if (!isLogin) {
     const redirect = `${location.pathname}${location.search}`;
@@ -57,7 +62,7 @@ function RequireAuth() {
     return <Navigate to={target} replace />;
   }
 
-  if (hydrating && !userId) {
+  if (needsHydration || hydrating) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-canvas-bg text-muted-foreground text-xs">
         {t("layout.loading")}

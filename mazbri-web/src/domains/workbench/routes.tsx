@@ -13,7 +13,7 @@ function RequireWorkbenchRole({
   children: ReactNode;
 }) {
   const role = useAuthStore((s) => s.info.role);
-  if (role && !canAccessRoles(role, allowedRoles)) {
+  if (!canAccessRoles(role, allowedRoles)) {
     return <Navigate to="/403" replace />;
   }
   return <>{children}</>;

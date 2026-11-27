@@ -45,6 +45,7 @@ import {
   showWarningToast,
 } from "@/utils/ui/message-guard";
 import { isHttpError } from "@/utils/http/error";
+import { isMfaStepUpCancelled } from "@/utils/http/mfa-cancelled";
 import { isSessionHttpAuthActive } from "../engine/authMatrix";
 import { invalidationFromApi } from "../engine/authInvalidation";
 import {
@@ -101,7 +102,6 @@ import {
   projectEndpointsFromState,
   selectActiveEp,
   selectActiveEpIdx,
-  selectCanPublish,
   selectCanWriteWorkbench,
   selectDirty,
   selectRequiredCredKeys,
@@ -480,6 +480,9 @@ function buildLocalBlankDraft(): ConnectorDraft {
 }
 
 function isRunCancelled(err: unknown): boolean {
+  if (isMfaStepUpCancelled(err)) {
+    return true;
+  }
   if (isHttpError(err)) {
     return (
       err.cancelled || err.message === $t("httpMsg.requestCancelled")
@@ -1894,7 +1897,9 @@ export const useWorkbenchStore = create<WorkbenchStore>()((set, get) => {
           showSuccessToast($t("common.feedback.saveSuccess"));
         }
       } catch (err) {
-        set({ saveError: true });
+        if (!isMfaStepUpCancelled(err)) {
+          set({ saveError: true });
+        }
         throw err;
       } finally {
         set({ saving: false });
@@ -2301,7 +2306,8 @@ export const useWorkbenchStore = create<WorkbenchStore>()((set, get) => {
       if (!selectCanWriteWorkbench() || !get().draft) return;
       try {
         await get().saveDraft({ silent: true, navigate });
-      } catch {
+      } catch (err) {
+        if (isMfaStepUpCancelled(err)) return;
         showErrorToast($t("upstreamConnector.saveDraftFailed"));
         return;
       }
@@ -2316,11 +2322,6 @@ export const useWorkbenchStore = create<WorkbenchStore>()((set, get) => {
 
     async openPublish(navigate) {
       if (!selectCanWriteWorkbench()) return;
-      const state = get();
-      if (!selectCanPublish(state) && !selectCanWriteWorkbench()) {
-        showWarningToast($t("upstreamConnector.publishNeedRun"));
-        return;
-      }
       if (blockIfOriginCredsMissing()) return;
       if (blockIfUnresolved(selectUnresolvedAll(get()))) return;
 
@@ -2340,7 +2341,8 @@ export const useWorkbenchStore = create<WorkbenchStore>()((set, get) => {
 
       try {
         await get().saveDraft({ silent: true, navigate });
-      } catch {
+      } catch (err) {
+        if (isMfaStepUpCancelled(err)) return;
         showErrorToast($t("upstreamConnector.saveDraftFailed"));
         return;
       }
@@ -2371,7 +2373,13 @@ export const useWorkbenchStore = create<WorkbenchStore>()((set, get) => {
 
       set({ publishing: true, publishResult: null });
       try {
-        await get().saveDraft({ silent: true, navigate });
+        try {
+          await get().saveDraft({ silent: true, navigate });
+        } catch (err) {
+          if (isMfaStepUpCancelled(err)) return;
+          showErrorToast($t("upstreamConnector.saveDraftFailed"));
+          return;
+        }
         const curState = get();
         const curDraft = curState.draft!;
         const pf = curState.publishForm;
@@ -2428,6 +2436,13 @@ export const useWorkbenchStore = create<WorkbenchStore>()((set, get) => {
           if (updatedDraft) {
             syncRouteForDraft(updatedDraft, navigate);
           }
+        }
+      } catch (err) {
+        if (isMfaStepUpCancelled(err)) return;
+        if (!isHttpError(err)) {
+          showErrorToast(
+            err instanceof Error && err.message ? err.message : String(err),
+          );
         }
       } finally {
         set({ publishing: false });

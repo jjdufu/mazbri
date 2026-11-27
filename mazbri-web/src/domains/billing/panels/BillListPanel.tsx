@@ -55,6 +55,7 @@ import {
   EMPTY_PLACEHOLDER,
   formatBytes,
   formatDate,
+  formatDisplayDateYmd,
   formatMoney,
 } from "@/utils/format";
 import { getHttpErrorRawMessage } from "@/utils/http/error";
@@ -83,7 +84,7 @@ function formatDateKey(date?: string | null): string {
   if (!date) return "unknown-date";
   const parsed = new Date(date);
   if (Number.isNaN(parsed.getTime())) return "unknown-date";
-  return parsed.toISOString().slice(0, 10).replace(/-/g, "");
+  return formatDisplayDateYmd(parsed.getTime()).replace(/-/g, "");
 }
 
 function toIsoAtBoundary(date: string, endOfDay = false): string {

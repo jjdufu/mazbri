@@ -57,6 +57,7 @@ import { downloadCsv, serializeRawCsv } from "@/utils/csv";
 import {
   EMPTY_PLACEHOLDER,
   formatDate,
+  formatDateTime,
   formatDisplayDateYmd,
   formatMoney,
 } from "@/utils/format";
@@ -505,7 +506,7 @@ export function UsageReconciliationPanel({
       formatRatio(r.discrepancy_ratio),
       statusLabel(r.status),
       r.resolution_note || "",
-      r.created_at,
+      formatDateTime(r.created_at),
     ]);
     downloadCsv(
       `\uFEFF${serializeRawCsv([header, ...body])}\n`,

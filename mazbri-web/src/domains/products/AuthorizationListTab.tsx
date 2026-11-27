@@ -330,7 +330,7 @@ export function AuthorizationListTab() {
       unit_price: row.unit_price,
       cb_pro_fallback: row.cb_pro_fallback,
       enabled: row.enabled,
-      created_at: row.created_at,
+      created_at: row.created_at?.trim() ? formatDateTime(row.created_at) : "",
     }));
     exportResourceCsv(
       csvRows,

@@ -311,7 +311,7 @@ export function ProductListTab() {
       product_id: row.product_id,
       name: row.name,
       enabled: row.enabled,
-      created_at: row.created_at,
+      created_at: row.created_at?.trim() ? formatDateTime(row.created_at) : "",
     }));
     exportResourceCsv(
       csvRows,

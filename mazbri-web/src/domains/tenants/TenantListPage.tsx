@@ -316,7 +316,7 @@ export function TenantListPage() {
         contact_phone: row.contact_phone || "",
         contact_email: row.contact_email || "",
         status: getStatusLabel(row.enabled ? "enabled" : "disabled"),
-        created_at: row.created_at,
+        created_at: formatDateTime(row.created_at),
       }));
       exportResourceCsv(
         exportRows,

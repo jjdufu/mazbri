@@ -48,7 +48,11 @@ import { useT } from "@/locales";
 import { useAuthStore } from "@/stores/auth";
 import type { AuthorizationDetail, Product } from "@/types/api/product";
 import type { ListFilter } from "@/types/list-query";
-import { EMPTY_PLACEHOLDER, formatDateTime } from "@/utils/format";
+import {
+  EMPTY_PLACEHOLDER,
+  formatDateTime,
+  parseDisplayWallClockMs,
+} from "@/utils/format";
 import { getUserFacingErrorMessage } from "@/utils/http/error";
 import { isMfaStepUpCancelled } from "@/utils/http/mfa-cancelled";
 import { isBizRole } from "@/utils/ops/roles";
@@ -126,18 +130,25 @@ const DEFAULT_BINDING_FORM = (order: number): BindingFormState => ({
 });
 
 function toDatetimeLocalValue(iso: string): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso.slice(0, 16);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const normalized = iso.trim();
+  if (!normalized) return "";
+  const withSeconds = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}$/.test(normalized)
+    ? `${normalized}:00`
+    : normalized;
+  const ms = parseDisplayWallClockMs(withSeconds);
+  if (!Number.isFinite(ms)) return normalized.slice(0, 16);
+  return formatDateTime(ms).slice(0, 16).replace(" ", "T");
 }
 
 function toIsoFromDatetimeLocal(localVal: string): string {
-  if (!localVal) return "";
-  const d = new Date(localVal);
-  if (Number.isNaN(d.getTime())) return localVal;
-  return d.toISOString();
+  const normalized = localVal.trim().replace("T", " ");
+  if (!normalized) return "";
+  const withSeconds = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(normalized)
+    ? `${normalized}:00`
+    : normalized;
+  const ms = parseDisplayWallClockMs(withSeconds);
+  if (!Number.isFinite(ms)) return localVal;
+  return new Date(ms).toISOString();
 }
 
 export function ProductRoutesSection({
@@ -1022,7 +1033,9 @@ export function ProductRoutesSection({
         route_purpose:
           routePurposeLabelFromMetadata(row.metadata) ||
           routePurposeLabel(getString(rc.purpose)),
-        created_at: row.created_at,
+        created_at: row.created_at?.trim()
+          ? formatDateTime(row.created_at)
+          : "",
       };
     });
     exportResourceCsv(

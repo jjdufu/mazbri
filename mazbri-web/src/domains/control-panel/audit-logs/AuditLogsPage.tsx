@@ -40,6 +40,7 @@ import {
   formatDateTime,
   parseDisplayWallClockMs,
 } from "@/utils/format";
+import { isMfaStepUpCancelled } from "@/utils/http/mfa-cancelled";
 import { logger } from "@/utils/sys/logger";
 import {
   AuditDetailDrawer,
@@ -265,22 +266,25 @@ export function AuditLogsPage() {
           { key: "service", label: t("auditLogs.columns.service") },
           { key: "details", label: t("auditLogs.columns.details") },
         ]);
-        const stamp = new Date()
-          .toISOString()
-          .slice(0, 19)
+        const stamp = formatDateTime(Date.now())
+          .replace(" ", "_")
           .replaceAll(":", "-");
         downloadCsv(csv, `audit_logs_selected_${stamp}.csv`);
         return;
       }
 
       const csv = await exportAuditLogs(buildQueryParams(false));
-      const stamp = new Date().toISOString().slice(0, 19).replaceAll(":", "-");
+      const stamp = formatDateTime(Date.now())
+        .replace(" ", "_")
+        .replaceAll(":", "-");
       downloadCsv(
         csv.startsWith("\uFEFF") ? csv : `\uFEFF${csv}`,
         `audit_logs_all_${stamp}.csv`,
       );
     } catch (error) {
-      logger.error("Failed to export audit logs:", error);
+      if (!isMfaStepUpCancelled(error)) {
+        logger.error("Failed to export audit logs:", error);
+      }
     } finally {
       setExporting(false);
     }
