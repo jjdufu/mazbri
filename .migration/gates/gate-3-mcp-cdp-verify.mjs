@@ -178,7 +178,7 @@ async function auditCurrentView(label) {
       if (!txt || txt.length > 80) continue;
       const el = node.parentElement;
       if (!el || !isVis(el) || el.closest('code, pre')) continue;
-      if (/^[a-z][a-zA-Z0-9_-]*(\.[a-zA-Z0-9_-]+){2,}$/.test(txt) && !/\.(com|cn|io|net|org|pem|jws|json|yaml|yml|toml|csv)$/.test(txt)) {
+      if (/^[a-z][a-zA-Z0-9_-]*(\\.[a-zA-Z0-9_-]+){2,}$/.test(txt) && !/\\.(com|cn|io|net|org|pem|jws|json|yaml|yml|toml|csv)$/.test(txt)) {
         rawKeys.push(txt);
       }
     }
@@ -219,7 +219,7 @@ async function auditCurrentView(label) {
     const badRadii = [];
     for (const b of Array.from(document.querySelectorAll('button')).filter(isVis).slice(0, 80)) {
       const br = getComputedStyle(b).borderRadius;
-      if (/\d+\.\d+px/.test(br)) badRadii.push(br);
+      if (/\\d+\\.\\d+px/.test(br)) badRadii.push(br);
     }
 
     return {

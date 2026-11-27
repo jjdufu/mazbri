@@ -5,6 +5,9 @@ import { StorageConfig } from "@/utils/storage/storage-config";
 import { resetCaCertificateCache } from "@/api/certificate";
 import { resetCanonicalServiceNamesCache } from "@/api/service-names";
 import { resetSystemSettingsCache } from "@/api/settings";
+import { useLockScreenStore } from "@/stores/lockscreen";
+import { usePersonalSecurityStore } from "@/stores/personal-security";
+import { useWatermarkStore } from "@/stores/watermark";
 
 export type AuthUserInfo = Partial<AdminUser> & {
   userName?: string;
@@ -95,6 +98,9 @@ export const useAuthStore = create<AuthState>()(
         resetCanonicalServiceNamesCache();
         resetCaCertificateCache();
         resetSystemSettingsCache();
+        useLockScreenStore.getState().reset();
+        usePersonalSecurityStore.getState().closeDrawer();
+        useWatermarkStore.getState().reset();
       },
       logOut: async (options?: { skipRemote?: boolean }) => {
         set({ isLoggingOut: true });

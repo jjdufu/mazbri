@@ -5,8 +5,8 @@
 | 阶段 | 阶段名称 | 状态 | 负责方式 | Commit SHA | 门禁结果 | 磁盘快照 | 备注 |
 | :--- | :--- | :---: | :--- | :---: | :--- | :--- | :--- |
 | **Stage 0** | 迁移治理包、参照资产与门禁落库 | ✅ DONE | 规划阶段 | `cbac270` | 治理包自检通过 | — | 仅落盘 `.migration/` 与 `AGENTS.md` 哨兵块，未动业务代码 |
-| **Stage 1** | 旧代码隔离 + React 19 工程初始化 + 3.3 万行纯 TS/JSON 资产平移 + Rust 路径对齐 | ✅ DONE | 单 Agent | *(Stage 1 提交)* | `gate-0/1` PASS；`tsc`+`build` PASS；TS 单测 170/170 PASS；`cargo test --release` mgmt 355 + cert 82 PASS；`clippy -D warnings` PASS；`ts-rs` 零漂移 | `/` 65% (63G 可用)；`mazbri-web` 258M；`mazbri-web-legacy` 371M；`target` 3.3G | 已隔离 `mazbri-web-legacy/`，完成纯 TS/JSON 平移、4 个缺失 i18n Key 补齐、Zustand HTTP/MFA 桥接层重写与 Rust `labels.ts` 路径对齐 |
-| **Stage 2** | Design System + xBlueNode 原语移植 + 4 大 B 端骨架壳 + AppShell + 认证/MFA/锁屏闭环 | ⬜ PENDING | 2 并行 Subagent | — | 待执行 | — | 目标：底座封板 + 首次容器热替换 + `9224` 登录/MFA/暗色初验 |
+| **Stage 1** | 旧代码隔离 + React 19 工程初始化 + 3.3 万行纯 TS/JSON 资产平移 + Rust 路径对齐 | ✅ DONE | 单 Agent | `3394f90` | `gate-0/1` PASS；`tsc`+`build` PASS；TS 单测 170/170 PASS；`cargo test --release` mgmt 355 + cert 82 PASS；`clippy -D warnings` PASS；`ts-rs` 零漂移 | `/` 65% (63G 可用)；`mazbri-web` 258M；`mazbri-web-legacy` 371M；`target` 3.3G | 已隔离 `mazbri-web-legacy/`，完成纯 TS/JSON 平移、4 个缺失 i18n Key 补齐、Zustand HTTP/MFA 桥接层重写与 Rust `labels.ts` 路径对齐 |
+| **Stage 2** | Design System + xBlueNode 原语移植 + 4 大 B 端骨架壳 + AppShell + 认证/MFA/锁屏闭环 | ✅ DONE | 2 并行 Subagent | *(Stage 2 提交)* | `gate-0/1/2/3` PASS；`tsc`+`build` PASS；TS 单测 170/170 PASS；`cargo test --release -p mazbri-mgmt` 355/355 PASS；`ts-rs` 零漂移；MCP `9224` 实机双分辨率/亮暗/MFA/热切/锁屏/安全抽屉零报错 | `/` 65% (63G 可用)；`mazbri-web/node_modules` 255M；`target` 3.4G | **底座正式封板**：`src/styles/` 与 `src/components/ui/` 自本提交起封板，后续业务阶段严禁擅改；已勾选 `F01`/`F02`/`U4` |
 | **Stage 3** | 控制面板域（5 页）+ 运维监控域（3 页 + 2 详情页 + 统一 ECharts 包装器） | ⬜ PENDING | 2 并行 Subagent | — | 待执行 | — | 目标：`gate-1/2/3` 全绿 + MCP 交互抽检通过 |
 | **Stage 4** | 运营中心核心域（租户 5 Tab 重构/账单结算/产品治理/上游供给/回调订阅） | ⬜ PENDING | 2 并行 Subagent | — | 待执行 | — | 目标：旧版 20 项审计缺陷主体清零 + 充值/MFA/加密链路通过 |
 | **Stage 5** | 免代码接入工作台（`upstream-connectors`）独立重构 | ⬜ PENDING | 专项 Subagent 组 | — | 待执行 | — | 目标：复用 4,144 行纯 TS 引擎 + 融入主站视觉与亮暗模式 |

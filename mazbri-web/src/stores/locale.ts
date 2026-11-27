@@ -40,8 +40,14 @@ export interface LocaleState {
   toggleLocale: () => void;
 }
 
+const initialLocale = readInitialLocale();
+if (typeof document !== "undefined") {
+  document.documentElement.lang =
+    initialLocale === LanguageEnum.EN ? "en" : "zh-CN";
+}
+
 export const useLocaleStore = create<LocaleState>((set, get) => ({
-  locale: readInitialLocale(),
+  locale: initialLocale,
   setLocale: (locale: LanguageEnum) => {
     if (!isLanguageEnum(locale)) return;
     if (typeof localStorage !== "undefined") {
