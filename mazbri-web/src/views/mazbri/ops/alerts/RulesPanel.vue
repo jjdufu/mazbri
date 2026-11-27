@@ -314,6 +314,7 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from "vue";
 import { useI18n } from "vue-i18n";
+import { isMfaStepUpCancelled } from "@/utils/http/mfa-dialog-service";
 import { useRouter } from "vue-router";
 import {
   ElMessage,
@@ -530,15 +531,21 @@ async function save() {
     ElMessage.success(t("ops.alerts.rules.saved"));
     dialogVisible.value = false;
     await reload();
+  } catch (error) {
+    if (isMfaStepUpCancelled(error)) return;
   } finally {
     saving.value = false;
   }
 }
 
 async function toggle(rule: AlertRule, enabled: boolean) {
-  await setAlertRuleEnabled(rule.id, enabled);
-  ElMessage.success(t("ops.alerts.rules.saved"));
-  await reload();
+  try {
+    await setAlertRuleEnabled(rule.id, enabled);
+    ElMessage.success(t("ops.alerts.rules.saved"));
+    await reload();
+  } catch (error) {
+    if (isMfaStepUpCancelled(error)) return;
+  }
 }
 
 async function remove(rule: AlertRule) {
@@ -551,9 +558,13 @@ async function remove(rule: AlertRule) {
   } catch {
     return;
   }
-  await deleteAlertRule(rule.id);
-  ElMessage.success(t("ops.alerts.rules.deleted"));
-  await reload();
+  try {
+    await deleteAlertRule(rule.id);
+    ElMessage.success(t("ops.alerts.rules.deleted"));
+    await reload();
+  } catch (error) {
+    if (isMfaStepUpCancelled(error)) return;
+  }
 }
 
 onMounted(reload);

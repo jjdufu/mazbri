@@ -20,7 +20,7 @@ pub async fn list_services(
         trace_id,
     )
     .await?;
-    let configs: Vec<serde_json::Value> = resp.json().await.map_err(|e| {
+    let search_page: super::query::CertConfigSearchPage = resp.json().await.map_err(|e| {
         dependency_internal_error(
             "config_center_list_services_failed",
             request_id,
@@ -28,7 +28,8 @@ pub async fn list_services(
             &e,
         )
     })?;
-    let mut services = configs
+    let mut services = search_page
+        .items
         .into_iter()
         .filter_map(|config| {
             config

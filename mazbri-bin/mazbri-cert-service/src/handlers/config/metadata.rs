@@ -156,9 +156,13 @@ pub async fn search_configs(
         "配置搜索请求"
     );
     match state.repo.search_configs(&query).await {
-        Ok(results) => {
-            info!(result_count = results.len(), "配置搜索完成");
-            (StatusCode::OK, Json(results)).into_response()
+        Ok(page) => {
+            info!(
+                result_count = page.items.len(),
+                total = page.total,
+                "配置搜索完成"
+            );
+            (StatusCode::OK, Json(page)).into_response()
         }
         Err(e) => logged_config_error_response(
             "search_configs",

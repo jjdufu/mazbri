@@ -292,6 +292,7 @@
 </template>
 <script setup lang="ts">
 import TenantTabShell from "@/components/common/tenant-tab-shell/index.vue";
+import { isMfaStepUpCancelled } from "@/utils/http/mfa-dialog-service";
 import {
   activateTenantCryptoKey,
   createTenantCryptoKey,
@@ -517,7 +518,9 @@ const loadData = async () => {
       manage_root_package: false,
     };
     isInitialized.value = false;
-    logger.error("Failed to load tenant crypto settings:", error);
+    if (!isMfaStepUpCancelled(error)) {
+      logger.error("Failed to load tenant crypto settings:", error);
+    }
   }
 };
 
@@ -536,6 +539,10 @@ const createKey = async () => {
   try {
     showSecret(await createTenantCryptoKey(props.tenantCode));
     await loadData();
+  } catch (error) {
+    if (!isMfaStepUpCancelled(error)) {
+      logger.error("Failed to create crypto key", error);
+    }
   } finally {
     creating.value = false;
   }
@@ -547,6 +554,10 @@ const rotateKey = async () => {
   try {
     showSecret(await rotateTenantCryptoKey(props.tenantCode));
     await loadData();
+  } catch (error) {
+    if (!isMfaStepUpCancelled(error)) {
+      logger.error("Failed to rotate crypto key", error);
+    }
   } finally {
     rotating.value = false;
   }
@@ -556,11 +567,17 @@ const setStatus = async (version: string, action: "activate" | "disable") => {
   if (!tenantCryptoEnabled.value) return;
   if (action === "activate" && !cryptoActions.value.activate_key) return;
   if (action === "disable" && !cryptoActions.value.disable_key) return;
-  if (action === "activate")
-    await activateTenantCryptoKey(props.tenantCode, version);
-  if (action === "disable")
-    await disableTenantCryptoKey(props.tenantCode, version);
-  await loadData();
+  try {
+    if (action === "activate")
+      await activateTenantCryptoKey(props.tenantCode, version);
+    if (action === "disable")
+      await disableTenantCryptoKey(props.tenantCode, version);
+    await loadData();
+  } catch (error) {
+    if (!isMfaStepUpCancelled(error)) {
+      logger.error("Failed to update crypto key status", error);
+    }
+  }
 };
 
 const handleDelete = async (version: string) => {
@@ -579,7 +596,7 @@ const handleDelete = async (version: string) => {
     ElMessage.success($t("common.feedback.deleteSuccess"));
     await loadData();
   } catch (error) {
-    if (error !== "cancel") {
+    if (error !== "cancel" && !isMfaStepUpCancelled(error)) {
       logger.error("Failed to delete crypto key version", error);
     }
   }

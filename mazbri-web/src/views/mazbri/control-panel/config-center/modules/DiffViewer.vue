@@ -1,9 +1,17 @@
 <template>
-  <div class="diff-viewer">
+  <div ref="viewerRoot" class="diff-viewer">
     <div class="diff-header mb-2">
-      <ElTag type="info">{{ oldLabel }}</ElTag>
-      <ElIcon class="mx-2"><Right /></ElIcon>
-      <ElTag type="success">{{ newLabel }}</ElTag>
+      <div class="diff-header__labels">
+        <ElTag type="info">{{ oldLabel }}</ElTag>
+        <ElIcon class="mx-2"><Right /></ElIcon>
+        <ElTag type="success">{{ newLabel }}</ElTag>
+      </div>
+      <ElSegmented
+        :model-value="effectiveFormat"
+        :options="formatOptions"
+        size="small"
+        @update:model-value="handleFormatChange"
+      />
     </div>
 
     <div ref="diffContainer" class="diff-container"></div>
@@ -11,7 +19,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import { $t } from "@/locales";
 import { Right } from "@element-plus/icons-vue";
 import * as Diff from "diff";
@@ -26,8 +35,66 @@ interface Props {
   newLabel: string;
 }
 
+type DiffOutputFormat = "side-by-side" | "line-by-line";
+
+const NARROW_WIDTH_THRESHOLD = 820;
+
 const props = defineProps<Props>();
+const { locale } = useI18n();
+const viewerRoot = ref<HTMLElement | null>(null);
 const diffContainer = ref<HTMLElement | null>(null);
+const containerWidth = ref<number>(0);
+const userFormat = ref<DiffOutputFormat | null>(null);
+
+const effectiveFormat = computed<DiffOutputFormat>(() => {
+  if (userFormat.value) return userFormat.value;
+  if (containerWidth.value > 0 && containerWidth.value < NARROW_WIDTH_THRESHOLD) {
+    return "line-by-line";
+  }
+  return "side-by-side";
+});
+
+const formatOptions = computed(() => {
+  void locale.value;
+  return [
+    {
+      label: $t("configCenter.diffViewer.sideBySide"),
+      value: "side-by-side" as const,
+    },
+    {
+      label: $t("configCenter.diffViewer.unified"),
+      value: "line-by-line" as const,
+    },
+  ];
+});
+
+const handleFormatChange = (val: string | number | boolean) => {
+  if (val === "side-by-side" || val === "line-by-line") {
+    userFormat.value = val;
+  }
+};
+
+let resizeObserver: ResizeObserver | null = null;
+
+onMounted(() => {
+  const el = viewerRoot.value;
+  if (!el) return;
+  containerWidth.value = el.getBoundingClientRect().width;
+  if (typeof ResizeObserver !== "undefined") {
+    resizeObserver = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry) {
+        containerWidth.value = entry.contentRect.width;
+      }
+    });
+    resizeObserver.observe(el);
+  }
+});
+
+onBeforeUnmount(() => {
+  resizeObserver?.disconnect();
+  resizeObserver = null;
+});
 
 const diffHtml = computed(() => {
   if (props.oldContent === props.newContent) {
@@ -44,7 +111,7 @@ const diffHtml = computed(() => {
   const rawHtml = diff2html(diffPatch, {
     drawFileList: false,
     matching: "lines",
-    outputFormat: "side-by-side",
+    outputFormat: effectiveFormat.value,
   });
   return DOMPurify.sanitize(rawHtml);
 });
@@ -71,7 +138,15 @@ watch(
 .diff-header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   flex-shrink: 0;
+}
+
+.diff-header__labels {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
 }
 
 .diff-container {

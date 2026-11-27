@@ -89,6 +89,8 @@ pub const ACTION_LABELS: &[(&str, &str)] = &[
     ("apikey.revoke", "撤销 API 密钥"),
     ("apikey.rotate", "轮换 API 密钥"),
     ("user.login", "登录"),
+    ("user.login_mfa_challenge", "登录口令核验"),
+    ("user.login_password_reset_required", "登录口令核验（待改密）"),
     ("user.logout", "登出"),
     ("user.update", "更新用户"),
     ("user.delete", "删除用户"),

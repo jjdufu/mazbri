@@ -482,6 +482,7 @@
 <script setup lang="ts">
 import CopyableText from "@/components/common/copyable-text/index.vue";
 import { ref } from "vue";
+import { isMfaStepUpCancelled } from "@/utils/http/mfa-dialog-service";
 import { useI18n } from "vue-i18n";
 import type { ListFilter } from "@/types/list-query";
 import { billsCatalog } from "@/list-catalog/common-resources";
@@ -1261,6 +1262,7 @@ const handleGenerateBill = async () => {
     resetGenerateForm();
     await loadData();
   }).catch((error) => {
+    if (isMfaStepUpCancelled(error)) return;
     logger.error("Failed to generate bill:", error);
     ElMessage.error(resolveGenerateBillError(error));
   });
@@ -1281,7 +1283,7 @@ const handleDeleteRow = async (row: Bill) => {
     await loadData();
     selectedRows.value = [];
   } catch (error) {
-    if (error !== "cancel") {
+    if (error !== "cancel" && !isMfaStepUpCancelled(error)) {
       logger.error("Failed to delete bill:", error);
     }
   }

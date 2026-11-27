@@ -2,16 +2,31 @@
   <div
     ref="rootRef"
     class="table-header-date-picker-popover"
-    :class="{ 'is-expanded': expanded, 'has-value': hasValue }"
+    :class="{
+      'is-expanded': expanded,
+      'has-value': hasValue,
+      'is-toolbar-button': variant === 'toolbar-button',
+    }"
     :style="panelStyle"
   >
-    <ElTooltip v-if="!expanded" :content="tooltipText" placement="top">
+    <ElTooltip
+      v-if="!expanded"
+      :content="tooltipText"
+      :disabled="variant === 'toolbar-button' && !hasValue"
+      placement="top"
+    >
       <button
         type="button"
         class="table-header-date-picker-popover__trigger"
         @click="handleExpand"
       >
         <ArtSvgIcon :icon="icon" />
+        <span
+          v-if="variant === 'toolbar-button'"
+          class="table-header-date-picker-popover__trigger-text"
+        >
+          {{ toolbarLabel }}
+        </span>
       </button>
     </ElTooltip>
 
@@ -50,21 +65,20 @@ defineOptions({
   inheritAttrs: false,
 });
 interface Props {
-
-
-
-
   width?: number | string;
   tooltip?: string;
   activeText?: string;
   icon?: string;
+  variant?: "header-icon" | "toolbar-button";
+  label?: string;
 }
 const props = withDefaults(defineProps<Props>(), {
-
   width: 360,
   tooltip: undefined,
   activeText: undefined,
   icon: "ri:calendar-line",
+  variant: "header-icon",
+  label: undefined,
 });
 const { t } = useI18n();
 const modelValue = defineModel<any>();
@@ -86,6 +100,10 @@ const activeText = computed(
 const hasValue = computed(() => {
   const value = modelValue.value;
   return Array.isArray(value) ? value.some(Boolean) : Boolean(value);
+});
+const toolbarLabel = computed(() => {
+  if (props.label) return props.label;
+  return t("common.datePickerPopover.timeRange");
 });
 const focusDateField = async () => {
   await nextTick();
@@ -174,6 +192,29 @@ const handleCollapse = () => {
   &:hover {
     background: color-mix(in srgb, var(--theme-color) 8%, transparent);
     color: var(--art-gray-900);
+  }
+}
+
+.table-header-date-picker-popover.is-toolbar-button {
+  .table-header-date-picker-popover__trigger {
+    width: auto;
+    height: 32px;
+    padding: 0 12px;
+    border: 1px solid var(--el-border-color);
+    background: var(--el-fill-color-blank);
+    color: var(--el-text-color-regular);
+
+    &:hover {
+      border-color: var(--el-color-primary-light-5);
+      background: var(--el-color-primary-light-9);
+      color: var(--el-color-primary);
+    }
+  }
+
+  &.has-value .table-header-date-picker-popover__trigger {
+    border-color: var(--el-color-primary-light-5);
+    background: var(--el-color-primary-light-9);
+    color: var(--el-color-primary);
   }
 }
 

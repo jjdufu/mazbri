@@ -31,6 +31,7 @@
 <script setup lang="ts">
 import { ElMessage } from "element-plus";
 import { saveAs } from "file-saver";
+import { isMfaStepUpCancelled } from "@/utils/http/mfa-dialog-service";
 import { $t } from "@/locales";
 import { exportConfigs, fetchServiceList } from "@/api/config-center";
 import EditDialog from "@/components/common/EditDialog.vue";
@@ -97,7 +98,9 @@ const handleExport = async () => {
     visible.value = false;
     emit("success");
   }).catch((error: unknown) => {
-    logger.error("Failed to export configs:", error);
+    if (!isMfaStepUpCancelled(error)) {
+      logger.error("Failed to export configs:", error);
+    }
   });
 };
 </script>

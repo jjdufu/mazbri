@@ -328,6 +328,26 @@ async fn finish_required_enable(args: FinishRequiredEnable<'_>) -> axum::respons
         })),
         args.params.client_ip.clone(),
     ));
+    if let Err(e) = args
+        .params
+        .audit
+        .log_critical(user_audit(
+            args.user_id,
+            AuditAction::UserLogin,
+            Some(serde_json::json!({
+                "username": args.username,
+                "role": args.role,
+                "login_stage": "mfa_required_enable",
+            })),
+            args.params.client_ip.clone(),
+        ))
+        .await
+    {
+        error!(
+            "Failed to write critical audit log for login after required MFA enable: {}",
+            e
+        );
+    }
     info!("MFA required enabled for user: {}", args.username);
     let user = AdminUser {
         id: args.claims.user_id.clone(),

@@ -6,7 +6,9 @@
     dialog-class="config-edit-dialog"
     :confirm-text="$t('common.actions.save')"
     :saving="saving"
-    :confirm-disabled="authorizationDisabled || loadingDetail"
+    :confirm-disabled="
+      authorizationDisabled || loadingDetail || (isEdit && !detailLoaded)
+    "
     :confirm-disabled-reason="authorizationDisabledReason"
     @confirm="handleSave"
     @closed="handleClosed"
@@ -166,6 +168,7 @@ const visible = computed({
 const formRef = ref<FormInstance>();
 const tomlEditorRef = ref<InstanceType<typeof TomlEditor> | null>(null);
 const saving = ref(false);
+const detailLoaded = ref(false);
 const validationError = ref<string | null>(null);
 
 const isEdit = computed(() => !!props.config);
@@ -280,6 +283,7 @@ const detailLoader = useLatestRequest(async (ctx, serviceName: string) => {
   }
   form.service_name = detail.service_name;
   form.content = detail.content;
+  detailLoaded.value = true;
   if (detail.service_name === "mazbri-gateway") {
     const parsed = parseGatewayCors(detail.content);
     gatewayCors.allowed_origins = parsed.allowed_origins;
@@ -291,6 +295,7 @@ const detailLoader = useLatestRequest(async (ctx, serviceName: string) => {
 const { loading: loadingDetail } = detailLoader;
 
 const loadConfigDetail = async (serviceName: string) => {
+  detailLoaded.value = false;
   try {
     await detailLoader.run(serviceName);
   } catch (error: unknown) {
@@ -364,7 +369,7 @@ const handleSave = async () => {
     ElMessage.warning(authorizationDisabledReason.value);
     return;
   }
-  if (loadingDetail.value) {
+  if (loadingDetail.value || (isEdit.value && !detailLoaded.value)) {
     return;
   }
   if (form.service_name === "mazbri-gateway" && activeTab.value === "visual") {
@@ -408,6 +413,7 @@ const handleSave = async () => {
 
 const handleClosed = () => {
   detailLoader.cancel();
+  detailLoaded.value = false;
   formRef.value?.resetFields();
   validationError.value = null;
   inputOriginVisible.value = false;

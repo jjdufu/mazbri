@@ -267,6 +267,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
+import { isMfaStepUpCancelled } from "@/utils/http/mfa-dialog-service";
 import { useI18n } from "vue-i18n";
 import { $t } from "@/locales";
 import type { AdminUser } from "@/types/api/admin";
@@ -377,7 +378,9 @@ async function handleStatusChange(active: string | number | boolean): Promise<vo
       emit("changed");
     });
   } catch (error) {
-    logger.error("Failed to change admin status:", error);
+    if (!isMfaStepUpCancelled(error)) {
+      logger.error("Failed to change admin status:", error);
+    }
   }
 }
 
@@ -402,7 +405,7 @@ async function handleResetMfa(): Promise<void> {
       emit("changed");
     });
   } catch (error) {
-    if (error !== "cancel") {
+    if (error !== "cancel" && !isMfaStepUpCancelled(error)) {
       logger.error("Failed to reset MFA:", error);
     }
   }
@@ -429,7 +432,7 @@ async function handleDelete(): Promise<void> {
       emit("deleted");
     });
   } catch (error) {
-    if (error !== "cancel") {
+    if (error !== "cancel" && !isMfaStepUpCancelled(error)) {
       logger.error("Failed to delete user:", error);
     }
   }

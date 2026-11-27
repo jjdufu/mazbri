@@ -45,6 +45,10 @@
         <span class="config-service-name">{{ row.service_name }}</span>
       </template>
 
+      <template #version="{ row }">
+        <span class="config-version-text tabular-nums">v{{ row.version ?? 1 }}</span>
+      </template>
+
       <template #updated_by="{ row }">
         <span>{{ row.updated_by || "—" }}</span>
       </template>

@@ -24,6 +24,9 @@ export const ACTION_LABELS: Record<string, string> = {
   "apikey.revoke": "auditLogs.explicitActions.apiKeyRevoke",
   "apikey.rotate": "auditLogs.explicitActions.apiKeyRotate",
   "user.login": "auditLogs.explicitActions.userLogin",
+  "user.login_mfa_challenge": "auditLogs.explicitActions.userLoginMfaChallenge",
+  "user.login_password_reset_required":
+    "auditLogs.explicitActions.userLoginPasswordResetRequired",
   "user.logout": "auditLogs.explicitActions.userLogout",
   "user.update": "auditLogs.explicitActions.userUpdate",
   "user.delete": "auditLogs.explicitActions.userDelete",

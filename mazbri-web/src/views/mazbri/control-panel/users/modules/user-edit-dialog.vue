@@ -74,6 +74,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from "vue";
 import { ElMessage, type FormInstance, type FormRules } from "element-plus";
+import { isMfaStepUpCancelled } from "@/utils/http/mfa-dialog-service";
 import { useI18n } from "vue-i18n";
 import { $t } from "@/locales";
 import type {
@@ -183,7 +184,9 @@ async function handleSubmit(): Promise<void> {
     emit("success", updated);
     ElMessage.success($t("common.feedback.saveSuccess"));
   }).catch((error) => {
-    logger.error("Failed to update admin:", error);
+    if (!isMfaStepUpCancelled(error)) {
+      logger.error("Failed to update admin:", error);
+    }
   });
 }
 

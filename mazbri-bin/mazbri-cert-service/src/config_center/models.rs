@@ -132,8 +132,14 @@ pub struct ConfigCategory {
 pub struct ConfigEntryWithMeta {
     #[serde(flatten)]
     pub entry: ConfigEntry,
+    pub version: i32,
     pub tags: Vec<ConfigTag>,
     pub category: Option<ConfigCategory>,
+}
+#[derive(Debug, Clone, Serialize)]
+pub struct ConfigSearchPage {
+    pub items: Vec<ConfigEntryWithMeta>,
+    pub total: i64,
 }
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]

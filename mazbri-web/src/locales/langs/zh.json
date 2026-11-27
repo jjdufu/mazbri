@@ -144,7 +144,8 @@
     },
     "datePickerPopover": {
       "tooltip": "日期筛选",
-      "collapse": "收起日期"
+      "collapse": "收起日期",
+      "timeRange": "时间范围"
     },
     "datePicker": {
       "shortcuts": {
@@ -1359,6 +1360,8 @@
       "apiKeyRevoke": "撤销 API 密钥",
       "apiKeyRotate": "轮换 API 密钥",
       "userLogin": "登录",
+      "userLoginMfaChallenge": "登录口令核验",
+      "userLoginPasswordResetRequired": "登录口令核验（待改密）",
       "userLogout": "登出",
       "userUpdate": "更新用户",
       "userDelete": "删除用户",
@@ -1895,6 +1898,7 @@
     },
     "columns": {
       "serviceName": "服务名",
+      "version": "版本",
       "updatedBy": "更新人",
       "updatedAt": "更新时间",
       "operation": "操作"
@@ -1988,7 +1992,9 @@
     "diffViewer": {
       "version": "版本 {version}",
       "currentActive": "当前生效配置",
-      "noChanges": "两个版本内容相同"
+      "noChanges": "两个版本内容相同",
+      "sideBySide": "并排",
+      "unified": "统一"
     },
     "messages": {
       "coreProtectedDeleteTip": "平台核心配置受保护不可删除，请使用编辑或版本回滚",

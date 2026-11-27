@@ -573,6 +573,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
 import type { ListFilter } from "@/types/list-query";
+import { isMfaStepUpCancelled } from "@/utils/http/mfa-dialog-service";
 import { reconciliationCatalog } from "@/list-catalog/common-resources";
 import { ElMessage, ElMessageBox } from "element-plus";
 import type { FormInstance, FormRules } from "element-plus";
@@ -1166,7 +1167,9 @@ const handleRunAudit = async () => {
     runDialogVisible.value = false;
     await reloadAll();
   }).catch((error) => {
-    logger.error("Failed to run reconciliation audit:", error);
+    if (!isMfaStepUpCancelled(error)) {
+      logger.error("Failed to run reconciliation audit:", error);
+    }
   });
 };
 
@@ -1233,7 +1236,7 @@ const handleDeleteRow = async (row: ReconciliationDiscrepancy) => {
     selectedRows.value = [];
     await reloadAll();
   } catch (error) {
-    if (error !== "cancel") {
+    if (error !== "cancel" && !isMfaStepUpCancelled(error)) {
       logger.error("Failed to delete reconciliation discrepancy:", error);
     }
   }
@@ -1267,7 +1270,9 @@ const handleSubmitResolve = async () => {
     resolveVisible.value = false;
     await reloadAll();
   } catch (error) {
-    logger.error("Failed to update reconciliation discrepancy:", error);
+    if (!isMfaStepUpCancelled(error)) {
+      logger.error("Failed to update reconciliation discrepancy:", error);
+    }
   } finally {
     resolveLoading.value = false;
   }
@@ -1333,7 +1338,9 @@ const handleSaveSettings = async () => {
     policyDialogVisible.value = false;
     ElMessage.success($t("billing.reconciliation.settingsSaved"));
   } catch (error) {
-    logger.error("Failed to save reconciliation settings:", error);
+    if (!isMfaStepUpCancelled(error)) {
+      logger.error("Failed to save reconciliation settings:", error);
+    }
   } finally {
     settingsSaving.value = false;
   }

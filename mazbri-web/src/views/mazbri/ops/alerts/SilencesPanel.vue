@@ -209,6 +209,7 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from "vue";
 import { useI18n } from "vue-i18n";
+import { isMfaStepUpCancelled } from "@/utils/http/mfa-dialog-service";
 import { ElMessage, ElMessageBox } from "element-plus";
 import EditDialog from "@/components/common/EditDialog.vue";
 import OpsCard from "@/components/ops/OpsCard.vue";
@@ -300,6 +301,7 @@ async function save() {
     ElMessage.success(t("common.success"));
     await reload();
   } catch (e) {
+    if (isMfaStepUpCancelled(e)) return;
     ElMessage.error((e as Error).message || t("common.failed"));
   } finally {
     saving.value = false;
@@ -323,6 +325,7 @@ async function saveInhibit() {
     ElMessage.success(t("common.success"));
     await reload();
   } catch (e) {
+    if (isMfaStepUpCancelled(e)) return;
     ElMessage.error((e as Error).message || t("common.failed"));
   } finally {
     saving.value = false;
@@ -330,15 +333,31 @@ async function saveInhibit() {
 }
 
 async function remove(id: string) {
-  await ElMessageBox.confirm(t("common.confirmDelete"), { type: "warning" });
-  await deleteAlertSilence(id);
-  await reload();
+  try {
+    await ElMessageBox.confirm(t("common.confirmDelete"), { type: "warning" });
+  } catch {
+    return;
+  }
+  try {
+    await deleteAlertSilence(id);
+    await reload();
+  } catch (e) {
+    if (isMfaStepUpCancelled(e)) return;
+  }
 }
 
 async function removeInhibit(id: string) {
-  await ElMessageBox.confirm(t("common.confirmDelete"), { type: "warning" });
-  await deleteAlertInhibit(id);
-  await reload();
+  try {
+    await ElMessageBox.confirm(t("common.confirmDelete"), { type: "warning" });
+  } catch {
+    return;
+  }
+  try {
+    await deleteAlertInhibit(id);
+    await reload();
+  } catch (e) {
+    if (isMfaStepUpCancelled(e)) return;
+  }
 }
 
 onMounted(reload);

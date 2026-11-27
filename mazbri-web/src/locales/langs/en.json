@@ -144,7 +144,8 @@
     },
     "datePickerPopover": {
       "tooltip": "Date filter",
-      "collapse": "Collapse date"
+      "collapse": "Collapse date",
+      "timeRange": "Time Range"
     },
     "datePicker": {
       "shortcuts": {
@@ -1359,6 +1360,8 @@
       "apiKeyRevoke": "Revoke API Key",
       "apiKeyRotate": "Rotate API Key",
       "userLogin": "Login",
+      "userLoginMfaChallenge": "Password Verified (MFA Pending)",
+      "userLoginPasswordResetRequired": "Password Verified (Reset Required)",
       "userLogout": "Logout",
       "userUpdate": "Update User",
       "userDelete": "Delete User",
@@ -1895,6 +1898,7 @@
     },
     "columns": {
       "serviceName": "Service Name",
+      "version": "Version",
       "updatedBy": "Updated By",
       "updatedAt": "Updated At",
       "operation": "Operation"
@@ -1988,7 +1992,9 @@
     "diffViewer": {
       "version": "Version {version}",
       "currentActive": "Current Active Config",
-      "noChanges": "The two versions have identical content"
+      "noChanges": "The two versions have identical content",
+      "sideBySide": "Split",
+      "unified": "Unified"
     },
     "messages": {
       "coreProtectedDeleteTip": "Core platform configurations are protected and cannot be deleted. Please edit or roll back instead.",

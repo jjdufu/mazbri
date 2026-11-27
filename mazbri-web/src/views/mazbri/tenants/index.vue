@@ -117,6 +117,7 @@
 <script setup lang="ts">
 import CopyableText from "@/components/common/copyable-text/index.vue";
 import { ElMessageBox, ElMessage } from "element-plus";
+import { isMfaStepUpCancelled } from "@/utils/http/mfa-dialog-service";
 import { $t } from "@/locales";
 import { ROLES_BIZ } from "@/utils/ops/roles";
 import type {
@@ -519,7 +520,9 @@ const handleTenantImport = async (items: Record<string, unknown>[]) => {
     },
     {
       onError: (error) => {
-        logger.error("Failed to import tenant:", error);
+        if (!isMfaStepUpCancelled(error)) {
+          logger.error("Failed to import tenant:", error);
+        }
       },
     },
   );
@@ -553,7 +556,7 @@ const handleToggleStatus = async (row: Tenant, enable: boolean) => {
     );
     getData();
   } catch (error) {
-    if (error !== "cancel") {
+    if (error !== "cancel" && !isMfaStepUpCancelled(error)) {
       logger.error("Failed to toggle tenant status");
     }
   }
@@ -574,7 +577,7 @@ const handleDelete = async (row: Tenant) => {
     ElMessage.success($t("common.feedback.deleteSuccess"));
     getData();
   } catch (error) {
-    if (error !== "cancel") {
+    if (error !== "cancel" && !isMfaStepUpCancelled(error)) {
       logger.error("Failed to delete tenant");
     }
   }

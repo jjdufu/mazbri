@@ -32,6 +32,8 @@ audit_actions! {
     ApiKeyUpdate => "apikey.update",
     ApiKeyRotate => "apikey.rotate",
     UserLogin => "user.login",
+    UserLoginMfaChallenge => "user.login_mfa_challenge",
+    UserLoginPasswordResetRequired => "user.login_password_reset_required",
     UserLogout => "user.logout",
     UserUpdate => "user.update",
     QuotaUpdate => "quota.update",

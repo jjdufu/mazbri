@@ -24,19 +24,22 @@
         />
         <TableHeaderDatePickerPopover
           v-model="timeRange"
+          variant="toolbar-button"
           type="datetimerange"
           :start-placeholder="$t('common.startTime')"
           :end-placeholder="$t('common.endTime')"
           value-format="x"
           @change="handleSearch"
         />
-        <ElCheckbox
-          v-model="searchForm.includeSelfAudit"
-          class="audit-self-toggle"
-          @change="handleSearch"
-        >
-          {{ $t("auditLogs.filters.includeSelfAudit") }}
-        </ElCheckbox>
+        <div class="audit-self-toggle-pill">
+          <ElCheckbox
+            v-model="searchForm.includeSelfAudit"
+            class="audit-self-toggle"
+            @change="handleSearch"
+          >
+            {{ $t("auditLogs.filters.includeSelfAudit") }}
+          </ElCheckbox>
+        </div>
         <TableExportDropdown
           :items="exportItems"
           :label="$t('common.actions.export')"
@@ -1106,6 +1109,22 @@ onMounted(() => {
 
 .audit-detail-body {
   min-height: 160px;
+}
+
+.audit-self-toggle-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--el-border-radius-base);
+  background: var(--el-fill-color-blank);
+  box-sizing: border-box;
+
+  :deep(.el-checkbox) {
+    height: 100%;
+    margin-right: 0;
+  }
 }
 
 .audit-related-bar {

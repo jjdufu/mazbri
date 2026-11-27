@@ -3,6 +3,12 @@ use crate::error::ApiError;
 use crate::handlers::config_center::{ConfigListParams, MAX_PAGE_SIZE};
 use std::fmt::Write as _;
 
+#[derive(serde::Deserialize)]
+pub(super) struct CertConfigSearchPage {
+    pub(super) items: Vec<serde_json::Value>,
+    pub(super) total: i64,
+}
+
 /// 剥离配置列表项中的明文/密文正文与哈希，仅返回列表所需的公开元数据摘要。
 #[must_use]
 pub fn sanitize_config_summary(mut item: serde_json::Value) -> serde_json::Value {
@@ -100,21 +106,16 @@ pub async fn list_configs(
         trace_id,
     )
     .await?;
-    let raw_configs: Vec<serde_json::Value> = resp.json().await.map_err(|e| {
+    let search_page: CertConfigSearchPage = resp.json().await.map_err(|e| {
         dependency_internal_error("config_center_list_failed", request_id, trace_id, &e)
     })?;
-    let configs: Vec<serde_json::Value> = raw_configs
+    let configs: Vec<serde_json::Value> = search_page
+        .items
         .into_iter()
         .map(sanitize_config_summary)
         .collect();
-    let count = configs.len();
-    let total = if count < page_size as usize {
-        offset as usize + count
-    } else {
-        (offset as usize + count) + 1
-    };
     Ok(serde_json::json!(
-        { "configs" : configs, "total" : total, "page" : params.page, "page_size" :
+        { "configs" : configs, "total" : search_page.total, "page" : params.page, "page_size" :
         page_size }
     ))
 }
@@ -232,10 +233,10 @@ pub async fn get_config(
         trace_id,
     )
     .await?;
-    let mut results: Vec<serde_json::Value> = search_resp.json().await.map_err(|e| {
+    let mut search_page: CertConfigSearchPage = search_resp.json().await.map_err(|e| {
         dependency_internal_error("config_center_get_failed", request_id, trace_id, &e)
     })?;
-    if let Some(mut config) = results.pop() {
+    if let Some(mut config) = search_page.items.pop() {
         if let Some(obj) = config.as_object_mut() {
             obj.insert("content".to_string(), serde_json::Value::String(plaintext));
         }

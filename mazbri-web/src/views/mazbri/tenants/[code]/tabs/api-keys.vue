@@ -180,6 +180,7 @@
 <script setup lang="ts">
 import { copyWithFeedback } from "@/utils/ui/copy-feedback";
 import TenantTabShell from "@/components/common/tenant-tab-shell/index.vue";
+import { isMfaStepUpCancelled } from "@/utils/http/mfa-dialog-service";
 import type { FormInstance, FormRules } from "element-plus";
 import { ElMessage, ElMessageBox } from "element-plus";
 import type {
@@ -300,7 +301,9 @@ const loadData = async () => {
   try {
     await keysLoader.run(props.tenantCode);
   } catch (error) {
-    logger.error("Failed to load API keys:", error);
+    if (!isMfaStepUpCancelled(error)) {
+      logger.error("Failed to load API keys:", error);
+    }
   }
 };
 const handleCreate = () => {
@@ -324,6 +327,7 @@ const handleSubmitCreate = async () => {
     createdKeyVisible.value = true;
     loadData();
   } catch (error: unknown) {
+    if (isMfaStepUpCancelled(error)) return;
     const apiError = error as {
       response?: {
         data?: {
@@ -365,7 +369,9 @@ const handleSubmitRenew = async () => {
     renewVisible.value = false;
     loadData();
   } catch (error) {
-    logger.error("Failed to renew API key:", error);
+    if (!isMfaStepUpCancelled(error)) {
+      logger.error("Failed to renew API key:", error);
+    }
   } finally {
     renewing.value = false;
   }
@@ -393,7 +399,9 @@ const handleRotate = async (row: ApiKey) => {
     createdKeyVisible.value = true;
     await loadData();
   } catch (error) {
-    logger.error("Failed to rotate API key:", error);
+    if (!isMfaStepUpCancelled(error)) {
+      logger.error("Failed to rotate API key:", error);
+    }
   } finally {
     rotatingPrefix.value = null;
   }
@@ -414,7 +422,7 @@ const handleRevoke = async (row: ApiKey) => {
     ElMessage.success($t("tenant.messages.apiKeyRevoked"));
     loadData();
   } catch (error) {
-    if (error !== "cancel") {
+    if (error !== "cancel" && !isMfaStepUpCancelled(error)) {
       logger.error("Failed to revoke API key:", error);
     }
   }

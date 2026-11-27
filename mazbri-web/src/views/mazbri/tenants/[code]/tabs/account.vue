@@ -355,6 +355,7 @@
 </template>
 <script setup lang="ts">
 import TenantTabShell from "@/components/common/tenant-tab-shell/index.vue";
+import { isMfaStepUpCancelled } from "@/utils/http/mfa-dialog-service";
 import {
   ElMessage,
   type FormInstance,
@@ -683,7 +684,9 @@ const handleSubmitRecharge = async () => {
     await loadAccount();
     await loadTransactions();
   } catch (error) {
-    logger.error("Failed to recharge:", error);
+    if (!isMfaStepUpCancelled(error)) {
+      logger.error("Failed to recharge:", error);
+    }
   } finally {
     recharging.value = false;
   }
@@ -718,7 +721,9 @@ const handleSubmitRefund = async () => {
     await loadAccount();
     await loadTransactions();
   } catch (error) {
-    logger.error("Failed to refund:", error);
+    if (!isMfaStepUpCancelled(error)) {
+      logger.error("Failed to refund:", error);
+    }
   } finally {
     refunding.value = false;
   }

@@ -10,21 +10,12 @@ import {
   type MfaCategory,
 } from "./mfa-step-up-state";
 import { MFA_SETUP_PATH, resolveMfaSetupPath } from "./mfa-setup-path";
+import {
+  MfaStepUpCancelledError,
+  isMfaStepUpCancelled,
+} from "./mfa-cancelled";
 
-export { MFA_SETUP_PATH };
-
-export class MfaStepUpCancelledError extends Error {
-  readonly cancelled = true;
-
-  constructor() {
-    super("MFA step-up cancelled");
-    this.name = "MfaStepUpCancelledError";
-  }
-}
-
-export function isMfaStepUpCancelled(error: unknown): boolean {
-  return error instanceof MfaStepUpCancelledError;
-}
+export { MFA_SETUP_PATH, MfaStepUpCancelledError, isMfaStepUpCancelled };
 
 export interface MfaDialogViewModel {
   visible: boolean;
@@ -258,6 +249,20 @@ export function ensureCategory(category: MfaCategory): Promise<void> {
   });
   categoryWaiters.set(category, promise);
   return promise;
+}
+
+export async function ensureMfaBeforeOpen(
+  category: MfaCategory,
+): Promise<boolean> {
+  try {
+    await ensureCategory(category);
+    return true;
+  } catch (error: unknown) {
+    if (isMfaStepUpCancelled(error)) {
+      return false;
+    }
+    throw error;
+  }
 }
 
 export async function promptSetup(setupPath: unknown): Promise<void> {

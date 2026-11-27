@@ -88,10 +88,33 @@ struct MockCertState {
     delete_calls: Arc<AtomicUsize>,
 }
 
-async fn mock_search_configs(
+async fn mock_list_configs(
     State(st): State<MockCertState>,
     Query(q): Query<HashMap<String, String>>,
 ) -> Json<Vec<Value>> {
+    let rows = build_mock_config_rows(&st, &q);
+    Json(rows)
+}
+
+async fn mock_search_configs(
+    State(st): State<MockCertState>,
+    Query(q): Query<HashMap<String, String>>,
+) -> Json<Value> {
+    let rows = build_mock_config_rows(&st, &q);
+    let total = rows.len();
+    let offset = q
+        .get("offset")
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(0);
+    let limit = q
+        .get("limit")
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(total);
+    let items: Vec<Value> = rows.into_iter().skip(offset).take(limit).collect();
+    Json(json!({ "items": items, "total": total }))
+}
+
+fn build_mock_config_rows(st: &MockCertState, q: &HashMap<String, String>) -> Vec<Value> {
     let guard = st.data.lock().expect("lock");
     let eq_filter = q.get("service_name_eq");
     let mut rows: Vec<Value> = guard
@@ -99,12 +122,22 @@ async fn mock_search_configs(
         .iter()
         .filter(|(k, _)| eq_filter.is_none_or(|eq| eq == *k))
         .map(|(name, content)| {
+            let version = guard
+                .histories
+                .get(name)
+                .and_then(|list| {
+                    list.iter()
+                        .filter_map(|item| item["version_number"].as_i64())
+                        .max()
+                })
+                .unwrap_or(1);
             json!({
                 "id": uuid::Uuid::new_v4(),
                 "service_name": name,
                 "content": content,
                 "content_hash": "sha256-hash",
                 "is_sensitive": false,
+                "version": version,
                 "updated_by": "admin",
                 "created_at": "2026-11-14T00:00:00Z",
                 "updated_at": "2026-11-14T00:00:00Z",
@@ -114,7 +147,7 @@ async fn mock_search_configs(
         })
         .collect();
     rows.sort_by(|a, b| a["service_name"].as_str().cmp(&b["service_name"].as_str()));
-    Json(rows)
+    rows
 }
 
 async fn mock_get_config(State(st): State<MockCertState>, Path(service): Path<String>) -> Response {
@@ -214,7 +247,7 @@ impl MockCertServer {
             delete_calls: Arc::clone(&delete_calls),
         };
         let router = Router::new()
-            .route("/configs", get(mock_search_configs))
+            .route("/configs", get(mock_list_configs))
             .route("/configs/search", get(mock_search_configs))
             .route(
                 "/configs/{service}",

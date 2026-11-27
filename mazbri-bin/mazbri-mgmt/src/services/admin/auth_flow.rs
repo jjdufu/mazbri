@@ -521,6 +521,107 @@ async fn verify_login_password(
     .map_err(|e| ApiError::internal(format!("密码校验异常: {e}")))
 }
 
+fn log_login_stage_challenge(
+    audit_svc: &AuditService,
+    user_id: uuid::Uuid,
+    username: &str,
+    role: &str,
+    action: AuditAction,
+    stage: &str,
+    client_ip: Option<String>,
+) {
+    audit_svc.log(user_audit(
+        user_id,
+        action,
+        Some(serde_json::json!({
+            "username": username,
+            "role": role,
+            "stage_info": stage,
+        })),
+        client_ip,
+    ));
+}
+
+async fn check_post_password_stages(
+    params: &AdminLoginParams<'_>,
+    user_row: &repo::AdminUserFullRow,
+    binding: &SessionBinding,
+    client_ip: Option<String>,
+) -> Result<Option<serde_json::Value>, ApiError> {
+    let user_id = user_row.id;
+    let username = user_row.username.as_str();
+    let role = user_row.role.as_str();
+    if user_row.force_password_reset {
+        audit::add_detail("login_stage", serde_json::json!("password_reset_required"));
+        log_login_stage_challenge(
+            params.audit,
+            user_id,
+            username,
+            role,
+            AuditAction::UserLoginPasswordResetRequired,
+            "password_reset_required",
+            client_ip,
+        );
+        let temp_token = issue_stage_token(
+            TokenKind::PasswordReset,
+            username,
+            user_id,
+            role,
+            user_row.auth_epoch,
+            binding,
+            params.jwt_secret,
+        )?;
+        info!("Password verified, password reset required for user: {username}");
+        return Ok(Some(serde_json::json!(
+            { "password_reset_required" : true, "username" : username, "role" : role, "temp_token" :
+            temp_token, "message" : "需要重置密码。请修改您的密码。" }
+        )));
+    }
+    let policy = params.password_policy_cache.get().await;
+    let (is_expired, days_until_expiry, _should_warn) =
+        policy.check_password_expiry(Some(user_row.password_changed_at));
+    if is_expired {
+        warn!(
+            "Login blocked: password expired for user: {} (days until expiry: {})",
+            username, days_until_expiry
+        );
+        audit::set_failure_reason("password_expired");
+        return Err(ApiError::validation(
+            "密码已过期。请联系管理员重置密码。".to_string(),
+        ));
+    }
+    if (user_row.login_attempts > 0 || user_row.locked_until.is_some())
+        && let Err(e) = repo::reset_login_attempts(params.db, user_id).await
+    {
+        error!("Failed to reset login failure count for user {username}: {e}");
+    }
+    let mfa_settings = params.mfa_settings_cache.get().await;
+    if let Some(mfa_response) =
+        determine_mfa(user_row, &mfa_settings, binding, params.jwt_secret)?
+    {
+        let next_step = if mfa_response
+            .get("mfa_setup_required")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false)
+        {
+            "mfa_setup_required"
+        } else {
+            "mfa_required"
+        };
+        log_login_stage_challenge(
+            params.audit,
+            user_id,
+            username,
+            role,
+            AuditAction::UserLoginMfaChallenge,
+            next_step,
+            client_ip,
+        );
+        return Ok(Some(mfa_response));
+    }
+    Ok(None)
+}
+
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
@@ -532,7 +633,7 @@ pub async fn admin_login(params: AdminLoginParams<'_>) -> Result<serde_json::Val
     let session_timeout_secs =
         resolve_session_timeout_secs(db, params.refresh_token_expiration_secs).await;
     let req = params.req;
-    let client_ip = params.client_ip;
+    let client_ip = params.client_ip.clone();
     let username_norm = req.username.trim().to_ascii_lowercase();
     audit::set_attempted_username(&req.username);
     check_login_ip_rate_limit(redis, &username_norm, client_ip.as_deref()).await?;
@@ -559,44 +660,10 @@ pub async fn admin_login(params: AdminLoginParams<'_>) -> Result<serde_json::Val
     audit::set_actor(Some(user_id), Some(username), Some(role));
     let now = Utc::now().timestamp();
     let binding = SessionBinding::new_login(now, i64::saturating_from(session_timeout_secs));
-    if user_row.force_password_reset {
-        audit::add_detail("login_stage", serde_json::json!("password_reset_required"));
-        let temp_token = issue_stage_token(
-            TokenKind::PasswordReset,
-            username,
-            user_id,
-            role,
-            auth_epoch,
-            &binding,
-            jwt_secret,
-        )?;
-        info!("Password verified, password reset required for user: {username}");
-        return Ok(serde_json::json!(
-            { "password_reset_required" : true, "username" : username, "role" : role, "temp_token" :
-            temp_token, "message" : "需要重置密码。请修改您的密码。" }
-        ));
-    }
-    let policy = params.password_policy_cache.get().await;
-    let (is_expired, days_until_expiry, _should_warn) =
-        policy.check_password_expiry(Some(user_row.password_changed_at));
-    if is_expired {
-        warn!(
-            "Login blocked: password expired for user: {} (days until expiry: {})",
-            username, days_until_expiry
-        );
-        audit::set_failure_reason("password_expired");
-        return Err(ApiError::validation(
-            "密码已过期。请联系管理员重置密码。".to_string(),
-        ));
-    }
-    if (user_row.login_attempts > 0 || user_row.locked_until.is_some())
-        && let Err(e) = repo::reset_login_attempts(db, user_id).await
+    if let Some(stage_resp) =
+        check_post_password_stages(&params, &user_row, &binding, client_ip.clone()).await?
     {
-        error!("Failed to reset login failure count for user {username}: {e}");
-    }
-    let mfa_settings = params.mfa_settings_cache.get().await;
-    if let Some(mfa_response) = determine_mfa(&user_row, &mfa_settings, &binding, jwt_secret)? {
-        return Ok(mfa_response);
+        return Ok(stage_resp);
     }
     let created_at = user_row.created_at.to_rfc3339();
     generate_login_response(GenerateLoginResponseParams {

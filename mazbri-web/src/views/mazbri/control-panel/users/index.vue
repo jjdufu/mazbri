@@ -142,6 +142,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
+import { isMfaStepUpCancelled } from "@/utils/http/mfa-dialog-service";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { $t } from "@/locales";
 import type {
@@ -560,7 +561,9 @@ const handleUserImport = async (items: Record<string, unknown>[]) => {
     },
     {
       onError: (error) => {
-        logger.error("Failed to import user:", error);
+        if (!isMfaStepUpCancelled(error)) {
+          logger.error("Failed to import user:", error);
+        }
       },
     },
   );
@@ -600,7 +603,7 @@ const handleDelete = async (row: AdminUser) => {
     ElMessage.success($t("common.feedback.deleteSuccess"));
     getData();
   } catch (error) {
-    if (error !== "cancel") {
+    if (error !== "cancel" && !isMfaStepUpCancelled(error)) {
       logger.error("Failed to delete user:", error);
     }
   }

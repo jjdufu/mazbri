@@ -47,8 +47,36 @@ pub async fn first_login_change_password(
             "first_login": true,
             "auth_epoch_bumped": true,
         })),
-        client_ip,
+        client_ip.clone(),
     ));
+    if data.get("token").is_some() {
+        let final_username = data
+            .get("user")
+            .and_then(|u| u.get("username"))
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or(&claims.sub);
+        if let Err(e) = state
+            .audit
+            .log_critical(create_audit_log(
+                user_id,
+                AuditAction::UserLogin,
+                AuditResourceType::User,
+                user_id.to_string(),
+                Some(serde_json::json!({
+                    "username": final_username,
+                    "role": claims.role,
+                    "login_stage": "first_login_change_password",
+                })),
+                client_ip,
+            ))
+            .await
+        {
+            tracing::error!(
+                "Failed to write critical audit log for login after first password change: {}",
+                e
+            );
+        }
+    }
     let refresh_max_age = data
         .get("refresh_max_age")
         .and_then(serde_json::Value::as_i64)

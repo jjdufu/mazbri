@@ -1,7 +1,7 @@
 use super::super::error::{ConfigError, ConfigResult};
 use super::super::models::{
-    ConfigCategory, ConfigEntry, ConfigEntryWithMeta, ConfigSearchQuery, ConfigTag,
-    CreateCategoryRequest, CreateTagRequest, UpdateCategoryRequest, UpdateTagRequest,
+    ConfigCategory, ConfigEntry, ConfigEntryWithMeta, ConfigSearchPage, ConfigSearchQuery,
+    ConfigTag, CreateCategoryRequest, CreateTagRequest, UpdateCategoryRequest, UpdateTagRequest,
 };
 use sqlx::Row;
 use uuid::Uuid;
@@ -288,63 +288,37 @@ impl super::super::ConfigRepository {
     pub async fn search_configs(
         &self,
         query: &ConfigSearchQuery,
-    ) -> ConfigResult<Vec<ConfigEntryWithMeta>> {
+    ) -> ConfigResult<ConfigSearchPage> {
+        let mut count_builder = sqlx::QueryBuilder::<sqlx::Postgres>::new(
+            r"
+            SELECT COUNT(*)
+            FROM config_entries ce
+            LEFT JOIN config_categories cc ON ce.category_id = cc.id
+            WHERE 1 = 1",
+        );
+        push_search_filters(&mut count_builder, query);
+        let total: i64 = count_builder
+            .build_query_scalar()
+            .fetch_one(&*self.db)
+            .await?;
+
         let mut builder = sqlx::QueryBuilder::<sqlx::Postgres>::new(
             r"
             WITH matched_entries AS (
                 SELECT ce.id, ce.service_name, ce.content,
                        ce.content_hash, ce.is_sensitive, ce.updated_by,
-                       ce.created_at, ce.updated_at, ce.category_id
+                       ce.created_at, ce.updated_at, ce.category_id,
+                       COALESCE(
+                           (SELECT MAX(ch.version_number)
+                            FROM config_history ch
+                            WHERE ch.service_name = ce.service_name),
+                           1
+                       ) AS version
                 FROM config_entries ce
                 LEFT JOIN config_categories cc ON ce.category_id = cc.id
                 WHERE 1 = 1",
         );
-        if let Some(ref service_name) = query.service_name {
-            builder.push(" AND ce.service_name ILIKE ");
-            builder.push_bind(contains_pattern(service_name));
-            builder.push(" ESCAPE '\\'");
-        }
-        if let Some(ref service_name_eq) = query.service_name_eq {
-            builder.push(" AND ce.service_name = ");
-            builder.push_bind(service_name_eq);
-        }
-        if let Some(ref updated_by) = query.updated_by {
-            builder.push(" AND ce.updated_by ILIKE ");
-            builder.push_bind(contains_pattern(updated_by));
-            builder.push(" ESCAPE '\\'");
-        }
-        if let Some(ref gte) = query.updated_at_gte {
-            builder.push(" AND ce.updated_at >= ");
-            builder.push_bind(gte);
-            builder.push("::timestamptz");
-        }
-        if let Some(ref lte) = query.updated_at_lte {
-            builder.push(" AND ce.updated_at <= ");
-            builder.push_bind(lte);
-            builder.push("::timestamptz");
-        }
-        if let Some(ref q) = query.q {
-            let pat = contains_pattern(q);
-            builder.push(" AND (ce.service_name ILIKE ");
-            builder.push_bind(pat.clone());
-            builder.push(" ESCAPE '\\' OR ce.updated_by ILIKE ");
-            builder.push_bind(pat);
-            builder.push(" ESCAPE '\\')");
-        }
-        if let Some(ref category_name) = query.category {
-            builder.push(" AND cc.name = ");
-            builder.push_bind(category_name);
-        }
-        if let Some(ref tags) = query.tags
-            && !tags.is_empty()
-        {
-            builder.push(
-                " AND ce.id IN (SELECT config_entry_id FROM config_entry_tags \
-                 WHERE tag_id IN (SELECT id FROM config_tags WHERE name = ANY(",
-            );
-            builder.push_bind(tags);
-            builder.push(")))");
-        }
+        push_search_filters(&mut builder, query);
         builder.push(" ORDER BY ce.service_name LIMIT ");
         builder.push_bind(query.limit);
         builder.push(" OFFSET ");
@@ -364,12 +338,67 @@ impl super::super::ConfigRepository {
             LEFT JOIN config_tags ct ON ct.id = cet.tag_id
             GROUP BY me.id, me.service_name, me.content,
                      me.content_hash, me.is_sensitive, me.updated_by,
-                     me.created_at, me.updated_at, me.category_id
+                     me.created_at, me.updated_at, me.category_id, me.version
             ORDER BY me.service_name
             ",
         );
         let rows = builder.build().fetch_all(&*self.db).await?;
-        Ok(rows.iter().map(row_to_entry_with_meta).collect())
+        Ok(ConfigSearchPage {
+            items: rows.iter().map(row_to_entry_with_meta).collect(),
+            total,
+        })
+    }
+}
+
+fn push_search_filters(
+    builder: &mut sqlx::QueryBuilder<sqlx::Postgres>,
+    query: &ConfigSearchQuery,
+) {
+    if let Some(ref service_name) = query.service_name {
+        builder.push(" AND ce.service_name ILIKE ");
+        builder.push_bind(contains_pattern(service_name));
+        builder.push(" ESCAPE '\\'");
+    }
+    if let Some(ref service_name_eq) = query.service_name_eq {
+        builder.push(" AND ce.service_name = ");
+        builder.push_bind(service_name_eq);
+    }
+    if let Some(ref updated_by) = query.updated_by {
+        builder.push(" AND ce.updated_by ILIKE ");
+        builder.push_bind(contains_pattern(updated_by));
+        builder.push(" ESCAPE '\\'");
+    }
+    if let Some(ref gte) = query.updated_at_gte {
+        builder.push(" AND ce.updated_at >= ");
+        builder.push_bind(gte);
+        builder.push("::timestamptz");
+    }
+    if let Some(ref lte) = query.updated_at_lte {
+        builder.push(" AND ce.updated_at <= ");
+        builder.push_bind(lte);
+        builder.push("::timestamptz");
+    }
+    if let Some(ref q) = query.q {
+        let pat = contains_pattern(q);
+        builder.push(" AND (ce.service_name ILIKE ");
+        builder.push_bind(pat.clone());
+        builder.push(" ESCAPE '\\' OR ce.updated_by ILIKE ");
+        builder.push_bind(pat);
+        builder.push(" ESCAPE '\\')");
+    }
+    if let Some(ref category_name) = query.category {
+        builder.push(" AND cc.name = ");
+        builder.push_bind(category_name);
+    }
+    if let Some(ref tags) = query.tags
+        && !tags.is_empty()
+    {
+        builder.push(
+            " AND ce.id IN (SELECT config_entry_id FROM config_entry_tags \
+             WHERE tag_id IN (SELECT id FROM config_tags WHERE name = ANY(",
+        );
+        builder.push_bind(tags);
+        builder.push(")))");
     }
 }
 
@@ -384,6 +413,7 @@ fn row_to_entry_with_meta(row: &sqlx::postgres::PgRow) -> ConfigEntryWithMeta {
         created_at: row.get("created_at"),
         updated_at: row.get("updated_at"),
     };
+    let version: i32 = row.try_get("version").unwrap_or(1);
     let tags_json: Option<serde_json::Value> = row.try_get("tags_json").ok();
     let tags: Vec<ConfigTag> = match tags_json {
         Some(serde_json::Value::Array(arr)) => arr
@@ -398,6 +428,7 @@ fn row_to_entry_with_meta(row: &sqlx::postgres::PgRow) -> ConfigEntryWithMeta {
         .and_then(|v: serde_json::Value| serde_json::from_value(v).ok());
     ConfigEntryWithMeta {
         entry,
+        version,
         tags,
         category,
     }

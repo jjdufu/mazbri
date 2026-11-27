@@ -1,4 +1,5 @@
 import { getCurrentScope, onScopeDispose, ref, type Ref } from "vue";
+import { isMfaStepUpCancelled } from "@/utils/http/mfa-cancelled";
 
 export interface LatestRequestContext {
   readonly seq: number;
@@ -19,13 +20,16 @@ export interface UseLatestRequestReturn<TArgs extends unknown[], TResult> {
 }
 
 export function isRequestAbortedError(error: unknown): boolean {
+  if (isMfaStepUpCancelled(error)) return false;
   if (!error || typeof error !== "object") return false;
   const candidate = error as {
     name?: string;
     code?: string | number;
     cancelled?: boolean;
   };
-  if (candidate.cancelled === true) return true;
+  if (candidate.name === "HttpError" && candidate.cancelled === true) {
+    return true;
+  }
   if (candidate.code === "ERR_CANCELED") return true;
   if (candidate.name === "AbortError" || candidate.name === "CanceledError") {
     return true;

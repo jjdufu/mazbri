@@ -26,6 +26,13 @@ function buildColumns(
       useSlot: true,
     },
     {
+      prop: "version",
+      label: $t("configCenter.columns.version"),
+      width: 96,
+      className: "tabular-nums",
+      useSlot: true,
+    },
+    {
       prop: "updated_by",
       label: $t("configCenter.columns.updatedBy"),
       minWidth: 140,

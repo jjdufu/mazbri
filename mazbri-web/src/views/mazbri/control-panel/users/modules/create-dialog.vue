@@ -124,6 +124,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, toRaw, watch } from "vue";
 import { ElMessage, type FormInstance, type FormRules } from "element-plus";
+import { isMfaStepUpCancelled } from "@/utils/http/mfa-dialog-service";
 import { CopyDocument, RefreshRight } from "@element-plus/icons-vue";
 import { useI18n } from "vue-i18n";
 import { $t } from "@/locales";
@@ -280,7 +281,9 @@ async function handleSubmit(): Promise<void> {
     resetForm();
     ElMessage.success($t("userManagement.createDialog.messages.createSuccess"));
   }).catch((error) => {
-    logger.error("Failed to create user:", error);
+    if (!isMfaStepUpCancelled(error)) {
+      logger.error("Failed to create user:", error);
+    }
   });
 }
 
