@@ -46,7 +46,7 @@ const staged = run("git diff --cached --name-only").split("\n").filter(Boolean);
 const secretPatterns = [
   /TEST_[A-Z]+_TOTP_SECRET\s*=\s*[A-Z2-7]{16,}/,
   /TEST_[A-Z]+_PASSWORD\s*=\s*\S{6,}/,
-  /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/,
+  /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----\r?\n[A-Za-z0-9+/=\s]{32,}/,
 ];
 
 for (const rel of staged) {

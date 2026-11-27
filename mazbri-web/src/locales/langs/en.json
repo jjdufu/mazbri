@@ -138,7 +138,8 @@
       "confirm": "OK",
       "refresh": "Refresh",
       "back": "Back",
-      "retry": "Retry"
+      "retry": "Retry",
+      "edit": "Edit"
     },
     "searchPopover": {
       "tooltip": "Search and filters",
@@ -733,10 +734,10 @@
     "evening": "Good evening!"
   },
   "exceptionPage": {
-    "gohome": "Go Home",
     "403": "Sorry, you do not have permission to access this page",
     "404": "Sorry, the page you are trying to access does not exist",
     "500": "Sorry, there was an error on the server",
+    "gohome": "Go Home",
     "switchAccount": "Switch Account"
   },
   "menus": {
@@ -5260,7 +5261,10 @@
         "red": "Down",
         "yellow": "Degraded",
         "unknown": "Unknown",
-        "green": "Healthy"
+        "green": "Healthy",
+        "healthy": "Healthy",
+        "degraded": "Degraded",
+        "down": "Down"
       },
       "reason": {
         "health_check_failed": "Health check failed",

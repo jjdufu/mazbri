@@ -1,5 +1,15 @@
-import { hash } from "ohash";
-import { logger } from "@/utils/sys";
+function stableSerialize(value: unknown): string {
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value) ?? "undefined";
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(stableSerialize).join(",")}]`;
+  }
+  const entries = Object.entries(value as Record<string, unknown>).sort(
+    ([a], [b]) => a.localeCompare(b),
+  );
+  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableSerialize(v)}`).join(",")}}`;
+}
 export enum CacheInvalidationStrategy {
   CLEAR_ALL = "clear_all",
   CLEAR_CURRENT = "clear_current",
@@ -38,7 +48,7 @@ export class TableCache<T> {
     void args;
   }
   private generateKey(params: unknown): string {
-    return hash(params);
+    return stableSerialize(params);
   }
   private generateTags(params: Record<string, unknown>): Set<string> {
     const tags = new Set<string>();

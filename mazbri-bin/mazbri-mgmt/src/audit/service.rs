@@ -973,7 +973,7 @@ mod label_tests {
     use crate::audit::types::AuditAction;
 
     const FRONTEND_LABELS: &str =
-        include_str!("../../../../mazbri-web/src/views/mazbri/control-panel/audit-logs/labels.ts");
+        include_str!("../../../../mazbri-web/src/domains/control-panel/audit-logs/labels.ts");
 
     fn all_backend_actions() -> Vec<String> {
         let mut actions: Vec<String> = AuditAction::ALL

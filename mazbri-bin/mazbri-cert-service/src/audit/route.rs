@@ -250,7 +250,7 @@ mod tests {
     ];
 
     const FRONTEND_LABELS: &str =
-        include_str!("../../../../mazbri-web/src/views/mazbri/control-panel/audit-logs/labels.ts");
+        include_str!("../../../../mazbri-web/src/domains/control-panel/audit-logs/labels.ts");
 
     #[test]
     fn every_cert_action_and_resource_has_frontend_label() {

@@ -6,7 +6,7 @@ use crate::repositories::admin::AdminSessionStateRow;
 use chrono::Duration;
 
 const FRONTEND_LABELS: &str = include_str!(
-    "../../../../../../mazbri-web/src/views/mazbri/control-panel/audit-logs/labels.ts"
+    "../../../../../../mazbri-web/src/domains/control-panel/audit-logs/labels.ts"
 );
 
 const ALL_DENIALS: [RefreshDenial; 7] = [

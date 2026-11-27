@@ -310,7 +310,7 @@ fn rejection_reasons_are_stable_audit_codes() {
 #[test]
 fn every_rejection_reason_has_frontend_audit_label() {
     const FRONTEND_LABELS: &str = include_str!(
-        "../../../../../mazbri-web/src/views/mazbri/control-panel/audit-logs/labels.ts"
+        "../../../../../mazbri-web/src/domains/control-panel/audit-logs/labels.ts"
     );
     let reasons = [
         TokenRejection::Invalid,

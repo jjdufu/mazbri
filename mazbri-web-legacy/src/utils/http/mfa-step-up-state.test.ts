@@ -1,0 +1,80 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import {
+  MFA_CATEGORIES,
+  classifySubmittedCode,
+  emptyCategorySnapshot,
+  formatExpiryUtc8,
+  isMfaCategory,
+  parseBroadcast,
+  toClientDeadline,
+} from "./mfa-step-up-state";
+
+test("六类顺序固定，非法 category 被拒绝", () => {
+  assert.deepEqual(MFA_CATEGORIES, [
+    "certificate",
+    "admin",
+    "mfa",
+    "key",
+    "finance",
+    "platform",
+  ]);
+  assert.equal(isMfaCategory("certificate"), true);
+  assert.equal(isMfaCategory("certificate_issue"), false);
+  assert.equal(isMfaCategory("Certificate"), false);
+  assert.equal(isMfaCategory(""), false);
+  assert.equal(isMfaCategory(null), false);
+  assert.deepEqual(
+    emptyCategorySnapshot().map((item) => item.category),
+    [...MFA_CATEGORIES],
+  );
+  assert.equal(
+    emptyCategorySnapshot().every((item) => !item.active && item.reason === "none"),
+    true,
+  );
+});
+
+test("toClientDeadline 只使用 remaining_secs，下限按 0", () => {
+  const now = 1_700_000_000_000;
+  assert.equal(toClientDeadline(0, now), now);
+  assert.equal(toClientDeadline(-30, now), now);
+  assert.equal(toClientDeadline(Number.NaN, now), now);
+  assert.equal(toClientDeadline(15, now), now + 15_000);
+  assert.equal(toClientDeadline(1.5, now), now + 1_500);
+});
+
+test("formatExpiryUtc8 使用 Asia/Shanghai", () => {
+  assert.equal(
+    formatExpiryUtc8("2026-10-27T07:15:00Z"),
+    "2026-10-27 15:15:00 (UTC+8)",
+  );
+  assert.equal(formatExpiryUtc8("not-a-date"), "");
+});
+
+test("parseBroadcast 只接受 {type:changed}", () => {
+  assert.deepEqual(parseBroadcast({ type: "changed" }), { type: "changed" });
+  assert.equal(parseBroadcast({ type: "changed", extra: 1 }), null);
+  assert.equal(parseBroadcast({ type: "Changed" }), null);
+  assert.equal(parseBroadcast({ type: "refresh" }), null);
+  assert.equal(parseBroadcast("{\"type\":\"changed\"}"), null);
+  assert.equal(parseBroadcast(null), null);
+  assert.equal(parseBroadcast(undefined), null);
+  assert.equal(parseBroadcast(["changed"]), null);
+  assert.equal(parseBroadcast(1), null);
+});
+
+test("classifySubmittedCode 有且只有一个码", () => {
+  assert.deepEqual(classifySubmittedCode("123456", 6), { totp_code: "123456" });
+  assert.deepEqual(classifySubmittedCode("12345678", 8), {
+    totp_code: "12345678",
+  });
+  assert.deepEqual(classifySubmittedCode("abcd2345", 6), {
+    backup_code: "ABCD2345",
+  });
+  assert.equal(classifySubmittedCode("123456", 8), null);
+  const backup = classifySubmittedCode("ABCD2345", 6);
+  assert.deepEqual(backup, { backup_code: "ABCD2345" });
+  assert.equal(backup !== null && "totp_code" in backup, false);
+  assert.equal(classifySubmittedCode("IO000000", 6), null);
+  assert.equal(classifySubmittedCode("", 6), null);
+});

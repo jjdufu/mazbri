@@ -1,4 +1,4 @@
-import type { RouteLocationRaw } from "vue-router";
+import type { RouteLocationRaw } from "@/types/router";
 
 /** 运行指标合并页（应用组件 + 中间件 + 管线 + 宿主机）。 */
 export const RUNTIME_PATH = "/ops/runtime";

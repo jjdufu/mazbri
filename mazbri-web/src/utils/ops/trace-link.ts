@@ -1,4 +1,4 @@
-import type { RouteLocationRaw } from "vue-router";
+import type { RouteLocationRaw } from "@/types/router";
 import { TRAFFIC_PATH } from "./calls-link";
 
 /** 链路详情瀑布流下钻基路径（/ops/traces/:traceId）。 */

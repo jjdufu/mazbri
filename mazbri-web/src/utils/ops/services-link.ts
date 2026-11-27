@@ -1,4 +1,4 @@
-import type { RouteLocationRaw } from "vue-router";
+import type { RouteLocationRaw } from "@/types/router";
 
 /** 服务详情（仅超管路由；非超管勿调用）。 */
 export function buildServiceDetailRoute(service: string): RouteLocationRaw {

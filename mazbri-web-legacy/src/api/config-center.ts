@@ -1,0 +1,112 @@
+import request from "@/utils/http";
+import type {
+  ConfigEntry,
+  ConfigListQuery,
+  ConfigListResponse,
+  CreateConfigRequest,
+  UpdateConfigRequest,
+  ServiceListResponse,
+  HistoryListQuery,
+  HistoryListResponse,
+  RollbackRequest,
+  ExportQuery,
+  ImportConfigsResult,
+} from "@/types/api/config-center";
+import { API_BASE_PATH, API_PATHS } from "@/config/api";
+const BASE_PATH = `${API_BASE_PATH}${API_PATHS.CONFIG_CENTER}`;
+export function fetchConfigList(
+  params: ConfigListQuery,
+  signal?: AbortSignal,
+) {
+  return request.get<ConfigListResponse>({
+    url: `${BASE_PATH}/configs`,
+    params,
+    signal,
+  });
+}
+export function fetchConfig(serviceName: string, signal?: AbortSignal) {
+  return request.get<ConfigEntry>({
+    url: `${BASE_PATH}/configs/${serviceName}`,
+    signal,
+  });
+}
+export function createConfig(data: CreateConfigRequest) {
+  return request.post<ConfigEntry>({
+    url: `${BASE_PATH}/configs`,
+    data,
+    showSuccessMessage: true,
+  });
+}
+export function updateConfig(
+  serviceName: string,
+  data: UpdateConfigRequest,
+) {
+  return request.put<ConfigEntry>({
+    url: `${BASE_PATH}/configs/${serviceName}`,
+    data,
+    showSuccessMessage: true,
+  });
+}
+export function deleteConfig(serviceName: string) {
+  return request.del<void>({
+    url: `${BASE_PATH}/configs/${serviceName}`,
+    showSuccessMessage: true,
+  });
+}
+export function fetchConfigHistory(
+  params: HistoryListQuery,
+  signal?: AbortSignal,
+) {
+  return request.get<HistoryListResponse>({
+    url: `${BASE_PATH}/configs/${params.service_name}/history`,
+    params: { page: params.page, page_size: params.page_size },
+    signal,
+  });
+}
+export function rollbackConfig(data: RollbackRequest) {
+  return request.post<ConfigEntry>({
+    url: `${BASE_PATH}/configs/${data.service_name}/rollback/${data.version}`,
+    showSuccessMessage: true,
+  });
+}
+export function fetchServiceList(signal?: AbortSignal) {
+  return request.get<ServiceListResponse>({
+    url: `${BASE_PATH}/services`,
+    signal,
+  });
+}
+export function exportConfigs(params: ExportQuery) {
+  const queryParams = new URLSearchParams();
+  if (params.service_names?.length) {
+    params.service_names.forEach((s) => queryParams.append("service_names", s));
+  }
+  return request.get<Blob>({
+    url: `${BASE_PATH}/export?${queryParams.toString()}`,
+    responseType: "blob",
+  });
+}
+export function importConfigs(files: File | File[]) {
+  const formData = new FormData();
+  const fileList = Array.isArray(files) ? files : [files];
+  for (const file of fileList) {
+    formData.append("files", file, file.name);
+  }
+  return request.post<ImportConfigsResult>({
+    url: `${BASE_PATH}/import`,
+    data: formData,
+  });
+}
+export interface ValidateTomlResponse {
+  valid: boolean;
+  error?: {
+    line: number;
+    column: number;
+    message: string;
+  };
+}
+export function validateToml(content: string) {
+  return request.post<ValidateTomlResponse>({
+    url: `${BASE_PATH}/validate`,
+    data: { content },
+  });
+}

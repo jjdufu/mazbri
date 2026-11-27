@@ -1,9 +1,9 @@
 import axios, {
-  AxiosRequestConfig,
-  AxiosResponse,
-  InternalAxiosRequestConfig,
+  type AxiosRequestConfig,
+  type AxiosResponse,
+  type InternalAxiosRequestConfig,
 } from "axios";
-import { useUserStore } from "@/store/modules/user";
+import { useAuthStore } from "@/stores/auth";
 import { ApiStatus } from "./status";
 import {
   HttpError,
@@ -31,39 +31,45 @@ import {
   unwrapResponsePayload,
 } from "./response";
 import { $t } from "@/locales";
-import { BaseResponse } from "@/types";
+import type { BaseResponse } from "@/types";
 import {
   isGenericUnauthorizedMessage,
   shouldAttemptSessionRefreshOn401,
 } from "./auth-route-policy";
+
 const REQUEST_TIMEOUT = 15000;
 const LOGOUT_DELAY = 500;
 const UNAUTHORIZED_DEBOUNCE_TIME = 3000;
-const { VITE_API_URL } = import.meta.env;
+const VITE_API_URL = import.meta.env?.VITE_API_URL;
+const WITH_CREDENTIALS = import.meta.env?.VITE_WITH_CREDENTIALS !== "false";
 
-const WITH_CREDENTIALS = import.meta.env.VITE_WITH_CREDENTIALS !== "false";
 let isUnauthorizedErrorShown = false;
-let unauthorizedTimer: NodeJS.Timeout | null = null;
+let unauthorizedTimer: ReturnType<typeof setTimeout> | null = null;
 let isRefreshing = false;
 let failedQueue: Array<{
   resolve: () => void;
   reject: (error: unknown) => void;
 }> = [];
+
 interface UnauthorizedRuntimeBoundary {
   scheduleLogout: () => void;
   presentUnauthorizedError: (error: HttpError) => void;
 }
+
 function scheduleStoreLogout(): void {
   setTimeout(() => {
-    useUserStore().logOut({ skipRemote: true });
+    void useAuthStore.getState().logOut({ skipRemote: true });
   }, LOGOUT_DELAY);
 }
+
 const defaultUnauthorizedRuntimeBoundary: UnauthorizedRuntimeBoundary = {
   scheduleLogout: scheduleStoreLogout,
   presentUnauthorizedError: (error) => showError(error, true),
 };
+
 let unauthorizedRuntimeBoundary: UnauthorizedRuntimeBoundary =
   defaultUnauthorizedRuntimeBoundary;
+
 const refreshClient = axios.create({
   timeout: REQUEST_TIMEOUT,
   baseURL: VITE_API_URL,
@@ -72,7 +78,10 @@ const refreshClient = axios.create({
   transformResponse: [
     (data, headers) => {
       const contentType = headers["content-type"];
-      if (contentType?.includes("application/json")) {
+      if (
+        typeof contentType === "string" &&
+        contentType.includes("application/json")
+      ) {
         try {
           return JSON.parse(data);
         } catch {
@@ -83,6 +92,7 @@ const refreshClient = axios.create({
     },
   ],
 });
+
 function processQueue(error: unknown, ok = false): void {
   failedQueue.forEach((prom) => {
     if (error) {
@@ -97,7 +107,7 @@ function processQueue(error: unknown, ok = false): void {
 }
 
 export async function refreshAccessToken(): Promise<string | null> {
-  const userStore = useUserStore();
+  const authStore = useAuthStore.getState();
   try {
     const res = await refreshClient.post<
       | BaseResponse<{
@@ -125,9 +135,13 @@ export async function refreshAccessToken(): Promise<string | null> {
           },
     );
 
-    if (payload.cookie_auth || payload.token || typeof payload.expires_in === "number") {
-      userStore.setToken(payload.token, payload.expires_in);
-      userStore.setLoginStatus(true);
+    if (
+      payload.cookie_auth ||
+      payload.token ||
+      typeof payload.expires_in === "number"
+    ) {
+      authStore.setToken(payload.token, payload.expires_in);
+      authStore.setLoginStatus(true);
       return payload.token || "cookie";
     }
     return null;
@@ -135,6 +149,7 @@ export async function refreshAccessToken(): Promise<string | null> {
     return null;
   }
 }
+
 export function configureUnauthorizedRuntimeBoundary(
   boundary: Partial<UnauthorizedRuntimeBoundary>,
 ): void {
@@ -143,12 +158,14 @@ export function configureUnauthorizedRuntimeBoundary(
     ...boundary,
   };
 }
+
 export function resetHttpRuntimeBoundaryForTest(): void {
   unauthorizedRuntimeBoundary = defaultUnauthorizedRuntimeBoundary;
   resetUnauthorizedError();
   isRefreshing = false;
   failedQueue = [];
 }
+
 export function triggerUnauthorizedFlowForTest(message?: string): HttpError {
   try {
     handleUnauthorizedError(message);
@@ -157,18 +174,21 @@ export function triggerUnauthorizedFlowForTest(message?: string): HttpError {
   }
   throw new Error("Unauthorized flow should always throw");
 }
-interface ExtendedAxiosRequestConfig extends AxiosRequestConfig {
+
+export interface ExtendedAxiosRequestConfig extends AxiosRequestConfig {
   showErrorMessage?: boolean;
   showSuccessMessage?: boolean;
   suppressUnauthorizedToast?: boolean;
   signal?: AbortSignal;
   _mfaRetry?: boolean;
 }
+
 interface MfaAwareRequestConfig
   extends InternalAxiosRequestConfig, MfaInterceptConfig {
   _retry?: boolean;
   _mfaRetry?: boolean;
 }
+
 function readContentType(headers: unknown): string {
   if (!headers || typeof headers !== "object") return "";
   const candidate = headers as { get?: (name: string) => unknown };
@@ -180,6 +200,7 @@ function readContentType(headers: unknown): string {
   const value = record["content-type"] ?? record["Content-Type"];
   return typeof value === "string" ? value : "";
 }
+
 async function hydrateJsonBlobBody(error: {
   response?: { data?: unknown; headers?: unknown };
 }): Promise<void> {
@@ -202,6 +223,7 @@ async function hydrateJsonBlobBody(error: {
     // 解析失败时保留原始 Blob，交给后续普通错误处理。
   }
 }
+
 const axiosInstance = axios.create({
   timeout: REQUEST_TIMEOUT,
   baseURL: VITE_API_URL,
@@ -210,7 +232,10 @@ const axiosInstance = axios.create({
   transformResponse: [
     (data, headers) => {
       const contentType = headers["content-type"];
-      if (contentType?.includes("application/json")) {
+      if (
+        typeof contentType === "string" &&
+        contentType.includes("application/json")
+      ) {
         try {
           return JSON.parse(data);
         } catch {
@@ -221,9 +246,9 @@ const axiosInstance = axios.create({
     },
   ],
 });
+
 axiosInstance.interceptors.request.use(
   (request: InternalAxiosRequestConfig) => {
-
     if (
       request.data &&
       !(request.data instanceof FormData) &&
@@ -241,6 +266,7 @@ axiosInstance.interceptors.request.use(
     return Promise.reject(error);
   },
 );
+
 axiosInstance.interceptors.response.use(
   (response: AxiosResponse<BaseResponse | unknown>) => {
     const payload = response.data;
@@ -248,10 +274,10 @@ axiosInstance.interceptors.response.use(
       const { code, msg } = payload;
       if (code === ApiStatus.success) return response;
       if (code === ApiStatus.unauthorized) {
-        const userStore = useUserStore();
+        const authStore = useAuthStore.getState();
         if (
-          userStore.isLogin &&
-          !userStore.isLoggingOut &&
+          authStore.isLogin &&
+          !authStore.isLoggingOut &&
           shouldAttemptSessionRefreshOn401(response.config.url)
         ) {
           handleUnauthorizedError(msg);
@@ -282,17 +308,16 @@ axiosInstance.interceptors.response.use(
     await hydrateJsonBlobBody(error);
     const originalRequest = error.config as MfaAwareRequestConfig | undefined;
     const status = error.response?.status;
-    const userStore = useUserStore();
+    const authStore = useAuthStore.getState();
     const canRefreshSession =
       status === ApiStatus.unauthorized &&
       originalRequest !== undefined &&
       !originalRequest._retry &&
-      userStore.isLogin &&
-      !userStore.isLoggingOut &&
+      authStore.isLogin &&
+      !authStore.isLoggingOut &&
       shouldAttemptSessionRefreshOn401(originalRequest.url);
 
     if (!canRefreshSession && status === ApiStatus.unauthorized) {
-      // 未登录或正在登出：静默交给路由守卫跳登录页，不 refresh、不弹「未授权访问」
       return Promise.reject(handleError(error));
     }
 
@@ -342,6 +367,7 @@ axiosInstance.interceptors.response.use(
     return Promise.reject(handleError(error));
   },
 );
+
 function handleUnauthorizedError(message?: string): never {
   const error = createBackendHttpError(message, ApiStatus.unauthorized, {
     displayMessage: $t("httpMsg.unauthorized"),
@@ -359,12 +385,14 @@ function handleUnauthorizedError(message?: string): never {
   }
   throw error;
 }
-function resetUnauthorizedError() {
+
+function resetUnauthorizedError(): void {
   isUnauthorizedErrorShown = false;
   if (unauthorizedTimer) clearTimeout(unauthorizedTimer);
   unauthorizedTimer = null;
 }
-async function request<T = any>(
+
+async function request<T = unknown>(
   config: ExtendedAxiosRequestConfig,
 ): Promise<T> {
   if (
@@ -387,7 +415,6 @@ async function request<T = any>(
   } catch (error) {
     const mfaSetupPath = getMfaNotEnabledSetupPath(error);
     if (mfaSetupPath !== null) {
-      // 敏感操作要求 MFA 但账号尚未绑定：统一引导到账号安全页，不再重复弹错误提示。
       void MfaDialogService.promptSetup(mfaSetupPath);
       return Promise.reject(error);
     }
@@ -419,6 +446,7 @@ async function request<T = any>(
     return Promise.reject(error);
   }
 }
+
 const api = {
   get<T>(config: ExtendedAxiosRequestConfig) {
     return request<T>({ ...config, method: "GET" });
@@ -439,4 +467,5 @@ const api = {
     return request<T>(config);
   },
 };
+
 export default api;

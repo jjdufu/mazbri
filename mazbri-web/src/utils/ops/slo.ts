@@ -1,6 +1,4 @@
-import { h } from "vue";
 import type { SloDefinition, SloStatusRow } from "@/api/opsReliability";
-import type { ColumnOption } from "@/types/component";
 import { formatAlertTime } from "@/utils/ops/alerts-format";
 
 /** SLO 合并行（定义 ∪ 状态）。 */
@@ -24,6 +22,23 @@ export interface SloColumnDef {
   minWidth?: number;
   /** 仅 ADMIN 详表展示（燃烧相关）。 */
   adminOnly?: boolean;
+}
+
+export interface SloStyledCell {
+  tag: "span";
+  tone: "danger" | "muted";
+  children: string;
+}
+
+export interface SloColumnOption {
+  prop: keyof SloBudgetRow;
+  label: string;
+  width?: number;
+  minWidth?: number;
+  align?: "left" | "center" | "right";
+  headerAlign?: "left" | "center" | "right";
+  className?: string;
+  formatter?: (row: SloBudgetRow) => string | SloStyledCell;
 }
 
 export const SLO_COLUMN_DEFS: readonly SloColumnDef[] = [
@@ -130,33 +145,26 @@ export function formatBurnRate(val: number | null | undefined): string {
 function renderBurnFlag(
   val: number | null | undefined,
   t: SloTranslate,
-) {
+): string | SloStyledCell {
   if (typeof val !== "number" || !Number.isFinite(val)) return "—";
   const firing = val > 0;
   const label = firing
     ? t("ops.slo.burnFiring")
     : t("ops.slo.burnNormal");
-  return h(
-    "span",
-    {
-      style: {
-        color: firing
-          ? "var(--el-color-danger)"
-          : "var(--el-text-color-secondary)",
-        fontWeight: firing ? "600" : "400",
-      },
-    },
-    label,
-  );
+  return {
+    tag: "span",
+    tone: firing ? "danger" : "muted",
+    children: label,
+  };
 }
 
 export function buildSloTableColumns(
   t: SloTranslate,
   options: { adminDetail?: boolean } = {},
-): ColumnOption<SloBudgetRow>[] {
+): SloColumnOption[] {
   const adminDetail = options.adminDetail ?? true;
   return SLO_COLUMN_DEFS.filter((d) => adminDetail || !d.adminOnly).map((d) => {
-    const base: ColumnOption<SloBudgetRow> = {
+    const base: SloColumnOption = {
       prop: d.prop,
       label: t(d.labelKey),
       width: d.width,
@@ -195,11 +203,11 @@ export function buildSloTableColumns(
           formatter: (row) => {
             const text = formatBudgetRemaining(row.remaining);
             if (typeof row.remaining === "number" && row.remaining <= 0) {
-              return h(
-                "span",
-                { style: { color: "var(--el-color-danger)", fontWeight: "600" } },
-                text,
-              );
+              return {
+                tag: "span",
+                tone: "danger",
+                children: text,
+              };
             }
             return text;
           },

@@ -2,10 +2,10 @@ import { AxiosError } from "axios";
 import { ApiStatus } from "./status";
 import { $t } from "@/locales";
 import { logger } from "@/utils/sys";
-import { isProblemDetails } from "@/composables/error-normalization";
+import { isProblemDetails } from "./error-normalization";
 import { extractErrorCode } from "@/types/error";
 import { resolveFallbackKeyForErrorCode } from "@/utils/error-message-policy";
-import { showErrorToast } from "@/utils/ui/message-guard";
+import { showErrorToast, showSuccessToast } from "@/utils/ui/message-guard";
 
 export interface ErrorResponse {
   code: number;
@@ -217,7 +217,7 @@ export function showSuccess(
   showMessage: boolean = true,
 ): void {
   if (showMessage) {
-    ElMessage.success(message);
+    showSuccessToast(message);
   }
 }
 

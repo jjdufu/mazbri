@@ -1,4 +1,4 @@
-import type { RouteLocationRaw } from "vue-router";
+import type { RouteLocationRaw } from "@/types/router";
 
 /** 账单结算统一入口（运营中心 /operations/bills）。 */
 export const BILLING_PATH = "/operations/bills";

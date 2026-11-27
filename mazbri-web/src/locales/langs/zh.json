@@ -138,7 +138,8 @@
       "confirm": "确定",
       "refresh": "刷新",
       "back": "返回",
-      "retry": "重试"
+      "retry": "重试",
+      "edit": "编辑"
     },
     "searchPopover": {
       "tooltip": "搜索与筛选",
@@ -733,10 +734,10 @@
     "evening": "晚上好！"
   },
   "exceptionPage": {
-    "gohome": "返回首页",
     "403": "抱歉，您无权访问该页面",
     "404": "抱歉，您访问的页面不存在",
     "500": "抱歉，服务器出错了",
+    "gohome": "返回首页",
     "switchAccount": "切换账号"
   },
   "menus": {
@@ -5260,7 +5261,10 @@
         "red": "异常",
         "yellow": "告警",
         "unknown": "未知",
-        "green": "正常"
+        "green": "正常",
+        "healthy": "正常",
+        "degraded": "告警",
+        "down": "异常"
       },
       "reason": {
         "health_check_failed": "健康检查失败",

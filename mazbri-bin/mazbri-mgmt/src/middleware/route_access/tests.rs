@@ -347,7 +347,7 @@ fn decide_matrix() {
 #[test]
 fn denial_reasons_have_frontend_labels() {
     let labels = include_str!(
-        "../../../../../mazbri-web/src/views/mazbri/control-panel/audit-logs/labels.ts"
+        "../../../../../mazbri-web/src/domains/control-panel/audit-logs/labels.ts"
     );
     for denial in [
         Denial::Unregistered,

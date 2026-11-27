@@ -1,0 +1,76 @@
+import type { ISODateString } from "./common";
+export interface ConfigSummary {
+  id: string;
+  service_name: string;
+  version?: number;
+  description?: string | null;
+  is_sensitive?: boolean;
+  updated_by: string;
+  created_at: ISODateString;
+  updated_at: ISODateString;
+}
+export interface ConfigEntry extends ConfigSummary {
+  content: string;
+  content_hash?: string | null;
+}
+export interface ConfigHistory {
+  id: string;
+  config_id: string | null;
+  service_name: string;
+  content: string;
+  content_hash: string | null;
+  version_number: number;
+  updated_by: string;
+  created_at: ISODateString;
+}
+export interface ConfigListQuery {
+  service_name?: string;
+  q?: string;
+
+  filters?: string;
+  page?: number;
+  page_size?: number;
+}
+export interface ConfigListResponse {
+  configs: ConfigSummary[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+export interface CreateConfigRequest {
+  service_name: string;
+  content: string;
+  is_sensitive?: boolean;
+  updated_by: string;
+}
+export interface UpdateConfigRequest {
+  content: string;
+  updated_by?: string;
+}
+export interface ServiceListResponse {
+  services: string[];
+}
+export interface HistoryListQuery {
+  service_name: string;
+  page?: number;
+  page_size?: number;
+}
+export interface HistoryListResponse {
+  history: ConfigHistory[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+export interface RollbackRequest {
+  service_name: string;
+  version: number;
+}
+export interface ExportQuery {
+  service_names?: string[];
+}
+export interface ImportConfigsResult {
+  imported: number;
+  skipped: number;
+  errors: string[];
+  total_extracted_bytes?: number;
+}

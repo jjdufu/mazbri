@@ -1,18 +1,51 @@
 import { $t } from "@/locales";
 import { createToastGate, type ToastKind } from "./toast-gate";
 
-type MessageErrorFn = typeof ElMessage.error;
+export type ToastVariant = "success" | "error" | "warning" | "info";
+
+export interface ToastPayload {
+  variant: ToastVariant;
+  message: string;
+  duration?: number;
+}
+
+export type ToastSink = (payload: ToastPayload) => void;
+export type ToastClearSink = (variant?: ToastVariant) => void;
 
 const gate = createToastGate();
-let rawError: MessageErrorFn | null = null;
+let toastSink: ToastSink | null = null;
+let toastClearSink: ToastClearSink | null = null;
+let installed = false;
 
-function readMessageText(options: unknown): string | undefined {
-  if (typeof options === "string") return options;
-  if (options && typeof options === "object" && "message" in options) {
-    const message = (options as { message?: unknown }).message;
-    if (typeof message === "string") return message;
+/** Stage 2 UI shell binds its Toast container here; safe no-op before mount. */
+export function registerToastSink(
+  sink: ToastSink | null,
+  clearSink?: ToastClearSink | null,
+): void {
+  toastSink = sink;
+  toastClearSink = clearSink ?? null;
+}
+
+export function showToast(
+  variant: ToastVariant,
+  message: string,
+  duration?: number,
+): void {
+  if (toastSink) {
+    toastSink({ variant, message, duration });
   }
-  return undefined;
+}
+
+export function showSuccessToast(message: string, duration?: number): void {
+  showToast("success", message, duration);
+}
+
+export function showWarningToast(message: string, duration?: number): void {
+  showToast("warning", message, duration);
+}
+
+export function showInfoToast(message: string, duration?: number): void {
+  showToast("info", message, duration);
 }
 
 /** HTTP 层统一错误出口：网络错误走全局冷却，其余按文案去重。 */
@@ -21,35 +54,24 @@ export function showErrorToast(
   kind: ToastKind = "error",
 ): void {
   if (!gate.admit(message, kind)) return;
-  (rawError ?? ElMessage.error)(message);
+  showToast("error", message);
 }
 
-/**
- * 启动时安装一次：让页面里散落的 ElMessage.error 也经过同一闸门，
- * 并在浏览器 offline / online 时只提示一次「网络已断开 / 已恢复」。
- */
+/** 启动时安装一次：监听浏览器 offline / online 事件并统一提示。 */
 export function installMessageGuard(): void {
-  if (rawError) return;
-  const original = ElMessage.error;
-  rawError = original;
-  ElMessage.error = ((options, appContext) => {
-    const text = readMessageText(options);
-    if (text !== undefined && !gate.admit(text)) {
-      return { close: () => undefined };
-    }
-    return original(options, appContext);
-  }) as MessageErrorFn;
+  if (installed || typeof window === "undefined") return;
+  installed = true;
 
   window.addEventListener("offline", () => {
     gate.setOffline(true);
-    ElMessage.closeAll("error");
-    ElMessage.warning($t("httpMsg.offline"));
+    toastClearSink?.("error");
+    showWarningToast($t("httpMsg.offline"));
   });
   window.addEventListener("online", () => {
     gate.setOffline(false);
-    ElMessage.success($t("httpMsg.online"));
+    showSuccessToast($t("httpMsg.online"));
   });
-  if (navigator.onLine === false) {
+  if (typeof navigator !== "undefined" && navigator.onLine === false) {
     gate.setOffline(true);
   }
 }

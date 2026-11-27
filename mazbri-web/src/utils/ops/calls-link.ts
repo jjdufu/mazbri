@@ -1,4 +1,4 @@
-import type { RouteLocationRaw } from "vue-router";
+import type { RouteLocationRaw } from "@/types/router";
 
 export type CallsTab = "customer" | "upstream";
 

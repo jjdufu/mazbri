@@ -1,4 +1,4 @@
-import type { LocationQueryRaw, RouteLocationRaw } from "vue-router";
+import type { LocationQueryRaw, RouteLocationRaw } from "@/types/router";
 import { TRAFFIC_PATH, buildCallsRoute } from "./calls-link";
 import { buildRuntimeRoute } from "./runtime-link";
 

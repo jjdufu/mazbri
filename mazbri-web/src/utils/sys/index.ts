@@ -1,2 +1,2 @@
-export { default as mittBus } from "./mittBus";
+export * from "./chunk-load-error";
 export * from "./logger";

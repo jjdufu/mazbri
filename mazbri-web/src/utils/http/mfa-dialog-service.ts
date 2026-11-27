@@ -1,6 +1,4 @@
-import { ElMessageBox } from "element-plus";
 import { $t } from "@/locales";
-import { router } from "@/router";
 import { ApiStatus } from "./status";
 import { createSafeHttpError } from "./error";
 import { drainDialogQueue, insertDialogTask } from "./mfa-error";
@@ -26,6 +24,15 @@ export interface MfaDialogViewModel {
   attemptsRemaining: number | null;
   submitting: boolean;
 }
+
+export interface MfaSetupPromptRequest {
+  resolvedPath: string;
+  openPersonalSecurityDrawer: boolean;
+}
+
+export type MfaSetupPromptHandler = (
+  request: MfaSetupPromptRequest,
+) => Promise<void> | void;
 
 type QueueTask = {
   category: MfaCategory;
@@ -58,6 +65,7 @@ const queue: QueueTask[] = [];
 let pumping = false;
 const categoryWaiters = new Map<MfaCategory, Promise<void>>();
 let setupPromptOpen = false;
+let setupPromptHandler: MfaSetupPromptHandler | null = null;
 
 function publish(): void {
   for (const listener of listeners) listener();
@@ -67,7 +75,7 @@ export function readMfaDialogView(): MfaDialogViewModel {
   return { ...viewState };
 }
 
-/** 全局只挂一个弹窗。组件挂载时登记，卸载时解除。 */
+/** 全局只挂一个弹窗。React MfaStepUpHost 挂载时登记，卸载时解除。 */
 export function bindMfaStepUpDialog(listener: () => void): () => void {
   listeners.add(listener);
   hostBound = true;
@@ -79,6 +87,18 @@ export function bindMfaStepUpDialog(listener: () => void): () => void {
     if (listeners.size === 0) {
       hostBound = false;
       cancelMfaDialog(viewState.sessionId);
+    }
+  };
+}
+
+/** 注册未绑定 MFA 时的引导确认处理桥（由 Stage 2 MfaStepUpHost 挂载）。 */
+export function bindMfaSetupPrompt(
+  handler: MfaSetupPromptHandler | null,
+): () => void {
+  setupPromptHandler = handler;
+  return () => {
+    if (setupPromptHandler === handler) {
+      setupPromptHandler = null;
     }
   };
 }
@@ -175,12 +195,13 @@ export function cancelMfaDialog(sessionId?: number): void {
   viewState.visible = false;
   viewState.submitting = false;
   publish();
+  // U1 公理：用户取消提权抛出独立 MfaStepUpCancelledError，与网络取消信号严格正交。
   decision?.reject(new MfaStepUpCancelledError());
 }
 
 async function execute(task: QueueTask): Promise<void> {
-  const { useMfaStepUpStore } = await import("@/store/modules/mfa-step-up");
-  const store = useMfaStepUpStore();
+  const { useMfaStepUpStore } = await import("@/stores/mfa-step-up");
+  const store = useMfaStepUpStore.getState();
   let refreshed = false;
   try {
     await store.refresh();
@@ -188,23 +209,29 @@ async function execute(task: QueueTask): Promise<void> {
   } catch {
     // 刷新失败不能沿用旧的 active。位数可能仍是上次的值；弹窗仍可提交。
   }
-  if (refreshed && store.isCategoryActive(task.category)) return;
-  const digits: 6 | 8 = store.totpDigits === 8 ? 8 : 6;
+  if (refreshed && useMfaStepUpStore.getState().isCategoryActive(task.category)) {
+    return;
+  }
+  const digits: 6 | 8 =
+    useMfaStepUpStore.getState().totpDigits === 8 ? 8 : 6;
   await waitForHost();
   beginSession(task, digits);
   try {
     while (true) {
       const code = await waitForDecision();
       try {
-        await store.stepUp({ category: task.category, ...code });
+        await useMfaStepUpStore
+          .getState()
+          .stepUp({ category: task.category, ...code });
         return;
       } catch (error) {
         if (readErrorCode(error) === "MFA_LOCKED") {
-          store.clearElevation();
+          const latest = useMfaStepUpStore.getState();
+          latest.clearElevation();
           try {
-            await store.lock();
+            await latest.lock();
           } catch {
-            await store.refresh().catch(() => undefined);
+            await latest.refresh().catch(() => undefined);
           }
           throw createSafeHttpError(
             $t("common.mfaDialog.locked"),
@@ -245,7 +272,9 @@ export function ensureCategory(category: MfaCategory): Promise<void> {
   const existing = categoryWaiters.get(category);
   if (existing) return existing;
   const promise = enqueue({ category }).finally(() => {
-    if (categoryWaiters.get(category) === promise) categoryWaiters.delete(category);
+    if (categoryWaiters.get(category) === promise) {
+      categoryWaiters.delete(category);
+    }
   });
   categoryWaiters.set(category, promise);
   return promise;
@@ -269,24 +298,12 @@ export async function promptSetup(setupPath: unknown): Promise<void> {
   if (setupPromptOpen) return;
   setupPromptOpen = true;
   try {
-    await ElMessageBox.confirm(
-      $t("common.mfaDialog.notEnabledMessage"),
-      $t("common.mfaDialog.notEnabledTitle"),
-      {
-        type: "warning",
-        confirmButtonText: $t("common.mfaDialog.goToSetup"),
-        cancelButtonText: $t("common.cancel"),
-        closeOnClickModal: false,
-      },
-    );
-    const resolved = resolveMfaSetupPath(setupPath);
-    if (resolved === MFA_SETUP_PATH) {
-      const { usePersonalSecurityStore } = await import(
-        "@/store/modules/personal-security"
-      );
-      usePersonalSecurityStore().openDrawer("mfa");
-    } else {
-      await router.push(resolved);
+    const resolvedPath = resolveMfaSetupPath(setupPath);
+    if (setupPromptHandler) {
+      await setupPromptHandler({
+        resolvedPath,
+        openPersonalSecurityDrawer: resolvedPath === MFA_SETUP_PATH,
+      });
     }
   } catch {
     // 用户取消：保持在当前页面。

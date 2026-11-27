@@ -1,81 +1,117 @@
-import { createI18n } from "vue-i18n";
-import type { I18n, I18nOptions } from "vue-i18n";
+import { useCallback } from "react";
 import { LanguageEnum } from "@/enums/appEnum";
-import { getSystemStorage } from "@/utils/storage";
-import { StorageKeyManager } from "@/utils/storage/storage-key-manager";
-import { logger } from "@/utils/sys/logger";
-import { ErrorCodes } from "@/constants/error-codes";
+import { useLocaleStore } from "@/stores/locale";
 import enMessages from "./langs/en.json";
 import zhMessages from "./langs/zh.json";
-const storageKeyManager = new StorageKeyManager();
-const messages = {
-  [LanguageEnum.EN]: enMessages,
-  [LanguageEnum.ZH]: zhMessages,
+
+type MessageDict = Record<string, unknown>;
+
+const dictionaries: Record<LanguageEnum, MessageDict> = {
+  [LanguageEnum.ZH]: zhMessages as MessageDict,
+  [LanguageEnum.EN]: enMessages as MessageDict,
 };
+
 export const languageOptions = [
   { value: LanguageEnum.ZH, labelKey: "common.languages.zh" },
   { value: LanguageEnum.EN, labelKey: "common.languages.en" },
-];
-const getDefaultLanguage = (): LanguageEnum => {
-  try {
-    const storageKey = storageKeyManager.getStorageKey("user");
-    const userStore = localStorage.getItem(storageKey);
-    if (userStore) {
-      const { language } = JSON.parse(userStore);
-      if (language && Object.values(LanguageEnum).includes(language)) {
-        return language;
-      }
+] as const;
+
+function resolvePath(dict: MessageDict, key: string): string | undefined {
+  let cursor: unknown = dict;
+  for (const part of key.split(".")) {
+    if (cursor && typeof cursor === "object" && !Array.isArray(cursor)) {
+      cursor = (cursor as Record<string, unknown>)[part];
+    } else {
+      return undefined;
     }
-  } catch (error) {
-    logger.warn(
-      "[i18n] Failed to read language setting from versioned storage",
-      {
-        service: "mazbri-mgmt-web",
-        event: "i18n_storage_read_fallback",
-        severity: "warn",
-        error_code: ErrorCodes.INTERNAL_ERROR,
-        error,
-      },
-    );
   }
-  try {
-    const sys = getSystemStorage();
-    if (sys) {
-      const user = (
-        sys as {
-          user?: {
-            language?: unknown;
-          };
-        }
-      ).user;
-      if (
-        typeof user?.language === "string" &&
-        Object.values(LanguageEnum).includes(user.language as LanguageEnum)
-      ) {
-        return user.language as LanguageEnum;
-      }
-    }
-  } catch (error) {
-    logger.warn("[i18n] Failed to read language setting from system storage", {
-      service: "mazbri-mgmt-web",
-      event: "i18n_system_storage_fallback",
-      severity: "warn",
-      error_code: ErrorCodes.INTERNAL_ERROR,
-      error,
-    });
-  }
-  return LanguageEnum.ZH;
-};
-const i18nOptions: I18nOptions = {
-  locale: getDefaultLanguage(),
-  legacy: false,
-  globalInjection: true,
-  fallbackLocale: LanguageEnum.ZH,
-  messages,
-};
-const i18n: I18n = createI18n(i18nOptions);
-interface Translation {
-  (key: string, named?: Record<string, unknown>): string;
+  return typeof cursor === "string" ? cursor : undefined;
 }
-export const $t = i18n.global.t as Translation;
-export default i18n;
+
+function interpolate(
+  template: string,
+  named?: Record<string, unknown>,
+): string {
+  if (!named) return template;
+  return template.replace(/\{(\w+)\}/g, (match, token: string) => {
+    if (!(token in named)) return match;
+    const value = named[token];
+    return value === undefined || value === null ? "" : String(value);
+  });
+}
+
+export function translate(
+  locale: LanguageEnum,
+  key: string,
+  named?: Record<string, unknown>,
+): string {
+  const primary = resolvePath(dictionaries[locale] ?? dictionaries[LanguageEnum.ZH], key);
+  const resolved =
+    primary ?? resolvePath(dictionaries[LanguageEnum.ZH], key) ?? key;
+  return interpolate(resolved, named);
+}
+
+/** Imperative translation helper (reads current reactive Zustand locale). */
+export function $t(key: string, named?: Record<string, unknown>): string {
+  return translate(useLocaleStore.getState().locale, key, named);
+}
+
+export const t = $t;
+
+export function getLocale(): LanguageEnum {
+  return useLocaleStore.getState().locale;
+}
+
+export function setLocale(locale: LanguageEnum): void {
+  useLocaleStore.getState().setLocale(locale);
+}
+
+/** Reactive React hook for hot-switching zh/en without page reload (U4). */
+export function useT() {
+  const locale = useLocaleStore((s) => s.locale);
+  const setLocaleFn = useLocaleStore((s) => s.setLocale);
+  const toggleLocale = useLocaleStore((s) => s.toggleLocale);
+  const boundT = useCallback(
+    (key: string, named?: Record<string, unknown>) =>
+      translate(locale, key, named),
+    [locale],
+  );
+  return {
+    t: boundT,
+    locale,
+    setLocale: setLocaleFn,
+    toggleLocale,
+  };
+}
+
+/** Register additional domain-scoped messages into the runtime dictionary. */
+export function mergeLocaleMessages(
+  locale: LanguageEnum,
+  extra: MessageDict,
+): void {
+  const target = dictionaries[locale];
+  const merge = (dst: MessageDict, src: MessageDict) => {
+    for (const [k, v] of Object.entries(src)) {
+      if (
+        v &&
+        typeof v === "object" &&
+        !Array.isArray(v) &&
+        dst[k] &&
+        typeof dst[k] === "object" &&
+        !Array.isArray(dst[k])
+      ) {
+        merge(dst[k] as MessageDict, v as MessageDict);
+      } else {
+        dst[k] = v;
+      }
+    }
+  };
+  merge(target, extra);
+}
+
+export default {
+  t: $t,
+  useT,
+  getLocale,
+  setLocale,
+};
