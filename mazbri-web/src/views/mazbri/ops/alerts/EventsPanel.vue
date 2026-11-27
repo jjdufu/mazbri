@@ -35,37 +35,6 @@
       <AutoRefresh v-model="refreshInterval" @tick="reload" />
     </OpsPanelToolbar>
 
-    <OpsCard :title="t('ops.alerts.timeline')">
-      <ElEmpty
-        v-if="!rows.length"
-        :description="t('ops.alerts.empty')"
-        :image-size="60"
-      />
-      <ElTimeline v-else>
-        <ElTimelineItem
-          v-for="item in rows.slice(0, 10)"
-          :key="item.id"
-          :timestamp="formatAlertTime(item.started_at)"
-          :type="alertTimelineType(item.status, item.severity)"
-          placement="top"
-        >
-          <span class="ops-alerts__timeline-title">{{ item.rule_name }}</span>
-          <ElTag size="small" :type="alertStatusTag(item.status)">
-            {{ alertStatusText(item.status) }}
-          </ElTag>
-          <span class="ops-alerts__muted">
-            {{ formatAlertLabels(item.labels) }} ·
-            {{ formatAlertValue(item.value) }} {{ item.op }}
-            {{ formatAlertValue(item.threshold) }}
-          </span>
-          <span v-if="item.resolved_at" class="ops-alerts__muted">
-            · {{ t("ops.alerts.resolvedAt") }}
-            {{ formatAlertTime(item.resolved_at) }}
-          </span>
-        </ElTimelineItem>
-      </ElTimeline>
-    </OpsCard>
-
     <OpsCard>
       <OpsTableWrap>
         <ArtTable

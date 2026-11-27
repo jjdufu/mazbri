@@ -18,94 +18,82 @@
         <div class="ops-overview__filter" data-role="global-filter">
           <RoleGate gate="biz">
             <ElButton
-              link
-              type="primary"
+              plain
               class="ops-overview__finance-shortcut"
               @click="router.push({ path: '/operations/bills', query: { tab: 'overview' } })"
             >
               {{ t("ops.overview.financeShortcut") }}
+              <ArtSvgIcon icon="ri:external-link-line" class="ml-1" />
             </ElButton>
           </RoleGate>
           <TimeRangePicker v-model="timeRange" @change="reload" />
           <AutoRefresh v-model="refreshInterval" @tick="reload" />
         </div>
       </template>
-      <OpsKpiRow>
-        <ElCol v-bind="KPI_COL">
-          <StatCard
-            :label="t('ops.overview.stats.qps')"
-            :value="traffic?.qps"
-            :unit="t('ops.units.perSec')"
-            :loading="loading"
-            icon="ri:pulse-line"
-            :interactive="canDrill('2.1')"
-            @click="drill('2.1')"
-          />
-        </ElCol>
-        <ElCol v-bind="KPI_COL">
-          <StatCard
-            :label="t('ops.overview.stats.successRate')"
-            :value="traffic?.success_rate"
-            :unit="t('ops.units.percent')"
-            :loading="loading"
-            icon="ri:checkbox-circle-line"
-            icon-color="#67c23a"
-            icon-background="rgba(103, 194, 58, 0.12)"
-            :interactive="canDrill('2.4')"
-            @click="drill('2.4')"
-          />
-        </ElCol>
-        <ElCol v-bind="KPI_COL">
-          <StatCard
-            :label="t('ops.overview.stats.latency')"
-            :value="traffic?.p99_latency_ms"
-            :unit="t('ops.units.ms')"
-            :hint="latencyHint(traffic)"
-            :loading="loading"
-            icon="ri:timer-line"
-            icon-color="#e6a23c"
-            icon-background="rgba(230, 162, 60, 0.12)"
-            :interactive="canDrill('2.2')"
-            @click="drill('2.2')"
-          />
-        </ElCol>
-        <ElCol v-bind="KPI_COL">
-          <StatCard
-            :label="t('ops.overview.stats.error4xx')"
-            :value="traffic?.error_rate_4xx"
-            :unit="t('ops.units.percent')"
-            :loading="loading"
-            icon="ri:error-warning-line"
-            icon-color="#e6a23c"
-            icon-background="rgba(230, 162, 60, 0.12)"
-            :interactive="canDrill('2.4')"
-            @click="drill('2.4')"
-          />
-        </ElCol>
-        <ElCol v-bind="KPI_COL">
-          <StatCard
-            :label="t('ops.overview.stats.error5xx')"
-            :value="traffic?.error_rate_5xx"
-            :unit="t('ops.units.percent')"
-            :loading="loading"
-            icon="ri:close-circle-line"
-            icon-color="#f56c6c"
-            icon-background="rgba(245, 108, 108, 0.12)"
-            :interactive="canDrill('2.4')"
-            @click="drill('2.4')"
-          />
-        </ElCol>
-        <ElCol v-bind="KPI_COL">
-          <StatCard
-            :label="t('ops.overview.stats.ratelimit')"
-            :value="traffic?.rate_limit_rejections_per_sec"
-            :unit="t('ops.units.perSec')"
-            :loading="loading"
-            icon="ri:stop-circle-line"
-            :interactive="canDrill('4.1')"
-            @click="drill('4.1')"
-          />
-        </ElCol>
+      <OpsKpiRow :columns="6">
+        <StatCard
+          :label="t('ops.overview.stats.qps')"
+          :value="traffic?.qps"
+          :unit="t('ops.units.perSec')"
+          :loading="loading"
+          icon="ri:pulse-line"
+          :interactive="canDrill('2.1')"
+          @click="drill('2.1')"
+        />
+        <StatCard
+          :label="t('ops.overview.stats.successRate')"
+          :value="traffic?.success_rate"
+          :unit="t('ops.units.percent')"
+          :loading="loading"
+          icon="ri:checkbox-circle-line"
+          icon-color="#67c23a"
+          icon-background="rgba(103, 194, 58, 0.12)"
+          :interactive="canDrill('2.4')"
+          @click="drill('2.4')"
+        />
+        <StatCard
+          :label="t('ops.overview.stats.latency')"
+          :value="traffic?.p99_latency_ms"
+          :unit="t('ops.units.ms')"
+          :hint="latencyHint(traffic)"
+          :loading="loading"
+          icon="ri:timer-line"
+          icon-color="#e6a23c"
+          icon-background="rgba(230, 162, 60, 0.12)"
+          :interactive="canDrill('2.2')"
+          @click="drill('2.2')"
+        />
+        <StatCard
+          :label="t('ops.overview.stats.error4xx')"
+          :value="traffic?.error_rate_4xx"
+          :unit="t('ops.units.percent')"
+          :loading="loading"
+          icon="ri:error-warning-line"
+          icon-color="#e6a23c"
+          icon-background="rgba(230, 162, 60, 0.12)"
+          :interactive="canDrill('2.4')"
+          @click="drill('2.4')"
+        />
+        <StatCard
+          :label="t('ops.overview.stats.error5xx')"
+          :value="traffic?.error_rate_5xx"
+          :unit="t('ops.units.percent')"
+          :loading="loading"
+          icon="ri:close-circle-line"
+          icon-color="#f56c6c"
+          icon-background="rgba(245, 108, 108, 0.12)"
+          :interactive="canDrill('2.4')"
+          @click="drill('2.4')"
+        />
+        <StatCard
+          :label="t('ops.overview.stats.ratelimit')"
+          :value="traffic?.rate_limit_rejections_per_sec"
+          :unit="t('ops.units.perSec')"
+          :loading="loading"
+          icon="ri:stop-circle-line"
+          :interactive="canDrill('4.1')"
+          @click="drill('4.1')"
+        />
       </OpsKpiRow>
     </OpsSection>
 
@@ -116,91 +104,105 @@
       :semantics="realtimeSemantics"
     >
       <OpsKpiRow>
-        <ElCol v-bind="RT_COL">
-          <StatCard
-            :label="t('ops.overview.stats.proxyConnections')"
-            :value="realtime?.proxy_active_connections"
-            :loading="loading"
-            :digits="0"
-            icon="ri:links-line"
-          />
-        </ElCol>
-        <ElCol v-bind="RT_COL">
-          <StatCard
-            :label="t('ops.overview.stats.circuitOpen')"
-            :value="realtime?.circuit_breaker_open_count"
-            :loading="loading"
-            :digits="0"
-            icon="ri:shut-down-line"
-            :interactive="canDrill('3.2')"
-            @click="drill('3.2')"
-          />
-        </ElCol>
-        <ElCol v-bind="RT_COL" :class="{ 'ops-overview__tenant--muted': isViewer }">
-          <StatCard
-            :label="t('ops.overview.stats.enabledTenants')"
-            :value="inventory?.tenants.enabled"
-            :hint="inventoryHint"
-            :loading="loading"
-            :digits="0"
-            icon="ri:building-line"
-          />
-        </ElCol>
+        <StatCard
+          :label="t('ops.overview.stats.proxyConnections')"
+          :value="realtime?.proxy_active_connections"
+          :loading="loading"
+          :digits="0"
+          icon="ri:links-line"
+        />
+        <StatCard
+          :label="t('ops.overview.stats.circuitOpen')"
+          :value="realtime?.circuit_breaker_open_count"
+          :loading="loading"
+          :digits="0"
+          icon="ri:shut-down-line"
+          :interactive="canDrill('3.2')"
+          @click="drill('3.2')"
+        />
+        <StatCard
+          :class="{ 'ops-overview__tenant--muted': isViewer }"
+          :label="t('ops.overview.stats.enabledTenants')"
+          :value="inventory?.tenants.enabled"
+          :hint="inventoryHint"
+          :loading="loading"
+          :digits="0"
+          icon="ri:building-line"
+        />
         <RoleGate gate="biz">
-          <ElCol v-bind="RT_COL">
-            <StatCard
-              :label="t('ops.overview.stats.billingBacklog')"
-              :value="realtime?.billing_pipeline?.backlog"
-              :hint="billingBacklogHint"
-              :loading="loading"
-              :digits="0"
-              icon="ri:stack-line"
-              :interactive="canDrill('6.1')"
-              @click="drill('6.1')"
-            />
-          </ElCol>
+          <StatCard
+            :label="t('ops.overview.stats.billingBacklog')"
+            :value="realtime?.billing_pipeline?.backlog"
+            :hint="billingBacklogHint"
+            :loading="loading"
+            :digits="0"
+            icon="ri:stack-line"
+            :interactive="canDrill('6.1')"
+            @click="drill('6.1')"
+          />
         </RoleGate>
       </OpsKpiRow>
     </OpsSection>
 
-    <!-- 活跃告警：独占一行 -->
-    <OpsSection
+    <!-- 活跃告警：航空暗舱式紧凑态势横幅（常态 44px，保留管理员证书临期预警，轮询零 CLS 跳变） -->
+    <div
       id="active-alerts"
-      :title="t('ops.overview.alerts')"
+      class="ops-alert-banner"
+      :class="{ 'is-firing': (alertSummary?.firing || 0) > 0 }"
+      data-block="alerts"
     >
-      <template #extra>
-        <ElButton link type="primary" @click="router.push(buildAlertsRoute())">
-          {{ t("ops.overview.alertsOpen") }}
-        </ElButton>
-      </template>
-      <OpsCard class="ops-main-panel" data-block="alerts">
-        <div class="ops-overview__tags">
-          <ElTag :type="(alertSummary?.firing || 0) > 0 ? 'danger' : 'success'">
-            {{ t("ops.overview.alertsFiring", { n: alertSummary?.firing ?? 0 }) }}
-          </ElTag>
+      <div class="ops-alert-banner__row">
+        <div class="ops-alert-banner__left">
+          <span
+            class="ops-alert-banner__dot"
+            :class="(alertSummary?.firing || 0) > 0 ? 'is-danger' : 'is-ok'"
+          />
+          <span class="ops-alert-banner__text">
+            {{
+              (alertSummary?.firing || 0) > 0
+                ? t("ops.overview.alertsFiring", { n: alertSummary?.firing ?? 0 })
+                : t("ops.overview.alertsNone")
+            }}
+          </span>
+          <ElButton
+            v-if="alertSummary?.latest.length"
+            link
+            type="danger"
+            size="small"
+            @click="alertsExpanded = !alertsExpanded"
+          >
+            {{ alertsExpanded ? t("common.actions.collapse") : t("common.actions.expand") }}
+          </ElButton>
+        </div>
+        <div class="ops-alert-banner__right">
           <RoleGate gate="admin">
             <CertExpiryBadge :days="realtime?.cert_min_expiry_days" />
           </RoleGate>
+          <ElButton link type="primary" @click="router.push(buildAlertsRoute())">
+            {{ t("ops.overview.alertsOpen") }}
+          </ElButton>
         </div>
-        <div v-if="alertSummary?.latest.length" class="ops-overview__alert-list">
-          <button
-            v-for="item in alertSummary.latest"
-            :key="item.id"
-            type="button"
-            class="ops-overview__alert-item"
-            @click="router.push(buildAlertsRoute({ eventId: item.id }))"
-          >
-            <span
-              class="ops-overview__dot"
-              :data-status="item.severity === 'critical' ? 'red' : 'yellow'"
-            ></span>
-            <span>{{ item.rule_name }}</span>
-            <span class="ops-overview__alert-labels">{{ alertLabels(item.labels) }}</span>
-          </button>
-        </div>
-        <EmptyState v-else compact :description="t('ops.overview.alertsNone')" />
-      </OpsCard>
-    </OpsSection>
+      </div>
+      <div
+        v-if="alertsExpanded && alertSummary?.latest.length"
+        class="ops-overview__alert-list ops-alert-banner__list"
+      >
+        <button
+          v-for="item in alertSummary.latest"
+          :key="item.id"
+          type="button"
+          class="ops-overview__alert-item"
+          @click="router.push(buildAlertsRoute({ eventId: item.id }))"
+        >
+          <span
+            class="ops-overview__dot"
+            :data-status="item.severity === 'critical' ? 'red' : 'yellow'"
+          ></span>
+          <span>{{ item.rule_name }}</span>
+          <span class="ops-overview__alert-labels">{{ alertLabels(item.labels) }}</span>
+        </button>
+      </div>
+    </div>
 
     <!-- 流量质量摘要：轻图下钻调用日志（禁止整页搬入 traffic） -->
     <OpsSection
@@ -319,15 +321,11 @@ import SloBudgetPanel from "./modules/SloBudgetPanel.vue";
 
 defineOptions({ name: "OpsOverview" });
 
-/** KPI 六卡一行（lg）；窄屏 3/2/1 列，保证每行等宽对齐。 */
-const KPI_COL = { xs: 24, sm: 12, md: 8, lg: 4 } as const;
-/** 实时状态四卡一行（lg）；观察者少一卡时仍左对齐。 */
-const RT_COL = { xs: 24, sm: 12, md: 6, lg: 6 } as const;
-
 /** 时间窗下钻：目标页继承同一 tr_*；实时类下钻（熔断/计费）不带窗。 */
 const WINDOWED_DRILLS: ReadonlySet<OverviewDrillId> = new Set(["2.1", "2.2", "2.4", "4.1"]);
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
+const alertsExpanded = ref(false);
 const router = useRouter();
 const { drilldown } = useDrilldown();
 const { isAdmin, isBiz, isViewer } = useOpsRole();
@@ -445,7 +443,7 @@ function alertLabels(labels: Record<string, string>) {
 
 function fmt(n: number | null | undefined) {
   if (n === null || n === undefined || Number.isNaN(n)) return "—";
-  return new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 }).format(n);
+  return new Intl.NumberFormat(locale.value, { maximumFractionDigits: 2 }).format(n);
 }
 
 function canDrill(id: OverviewDrillId): boolean {
@@ -578,6 +576,49 @@ onMounted(() => {
   flex-wrap: wrap;
   gap: var(--ops-space-xs, 8px);
   margin-bottom: var(--ops-space-sm, 12px);
+}
+.ops-alert-banner {
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 10px;
+  background: var(--art-main-bg-color, var(--el-bg-color));
+  padding: 0 14px;
+}
+.ops-alert-banner.is-firing {
+  border-color: var(--el-color-danger-light-5);
+  background: var(--el-color-danger-light-9);
+}
+.ops-alert-banner__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+}
+.ops-alert-banner__left,
+.ops-alert-banner__right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.ops-alert-banner__dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--el-color-success);
+}
+.ops-alert-banner__dot[data-status="firing"] {
+  background: var(--el-color-danger);
+}
+.ops-alert-banner__text {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--el-text-color-primary);
+}
+.ops-alert-banner__list {
+  padding: 6px 0 10px;
+  border-top: 1px solid var(--el-border-color-extra-light);
 }
 .ops-overview__alert-list {
   display: flex;

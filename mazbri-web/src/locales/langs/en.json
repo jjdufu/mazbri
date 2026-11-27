@@ -4982,7 +4982,10 @@
           "evaluateEnabledHint": "Pauses periodic evaluation of this rule when disabled."
         },
         "notifySummary": "Email {emails} · Webhook {webhooks}",
-        "notifyOff": "Off (UI only)"
+        "notifyOff": "Off (UI only)",
+        "conditionImmediate": "Immediate",
+        "conditionFor": "For {duration}",
+        "conditionSloBurn": "Burn firing"
       },
       "silenced": "Silenced",
       "inhibited": "Inhibited",

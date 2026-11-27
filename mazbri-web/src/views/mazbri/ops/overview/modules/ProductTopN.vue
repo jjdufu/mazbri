@@ -101,7 +101,7 @@ type ViewMode = "active" | "zero";
 
 const TOP = 10;
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const viewMode = ref<ViewMode>("active");
 const metric = ref<ProductRankMetric>("req_count");
 const loading = ref(false);
@@ -123,7 +123,7 @@ let lastWindow: { start: number; end: number } | null = null;
 let seq = 0;
 let zeroSeq = 0;
 
-const nf = new Intl.NumberFormat("zh-CN");
+const nf = computed(() => new Intl.NumberFormat(locale.value));
 
 const segmentOptions = computed(() => [
   { label: t("ops.products.segmentActive"), value: "active" },
@@ -156,13 +156,13 @@ const columns = computed<ColumnOption<NamedProductRankRow>[]>(() => [
     prop: "req_count",
     label: t("ops.products.colReq"),
     width: 120,
-    formatter: (r) => nf.format(r.req_count),
+    formatter: (r) => nf.value.format(r.req_count),
   },
   {
     prop: "prev_req_count",
     label: t("ops.products.colPrev"),
     width: 120,
-    formatter: (r) => nf.format(r.prev_req_count),
+    formatter: (r) => nf.value.format(r.prev_req_count),
   },
   {
     prop: "delta",

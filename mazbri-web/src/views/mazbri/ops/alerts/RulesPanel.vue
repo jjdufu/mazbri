@@ -2,6 +2,7 @@
   <div class="ops-alerts-panel">
     <OpsPanelToolbar>
       <ElButton v-if="isAdmin" type="primary" @click="openCreate">
+        <template #icon><ArtSvgIcon icon="ri:add-line" /></template>
         {{ t("ops.alerts.rules.create") }}
       </ElButton>
       <ElButton :loading="loading" @click="reload">{{
@@ -10,117 +11,75 @@
     </OpsPanelToolbar>
 
     <OpsCard>
-      <ElTable
-        v-loading="loading"
+      <ArtTable
+        :loading="loading"
         :data="rules"
+        :columns="ruleColumns"
         row-key="id"
         size="small"
         stripe
         class="surface-panel-table"
       >
-        <ElTableColumn
-          :label="t('ops.alerts.rules.columns.enabled')"
-          width="68"
-        >
-          <template #default="{ row }">
-            <ElSwitch
-              :model-value="row.enabled"
-              :disabled="!isAdmin"
-              @change="
-                (value: string | number | boolean) =>
-                  toggle(row, Boolean(value))
-              "
-            />
-          </template>
-        </ElTableColumn>
-        <ElTableColumn
-          prop="name"
-          :label="t('ops.alerts.rules.columns.name')"
-          min-width="120"
-          show-overflow-tooltip
-        />
-        <ElTableColumn
-          :label="t('ops.alerts.rules.columns.severity')"
-          width="76"
-        >
-          <template #default="{ row }">
-            <ElTag :type="alertSeverityTag(row.severity)" size="small">
-              {{ t(`ops.alerts.severity.${row.severity}`) }}
-            </ElTag>
-          </template>
-        </ElTableColumn>
-        <ElTableColumn
-          :label="t('ops.alerts.rules.columns.expr')"
-          min-width="180"
-          show-overflow-tooltip
-        >
-          <template #default="{ row }">
-            <code class="ops-alerts__expr"
-              >{{ row.kind }} · {{ row.expr }}</code
-            >
-          </template>
-        </ElTableColumn>
-        <ElTableColumn
-          :label="t('ops.alerts.rules.columns.condition')"
-          width="120"
-        >
-          <template #default="{ row }">
-            {{ row.op }} {{ row.threshold }} · {{ row.for_seconds
-            }}{{ t("ops.units.seconds") }}
-          </template>
-        </ElTableColumn>
-        <ElTableColumn
-          :label="t('ops.alerts.rules.columns.notify')"
-          width="120"
-        >
-          <template #default="{ row }">
-            <span v-if="row.notify?.enabled">
-              {{
-                t("ops.alerts.rules.notifySummary", {
-                  emails: row.notify.emails?.length || 0,
-                  webhooks: row.notify.webhooks?.length || 0,
-                })
-              }}
-            </span>
-            <span v-else>{{ t("ops.alerts.rules.notifyOff") }}</span>
-          </template>
-        </ElTableColumn>
-        <ElTableColumn :label="t('ops.alerts.rules.columns.active')" width="68">
-          <template #default="{ row }">
-            <ElButton
-              v-if="row.active_events"
-              link
-              type="danger"
-              @click="goEvents"
-            >
-              {{ row.active_events }}
-            </ElButton>
-            <span v-else>0</span>
-          </template>
-        </ElTableColumn>
-        <ElTableColumn
-          v-if="isAdmin"
-          :label="t('ops.alerts.columns.actions')"
-          width="180"
-        >
-          <template #default="{ row }">
-            <ElButton
-              v-if="drillRouteOf(row)"
-              link
-              type="primary"
-              @click="goDrill(row)"
-            >
-              {{ t("ops.alerts.drillDown") }}
-            </ElButton>
-            <ElButton link type="primary" @click="openEdit(row)">
-              {{ t("ops.alerts.rules.edit") }}
-            </ElButton>
-            <ElButton link type="danger" @click="remove(row)">
-              {{ t("ops.alerts.rules.delete") }}
-            </ElButton>
-          </template>
-        </ElTableColumn>
-      </ElTable>
+        <template #enabled="{ row }">
+          <ElSwitch
+            :model-value="row.enabled"
+            :disabled="!isAdmin"
+            @change="
+              (value: string | number | boolean) =>
+                toggle(row, Boolean(value))
+            "
+          />
+        </template>
+        <template #severity="{ row }">
+          <ElTag :type="alertSeverityTag(row.severity)" size="small">
+            {{ t(`ops.alerts.severity.${row.severity}`) }}
+          </ElTag>
+        </template>
+        <template #expr="{ row }">
+          <code class="ops-alerts__expr">{{ row.kind }} · {{ row.expr }}</code>
+        </template>
+        <template #condition="{ row }">
+          {{ formatRuleCondition(row, t, locale) }}
+        </template>
+        <template #notify="{ row }">
+          <span v-if="row.notify?.enabled">
+            {{
+              t("ops.alerts.rules.notifySummary", {
+                emails: row.notify.emails?.length || 0,
+                webhooks: row.notify.webhooks?.length || 0,
+              })
+            }}
+          </span>
+          <span v-else>{{ t("ops.alerts.rules.notifyOff") }}</span>
+        </template>
+        <template #active="{ row }">
+          <ElButton
+            v-if="row.active_events"
+            link
+            type="danger"
+            @click="goEvents"
+          >
+            {{ row.active_events }}
+          </ElButton>
+          <span v-else>0</span>
+        </template>
+        <template #actions="{ row }">
+          <ElButton
+            v-if="drillRouteOf(row)"
+            link
+            type="primary"
+            @click="goDrill(row)"
+          >
+            {{ t("ops.alerts.drillDown") }}
+          </ElButton>
+          <ElButton link type="primary" @click="openEdit(row)">
+            {{ t("ops.alerts.rules.edit") }}
+          </ElButton>
+          <ElButton link type="danger" @click="remove(row)">
+            {{ t("ops.alerts.rules.delete") }}
+          </ElButton>
+        </template>
+      </ArtTable>
     </OpsCard>
 
     <EditDialog
@@ -312,7 +271,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { isMfaStepUpCancelled } from "@/utils/http/mfa-dialog-service";
 import { useRouter } from "vue-router";
@@ -322,9 +281,11 @@ import {
   type FormInstance,
   type FormRules,
 } from "element-plus";
+import ArtTable from "@/components/core/tables/art-table/index.vue";
 import EditDialog from "@/components/common/EditDialog.vue";
 import OpsCard from "@/components/ops/OpsCard.vue";
 import OpsPanelToolbar from "@/components/ops/OpsPanelToolbar.vue";
+import type { ColumnOption } from "@/types/component";
 import {
   createAlertRule,
   deleteAlertRule,
@@ -343,6 +304,7 @@ import type {
 import {
   alertSeverityTag,
   formatAlertLabelsText,
+  formatRuleCondition,
   isValidAlertEmail,
   parseAlertLabelsText,
   parseAlertListText,
@@ -354,9 +316,68 @@ import {
 
 defineOptions({ name: "OpsAlertRulesPanel" });
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const router = useRouter();
 const { isAdmin, isBiz, isViewer } = useOpsRole();
+
+const ruleColumns = computed<ColumnOption<AlertRule>[]>(() => {
+  const cols: ColumnOption<AlertRule>[] = [
+    {
+      prop: "enabled",
+      label: t("ops.alerts.rules.columns.enabled"),
+      width: 68,
+      useSlot: true,
+    },
+    {
+      prop: "name",
+      label: t("ops.alerts.rules.columns.name"),
+      minWidth: 120,
+      showOverflowTooltip: true,
+    },
+    {
+      prop: "severity",
+      label: t("ops.alerts.rules.columns.severity"),
+      width: 76,
+      useSlot: true,
+    },
+    {
+      prop: "expr",
+      label: t("ops.alerts.rules.columns.expr"),
+      minWidth: 180,
+      showOverflowTooltip: true,
+      useSlot: true,
+    },
+    {
+      prop: "condition",
+      label: t("ops.alerts.rules.columns.condition"),
+      minWidth: 168,
+      useSlot: true,
+    },
+    {
+      prop: "notify",
+      label: t("ops.alerts.rules.columns.notify"),
+      width: 120,
+      useSlot: true,
+    },
+    {
+      prop: "active",
+      label: t("ops.alerts.rules.columns.active"),
+      width: 72,
+      align: "right",
+      numeric: true,
+      useSlot: true,
+    },
+  ];
+  if (isAdmin.value) {
+    cols.push({
+      prop: "actions",
+      label: t("ops.alerts.columns.actions"),
+      width: 180,
+      useSlot: true,
+    });
+  }
+  return cols;
+});
 
 const ops: AlertOp[] = [">", ">=", "<", "<=", "==", "!="];
 const severities: AlertSeverity[] = ["critical", "warning", "info"];

@@ -21,11 +21,34 @@
 }
 
 .ops-kpi-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--ops-kpi-gutter, 16px);
   min-width: 0;
+
+  &[data-cols="6"] {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+
+    @media (max-width: 1279px) {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    @media (max-width: 767px) {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  > * {
+    min-width: 0;
+  }
 
   > .el-col {
     display: flex;
-    margin-bottom: var(--ops-space-md);
+    max-width: none !important;
+    width: 100% !important;
+    flex: none !important;
+    padding: 0 !important;
+    margin-bottom: 0 !important;
   }
 
   > .el-col > * {

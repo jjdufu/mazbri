@@ -159,6 +159,11 @@ export function formatOpsMetricValue(
       return isEn ? `${sec}s` : `${sec} 秒`;
     }
     case "durationMs": {
+      if (forAxis && unitLabel === "ms") {
+        return new Intl.NumberFormat(locale, {
+          maximumFractionDigits: 1,
+        }).format(formatCompactDecimal(value, 1));
+      }
       if (Math.abs(value) >= 1000) {
         return `${formatCompactDecimal(value / 1000, 2)} s`;
       }

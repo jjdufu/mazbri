@@ -1,4 +1,5 @@
-import type { AlertSeverity, AlertStatus } from "@/types/api/alerts";
+import type { AlertRule, AlertSeverity, AlertStatus } from "@/types/api/alerts";
+import { formatIntervalHuman } from "@/utils/format";
 import { formatWallClock } from "@/utils/ops/call-filters";
 
 /** Element Plus tag type 映射：告警严重级别。 */
@@ -146,4 +147,27 @@ export function resolveAlertI18nLabel(
   const key = `${prefix}.${value}`;
   if (hasKey(key)) return translate(key);
   return value;
+}
+
+/**
+ * 基于元数据标签（`labels.unit`）与布尔 SLO 燃烧指标（`mazbri_slo_burn_*`）转译告警规则条件，
+ * 避免对 0/1 布尔指标盲猜百分比或拼接 `> 0.5 · 0秒`。
+ */
+export function formatRuleCondition(
+  row: Pick<AlertRule, "expr" | "op" | "threshold" | "for_seconds" | "labels">,
+  t: (key: string, params?: Record<string, unknown>) => string,
+  locale = "zh",
+): string {
+  const durationText =
+    row.for_seconds <= 0
+      ? t("ops.alerts.rules.conditionImmediate")
+      : t("ops.alerts.rules.conditionFor", {
+          duration: formatIntervalHuman(row.for_seconds, locale),
+        });
+  if (row.expr?.includes("mazbri_slo_burn_")) {
+    return `${t("ops.alerts.rules.conditionSloBurn")} · ${durationText}`;
+  }
+  const unit = row.labels?.unit?.trim() ?? "";
+  const valueText = `${row.op} ${formatAlertValue(row.threshold)}${unit}`;
+  return `${valueText} · ${durationText}`;
 }

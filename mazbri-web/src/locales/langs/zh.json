@@ -4982,7 +4982,10 @@
           "evaluateEnabledHint": "关闭后暂停该规则的周期性评估。"
         },
         "notifySummary": "邮件 {emails} · Webhook {webhooks}",
-        "notifyOff": "关闭（仅页面）"
+        "notifyOff": "关闭（仅页面）",
+        "conditionImmediate": "立即触发",
+        "conditionFor": "持续 {duration}",
+        "conditionSloBurn": "燃烧触发"
       },
       "silenced": "已静默",
       "inhibited": "已抑制",

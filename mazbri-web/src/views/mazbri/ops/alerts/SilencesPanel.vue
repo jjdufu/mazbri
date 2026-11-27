@@ -15,55 +15,27 @@
           t("ops.alerts.silences.create")
         }}</ElButton>
       </template>
-      <ElTable
-        v-loading="loading"
+      <ArtTable
+        :loading="loading"
         :data="rows"
+        :columns="silenceColumns"
         row-key="id"
         size="small"
         stripe
         class="surface-panel-table"
       >
-        <ElTableColumn
-          :label="t('ops.alerts.silences.matchers')"
-          min-width="200"
-          show-overflow-tooltip
-        >
-          <template #default="{ row }">{{
-            formatAlertMatchers(row.matchers)
-          }}</template>
-        </ElTableColumn>
-        <ElTableColumn
-          :label="t('ops.alerts.silences.window')"
-          min-width="280"
-        >
-          <template #default="{ row }"
-            >{{ formatAlertTime(row.starts_at) }} →
-            {{ formatAlertTime(row.ends_at) }}</template
-          >
-        </ElTableColumn>
-        <ElTableColumn
-          prop="created_by"
-          :label="t('ops.alerts.silences.createdBy')"
-          width="120"
-        />
-        <ElTableColumn
-          prop="comment"
-          :label="t('ops.alerts.silences.comment')"
-          min-width="140"
-          show-overflow-tooltip
-        />
-        <ElTableColumn
-          v-if="isAdmin"
-          :label="t('common.fields.operations')"
-          width="100"
-        >
-          <template #default="{ row }">
-            <ElButton link type="danger" @click="remove(row.id)">{{
-              t("common.delete")
-            }}</ElButton>
-          </template>
-        </ElTableColumn>
-      </ElTable>
+        <template #matchers="{ row }">
+          {{ formatAlertMatchers(row.matchers) }}
+        </template>
+        <template #window="{ row }">
+          {{ formatAlertTime(row.starts_at) }} → {{ formatAlertTime(row.ends_at) }}
+        </template>
+        <template #operations="{ row }">
+          <ElButton link type="danger" @click="remove(row.id)">{{
+            t("common.delete")
+          }}</ElButton>
+        </template>
+      </ArtTable>
     </OpsCard>
 
     <OpsCard :title="t('ops.alerts.inhibits.title')">
@@ -72,67 +44,37 @@
           t("ops.alerts.inhibits.create")
         }}</ElButton>
       </template>
-      <ElTable
-        v-loading="loadingInhibits"
+      <ArtTable
+        :loading="loadingInhibits"
         :data="inhibits"
+        :columns="inhibitColumns"
         row-key="id"
         size="small"
         stripe
         class="surface-panel-table"
       >
-        <ElTableColumn
-          prop="name"
-          :label="t('ops.alerts.inhibits.name')"
-          min-width="140"
-          show-overflow-tooltip
-        />
-        <ElTableColumn
-          :label="t('ops.alerts.inhibits.source')"
-          min-width="160"
-          show-overflow-tooltip
-        >
-          <template #default="{ row }">{{
-            formatAlertMatchers(row.source_matchers)
-          }}</template>
-        </ElTableColumn>
-        <ElTableColumn
-          :label="t('ops.alerts.inhibits.target')"
-          min-width="160"
-          show-overflow-tooltip
-        >
-          <template #default="{ row }">{{
-            formatAlertMatchers(row.target_matchers)
-          }}</template>
-        </ElTableColumn>
-        <ElTableColumn :label="t('ops.alerts.inhibits.equal')" min-width="120">
-          <template #default="{ row }">{{
-            row.equal_labels?.join(", ") || "—"
-          }}</template>
-        </ElTableColumn>
-        <ElTableColumn
-          :label="t('ops.alerts.rules.columns.enabled')"
-          width="90"
-        >
-          <template #default="{ row }">
-            <ElTag size="small" :type="row.enabled ? 'success' : 'info'">{{
-              row.enabled
-                ? t("common.status.enabled")
-                : t("common.status.disabled")
-            }}</ElTag>
-          </template>
-        </ElTableColumn>
-        <ElTableColumn
-          v-if="isAdmin"
-          :label="t('common.fields.operations')"
-          width="100"
-        >
-          <template #default="{ row }">
-            <ElButton link type="danger" @click="removeInhibit(row.id)">{{
-              t("common.delete")
-            }}</ElButton>
-          </template>
-        </ElTableColumn>
-      </ElTable>
+        <template #source="{ row }">
+          {{ formatAlertMatchers(row.source_matchers) }}
+        </template>
+        <template #target="{ row }">
+          {{ formatAlertMatchers(row.target_matchers) }}
+        </template>
+        <template #equal="{ row }">
+          {{ row.equal_labels?.join(", ") || "—" }}
+        </template>
+        <template #enabled="{ row }">
+          <ElTag size="small" :type="row.enabled ? 'success' : 'info'">{{
+            row.enabled
+              ? t("common.status.enabled")
+              : t("common.status.disabled")
+          }}</ElTag>
+        </template>
+        <template #operations="{ row }">
+          <ElButton link type="danger" @click="removeInhibit(row.id)">{{
+            t("common.delete")
+          }}</ElButton>
+        </template>
+      </ArtTable>
     </OpsCard>
 
     <EditDialog
@@ -207,14 +149,16 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { isMfaStepUpCancelled } from "@/utils/http/mfa-dialog-service";
 import { formatDateTime, parseDisplayWallClockMs } from "@/utils/format";
 import { ElMessage, ElMessageBox } from "element-plus";
+import ArtTable from "@/components/core/tables/art-table/index.vue";
 import EditDialog from "@/components/common/EditDialog.vue";
 import OpsCard from "@/components/ops/OpsCard.vue";
 import OpsPanelToolbar from "@/components/ops/OpsPanelToolbar.vue";
+import type { ColumnOption } from "@/types/component";
 import {
   createAlertInhibit,
   createAlertSilence,
@@ -235,6 +179,90 @@ defineOptions({ name: "OpsAlertSilencesPanel" });
 
 const { t } = useI18n();
 const { isAdmin } = useOpsRole();
+
+const silenceColumns = computed<ColumnOption<AlertSilence>[]>(() => {
+  const cols: ColumnOption<AlertSilence>[] = [
+    {
+      prop: "matchers",
+      label: t("ops.alerts.silences.matchers"),
+      minWidth: 200,
+      showOverflowTooltip: true,
+      useSlot: true,
+    },
+    {
+      prop: "window",
+      label: t("ops.alerts.silences.window"),
+      minWidth: 280,
+      useSlot: true,
+    },
+    {
+      prop: "created_by",
+      label: t("ops.alerts.silences.createdBy"),
+      width: 120,
+    },
+    {
+      prop: "comment",
+      label: t("ops.alerts.silences.comment"),
+      minWidth: 140,
+      showOverflowTooltip: true,
+    },
+  ];
+  if (isAdmin.value) {
+    cols.push({
+      prop: "operations",
+      label: t("common.fields.operations"),
+      width: 100,
+      useSlot: true,
+    });
+  }
+  return cols;
+});
+
+const inhibitColumns = computed<ColumnOption<AlertInhibit>[]>(() => {
+  const cols: ColumnOption<AlertInhibit>[] = [
+    {
+      prop: "name",
+      label: t("ops.alerts.inhibits.name"),
+      minWidth: 140,
+      showOverflowTooltip: true,
+    },
+    {
+      prop: "source",
+      label: t("ops.alerts.inhibits.source"),
+      minWidth: 160,
+      showOverflowTooltip: true,
+      useSlot: true,
+    },
+    {
+      prop: "target",
+      label: t("ops.alerts.inhibits.target"),
+      minWidth: 160,
+      showOverflowTooltip: true,
+      useSlot: true,
+    },
+    {
+      prop: "equal",
+      label: t("ops.alerts.inhibits.equal"),
+      minWidth: 120,
+      useSlot: true,
+    },
+    {
+      prop: "enabled",
+      label: t("ops.alerts.rules.columns.enabled"),
+      width: 90,
+      useSlot: true,
+    },
+  ];
+  if (isAdmin.value) {
+    cols.push({
+      prop: "operations",
+      label: t("common.fields.operations"),
+      width: 100,
+      useSlot: true,
+    });
+  }
+  return cols;
+});
 
 const loading = ref(false);
 const loadingInhibits = ref(false);

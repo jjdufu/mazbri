@@ -4,12 +4,12 @@
       {{ t("ops.overview.recentAnomalies") }}
     </template>
 
-    <EmptyState
+    <div
       v-if="loaded && !loading && rows.length === 0"
-      compact
-      :image-size="56"
-      :description="t('ops.overview.anomalyEmpty')"
-    />
+      class="recent-anomalies__empty-strip"
+    >
+      {{ t("ops.overview.anomalyEmpty") }}
+    </div>
     <OpsTableWrap v-else>
       <ArtTable
         :data="rows"
@@ -116,6 +116,14 @@ defineExpose({ reload });
 </script>
 
 <style scoped>
+.recent-anomalies__empty-strip {
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 4px 8px;
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+}
 .recent-anomalies__table {
   cursor: pointer;
 }
