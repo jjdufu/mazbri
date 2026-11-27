@@ -49,10 +49,6 @@
             (shouldShowBreadcrumb && isDualMenu)
           "
         />
-
-        <ArtHorizontalMenu v-if="isTopMenu" :list="menuList" />
-
-        <ArtMixedMenu v-if="isTopLeftMenu" :list="menuList" />
       </div>
 
       <div class="flex-c gap-2.5">

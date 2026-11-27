@@ -52,8 +52,8 @@ export interface FastEnterConfig {
 export interface SystemConfig {
   systemInfo: SystemBasicConfig;
   systemThemeStyles: SystemThemeTypes;
-  settingThemeList: ThemeSetting[];
-  menuLayoutList: MenuLayout[];
+  settingThemeList?: ThemeSetting[];
+  menuLayoutList?: MenuLayout[];
   themeList: MenuThemeType[];
   darkMenuStyles: MenuThemeType[];
   systemMainColor: readonly string[];

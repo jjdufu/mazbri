@@ -10,14 +10,6 @@ export const globalComponentsConfig: GlobalComponentConfig[] = [
     enabled: true,
   },
   {
-    name: $t("config.globalComponents.fireworksEffect"),
-    key: "fireworks-effect",
-    component: defineAsyncComponent(
-      () => import("@/components/core/layouts/art-fireworks-effect/index.vue"),
-    ),
-    enabled: true,
-  },
-  {
     name: $t("config.globalComponents.watermarkEffect"),
     key: "watermark",
     component: defineAsyncComponent(

@@ -1,7 +1,6 @@
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 import AppConfig from "@/config";
-import { useCeremony } from "@/hooks/core/useCeremony";
 import type { SystemSettings } from "@/types/api/settings";
 import { logger } from "@/utils/sys";
 import { formatMenuTitle } from "@/utils/router";
@@ -99,11 +98,6 @@ export const useSettingStore = defineStore("settingStore", () => {
   const festivalDate = computed(() => displayStore.festivalDate);
   const refresh = computed(() => displayStore.refresh);
   const getCustomRadius = computed(() => displayStore.getCustomRadius);
-  const isShowFireworks = computed((): boolean => {
-    return festivalDate.value === useCeremony().currentFestivalData.value?.date
-      ? false
-      : true;
-  });
 
   const applySystemSettings = (settings: SystemSettings) => {
     const nextSiteName =
@@ -192,7 +186,6 @@ export const useSettingStore = defineStore("settingStore", () => {
     festivalDate,
     refresh,
     getCustomRadius,
-    isShowFireworks,
     siteName,
     siteUrl,
     tenantGatewayUrl,

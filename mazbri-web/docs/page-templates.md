@@ -8,10 +8,10 @@
 
 ```vue
 <OpsPage :title="…" :subtitle="时间窗或页说明">
-  <template #actions><!-- 主按钮槽：时间窗 / 刷新 / 打开大屏 --></template>
-  <OpsKpiRow><!-- ElCol + StatCard，卡高由 token 统一 --></OpsKpiRow>
+  <template #leading><!-- 可选：Trace ID 等前置身份 --></template>
+  <template #actions><!-- 主按钮槽：时间窗 / 刷新 --></template>
+  <OpsKpiRow :columns="6"><!-- 原生 CSS Grid + StatCard，卡高由 token 统一 --></OpsKpiRow>
   <OpsCard title="主区"><!-- 一主表或主图 --></OpsCard>
-  <!-- 至多一辅 -->
 </OpsPage>
 ```
 
@@ -31,33 +31,42 @@
     v-model:columns="columns"
     :data="…"
     :pagination="…"
-    … <!-- 搜索/导入导出/主按钮/删除经 props，勿再手拼 ActionBar -->
+    …
   />
 </ControlPanelPageShell>
 ```
 
-- 有 `pagination.total` 就必须渲染分页器。
+- 有 `pagination.total` 就必须渲染分页器与总条数。
+- 启停/正常/冻结等生命周期状态统一使用 `<StatusIndicator>`；分类/协议枚举使用 `<ElTag effect="plain">`。
 - 空表用 `empty-text` 或 `#empty` + `EmptyState`。
 
-## 3. 租户详情 Tab 页 — `TenantDetailShell` + `TenantTabShell`
+## 3. 实体详情页 — `EntityIdentityBar` + `TenantDetailShell` / `ElTabs`
 
-适用：`tenants/[code]` 及各 tab。
+适用：租户详情、产品详情、供应商详情。
 
 ```vue
 <TenantDetailShell>
-  <template #header><!-- ElPageHeader / 标题 --></template>
-  <template #extra><!-- 状态 Tag --></template>
-  <template #tabs><!-- ElSegmented --></template>
-  <TenantTabShell><!-- 当前 tab 内容；KPI 用 OpsKpiRow，卡用 OpsCard 或统一 surface --></TenantTabShell>
+  <template #identity>
+    <EntityIdentityBar
+      :name="entity.name"
+      :code="entity.code"
+      :status-type="statusType"
+      :status-text="statusText"
+    />
+  </template>
+  <template #tabs>
+    <ElTabs :model-value="activeTab" @tab-change="handleTabChange">…</ElTabs>
+  </template>
+  <TenantTabShell><!-- 当前 tab 内容 --></TenantTabShell>
 </TenantDetailShell>
 ```
 
-## 三态
+## 三态与异常页
 
-| 态 | 组件 |
+| 态 | 组件 / 路由 |
 |----|------|
-| Empty | `EmptyState` |
-| Forbidden | `ForbiddenBlock`（整页无权限仍走路由 `/403`） |
+| Empty | `EmptyState`（`compact` 用于内嵌卡片/表格空态） |
+| Forbidden | 路由 `/exception/403`（`ArtException` + `#meta` 当前角色胶囊 + 返回/回首页/切换账号） |
 | Loading | 壳上 `v-loading` / 表 `loading`；禁止闪空表 |
 
 角色差异只体现在动作有无，**骨架同一套**。
