@@ -81,6 +81,10 @@
     }
   }
 
+  &.is-compact-empty :deep(.el-table__empty-block) {
+    min-height: 76px;
+  }
+
   :deep(.el-empty) {
     .el-empty__image {
       display: none !important;

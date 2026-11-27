@@ -199,6 +199,7 @@ import {
   formatDateTime as formatDate,
   formatDisplayDateYmd,
 } from "@/utils/format";
+import { useI18n } from "vue-i18n";
 import { exportResourceCsv } from "@/composables/useResourceCsvImportExport";
 import type { ColumnConfig } from "@/composables/useResourceCsvImportExport";
 import type { ColumnOption } from "@/types/component";
@@ -215,28 +216,29 @@ const adding = ref(false);
 const entries = ref<WhitelistEntry[]>([]);
 const addVisible = ref(false);
 const importVisible = ref(false);
-const whitelistImportColumns: ColumnConfig[] = [
+const { t } = useI18n();
+const whitelistImportColumns = computed<ColumnConfig[]>(() => [
   {
     key: "ip_address",
-    label: $t("tenant.whitelist.columns.ipAddress"),
+    label: t("tenant.whitelist.columns.ipAddress"),
     required: true,
   },
   {
     key: "cidr",
-    label: $t("tenant.whitelist.columns.cidr"),
+    label: t("tenant.whitelist.columns.cidr"),
     required: true,
     type: "number",
   },
   {
     key: "description",
-    label: $t("tenant.whitelist.columns.description"),
+    label: t("tenant.whitelist.columns.description"),
     required: false,
   },
-];
+]);
 const whitelistImportFormatHint = computed(() =>
   [
-    $t("tenant.whitelist.importDialog.formatHint"),
-    $t("tenant.whitelist.importDialog.formatExample"),
+    t("tenant.whitelist.importDialog.formatHint"),
+    t("tenant.whitelist.importDialog.formatExample"),
   ].join("\n"),
 );
 const whitelistImportExistingData = computed(() =>
@@ -247,41 +249,41 @@ const whitelistImportExistingData = computed(() =>
     };
   }),
 );
-const whitelistColumns = ref<ColumnOption<WhitelistEntry>[]>([
+const whitelistColumns = computed<ColumnOption<WhitelistEntry>[]>(() => [
   { type: "selection", width: 55 },
   {
     prop: "ip_address",
-    label: $t("tenant.whitelist.columns.ipAddress"),
+    label: t("tenant.whitelist.columns.ipAddress"),
     minWidth: 120,
     useSlot: true,
   },
   {
     prop: "cidr",
-    label: $t("tenant.whitelist.columns.type"),
+    label: t("tenant.whitelist.columns.type"),
     width: 120,
     useSlot: true,
   },
   {
     prop: "description",
-    label: $t("tenant.whitelist.columns.description"),
+    label: t("tenant.whitelist.columns.description"),
     minWidth: 100,
     useSlot: true,
   },
   {
     prop: "is_active",
-    label: $t("tenant.whitelist.columns.status"),
+    label: t("tenant.whitelist.columns.status"),
     width: 80,
     useSlot: true,
   },
   {
     prop: "created_at",
-    label: $t("common.fields.createdAt"),
+    label: t("common.fields.createdAt"),
     width: 160,
     useSlot: true,
   },
   {
     prop: "operations",
-    label: $t("common.fields.operations"),
+    label: t("common.fields.operations"),
     width: 100,
     fixed: "right",
     useSlot: true,
@@ -603,40 +605,32 @@ onMounted(() => {
 </script>
 
 <style scoped lang="scss">
-.whitelist-tab {
-  .ip-code {
-    font-family: "SF Mono", "Monaco", "Inconsolata", monospace;
-    background-color: var(--fill-color-light);
-    padding: 2px 8px;
-    border-radius: var(--art-form-control-radius-sm);
-    font-size: 13px;
-  }
-
-  .ml-2 {
-    margin-left: 8px;
-  }
-
-  .ml-3 {
-    margin-left: 12px;
-  }
-
-  .selection-footer {
-    display: flex;
-    align-items: center;
-    padding: 8px 16px;
-    background-color: var(--fill-color-light);
-    border-top: 1px solid var(--border-color);
-  }
+.ip-code {
+  font-family: var(--el-font-family-mono, monospace);
+  background-color: var(--el-fill-color-light);
+  padding: 2px 8px;
+  border-radius: var(--art-form-control-radius-sm);
+  font-size: 13px;
 }
 
-:deep(.whitelist-dialog) {
-  .add-form {
-    .ip-input {
-      :deep(.el-textarea__inner) {
-        font-family: "SF Mono", "Monaco", "Inconsolata", monospace;
-        font-size: 13px;
-      }
-    }
-  }
+.ml-2 {
+  margin-left: 8px;
+}
+
+.ml-3 {
+  margin-left: 12px;
+}
+
+.selection-footer {
+  display: flex;
+  align-items: center;
+  padding: 8px 16px;
+  background-color: var(--el-fill-color-light);
+  border-top: 1px solid var(--el-border-color-lighter);
+}
+
+:global(.whitelist-dialog .add-form .ip-input .el-textarea__inner) {
+  font-family: var(--el-font-family-mono, monospace);
+  font-size: 13px;
 }
 </style>

@@ -494,13 +494,16 @@ export const buildAdaptiveColumns = <T>(
 
     const headerWidth =
       measureTextWidth(String(column.label ?? "")) + cellPadding;
+    const keyLower = columnKey.toLowerCase();
+    const isStatusCol =
+      keyLower.includes("status") || keyLower.includes("enabled");
     headerFloorMap.set(
       columnKey,
-      isDateTimeColumnKey(columnKey.toLowerCase())
+      isDateTimeColumnKey(keyLower)
         ? Math.max(effectiveMin, 172)
         : Math.min(
             effectiveMin,
-            Math.max(hardMinWidth, Math.ceil(headerWidth)),
+            Math.max(hardMinWidth, isStatusCol ? 94 : 0, Math.ceil(headerWidth)),
           ),
     );
     const contentWidth = sampleRows.reduce((maxWidth, row, rowIndex) => {

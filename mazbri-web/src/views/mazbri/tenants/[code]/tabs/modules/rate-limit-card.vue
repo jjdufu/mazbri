@@ -456,6 +456,8 @@ import { useUserStore } from "@/store/modules/user";
 import { ROLES_BIZ } from "@/utils/ops/roles";
 import { summarizeRateLimitConflict } from "./conflict-summary";
 import type { ColumnOption } from "@/types/component";
+import { useI18n } from "vue-i18n";
+import { commandTypeLabel, formatTime } from "./rate-limit-helpers";
 import {
   PLAN_RATE_TEMPLATES,
   RATE_LIMIT_REASON_GUIDE,
@@ -469,6 +471,7 @@ const props = defineProps<{
   tenantCode: string;
 }>();
 
+const { t } = useI18n();
 const userStore = useUserStore();
 const canWriteBusiness = computed(() => userStore.canWriteBusiness);
 
@@ -501,69 +504,69 @@ const activeCommandCount = computed(
   () => commands.value.filter((c) => c.status === "active").length,
 );
 
-const apiLimitColumns = ref<
+const apiLimitColumns = computed<
   ColumnOption<{
     path: string;
     qps: number;
     burst: number;
   }>[]
->([
+>(() => [
   {
     prop: "path",
-    label: $t("rateLimit.columns.path"),
-    minWidth: 120,
+    label: t("rateLimit.columns.path"),
+    minWidth: 112,
     useSlot: true,
   },
   {
     prop: "qps",
-    label: $t("rateLimit.columns.qps"),
-    width: 140,
+    label: t("rateLimit.columns.qps"),
+    width: 118,
     useSlot: true,
   },
   {
     prop: "burst",
-    label: $t("rateLimit.columns.burst"),
-    width: 140,
+    label: t("rateLimit.columns.burst"),
+    width: 118,
     useSlot: true,
   },
   {
     prop: "operations",
-    label: $t("rateLimit.columns.operations"),
-    width: 80,
+    label: t("rateLimit.columns.operations"),
+    width: 104,
     align: "center",
     useSlot: true,
   },
 ]);
 
-const commandColumns = ref<ColumnOption<RateLimitControlCommand>[]>([
+const commandColumns = computed<ColumnOption<RateLimitControlCommand>[]>(() => [
   {
     prop: "command_type",
-    label: $t("rateLimit.columns.type"),
+    label: t("rateLimit.columns.type"),
     minWidth: 96,
     useSlot: true,
   },
   {
     prop: "status",
-    label: $t("rateLimit.columns.status"),
-    width: 100,
+    label: t("rateLimit.columns.status"),
+    width: 96,
     useSlot: true,
   },
   {
     prop: "expires_at",
-    label: $t("rateLimit.columns.expires"),
+    label: t("rateLimit.columns.expires"),
     minWidth: 112,
     useSlot: true,
   },
   {
     prop: "created_at",
-    label: $t("rateLimit.columns.created"),
+    label: t("rateLimit.columns.created"),
     minWidth: 112,
     useSlot: true,
   },
   {
     prop: "operations",
-    label: $t("rateLimit.columns.operations"),
-    width: 90,
+    label: t("rateLimit.columns.operations"),
+    width: 104,
     align: "center",
     useSlot: true,
   },
@@ -785,8 +788,6 @@ const handleSave = async () => {
     saving.value = false;
   }
 };
-
-import { commandTypeLabel, formatTime } from "./rate-limit-helpers";
 
 const handleIssueDeny = async () => {
   try {
@@ -1031,11 +1032,6 @@ onMounted(() => {
 .api-limits-table,
 .commands-table {
   width: 100%;
-
-  :deep(.el-input__wrapper) {
-    box-shadow: none !important;
-    background: transparent;
-  }
 }
 
 .footer-link {

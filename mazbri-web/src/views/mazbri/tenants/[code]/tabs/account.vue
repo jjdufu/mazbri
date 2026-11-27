@@ -6,15 +6,7 @@
       class="account-overview-card surface-panel-card"
     >
       <template #header>
-        <SurfaceCardHeader>
-          <template #left>
-            <div class="account-overview-header">
-              <span>{{ $t("tenant.account.overviewTitle") }}</span>
-              <span class="account-overview-subtitle">{{
-                $t("tenant.account.overviewSubtitle")
-              }}</span>
-            </div></template>
-        </SurfaceCardHeader>
+        <SurfaceCardHeader :title="$t('tenant.account.overviewTitle')" />
       </template>
 
       <div class="account-overview-grid">
@@ -111,15 +103,10 @@
       @pagination:current-change="handleCurrentPageChange"
     >
       <template #header>
-        <SurfaceCardHeader class="transactions-card-header">
-          <template #left>
-            <div class="transactions-card-title">
-              <span>{{ $t("tenant.account.transactionsTitle") }}</span>
-              <span class="transactions-card-subtitle">{{
-                $t("tenant.account.transactionsSubtitle")
-              }}</span>
-            </div>
-          </template>
+        <SurfaceCardHeader
+          :title="$t('tenant.account.transactionsTitle')"
+          class="transactions-card-header"
+        >
           <template #actions>
             <ElSelect
               v-model="transactionFilter"
@@ -206,7 +193,6 @@
         :model="rechargeForm"
         :rules="rechargeRules"
         label-width="92px"
-        class="compact-form"
       >
         <div class="dialog-balance-strip">
           <span class="dialog-balance-label">{{
@@ -282,7 +268,6 @@
         :model="refundForm"
         :rules="refundRules"
         label-width="92px"
-        class="compact-form"
       >
         <div class="dialog-balance-strip">
           <span class="dialog-balance-label">{{
@@ -400,6 +385,7 @@ import SurfaceCardHeader from "@/components/common/surface-card-header/index.vue
 import { useLatestRequest } from "@/composables/useLatestRequest";
 import { logger } from "@/utils/sys";
 import type { ColumnOption, PaginationConfig } from "@/types/component";
+import { useI18n } from "vue-i18n";
 import {
   EMPTY_PLACEHOLDER,
   centsToYuanString,
@@ -411,6 +397,7 @@ defineOptions({ name: "AccountTab" });
 const props = defineProps<{
   tenantCode: string;
 }>();
+const { t } = useI18n();
 const recharging = ref(false);
 const refunding = ref(false);
 const account = ref<TenantAccount | null>(null);
@@ -429,16 +416,16 @@ const pagination = reactive({
   page: 1,
   page_size: 20,
 });
-const transactionColumns = ref<ColumnOption<Transaction>[]>([
+const transactionColumns = computed<ColumnOption<Transaction>[]>(() => [
   {
     prop: "transaction_type",
-    label: $t("tenant.account.columns.type"),
+    label: t("tenant.account.columns.type"),
     width: 86,
     useSlot: true,
   },
   {
     prop: "amount",
-    label: $t("tenant.account.columns.amount"),
+    label: t("tenant.account.columns.amount"),
     width: 120,
     align: "right",
     numeric: true,
@@ -446,7 +433,7 @@ const transactionColumns = ref<ColumnOption<Transaction>[]>([
   },
   {
     prop: "balance_change",
-    label: $t("tenant.account.columns.balanceChange"),
+    label: t("tenant.account.columns.balanceChange"),
     minWidth: 168,
     align: "right",
     numeric: true,
@@ -454,25 +441,25 @@ const transactionColumns = ref<ColumnOption<Transaction>[]>([
   },
   {
     prop: "description",
-    label: $t("tenant.account.columns.description"),
+    label: t("tenant.account.columns.description"),
     minWidth: 112,
     useSlot: true,
   },
   {
     prop: "payment_method",
-    label: $t("tenant.account.columns.paymentMethod"),
+    label: t("tenant.account.columns.paymentMethod"),
     width: 92,
     useSlot: true,
   },
   {
     prop: "operator_name",
-    label: $t("tenant.account.columns.operator"),
+    label: t("tenant.account.columns.operator"),
     width: 108,
     useSlot: true,
   },
   {
     prop: "created_at",
-    label: $t("common.fields.createdAt"),
+    label: t("common.fields.createdAt"),
     width: 160,
     useSlot: true,
   },
@@ -482,29 +469,29 @@ const artPagination = computed<PaginationConfig>(() => ({
   size: pagination.page_size,
   total: transactionsTotal.value,
 }));
-const reasonCodeOptions = [
+const reasonCodeOptions = computed(() => [
   {
     value: "compensation",
-    label: $t("tenant.account.reasonCodes.compensation"),
+    label: t("tenant.account.reasonCodes.compensation"),
   },
   {
     value: "correction",
-    label: $t("tenant.account.reasonCodes.correction"),
+    label: t("tenant.account.reasonCodes.correction"),
   },
   {
     value: "commercial",
-    label: $t("tenant.account.reasonCodes.commercial"),
+    label: t("tenant.account.reasonCodes.commercial"),
   },
   {
     value: "other",
-    label: $t("tenant.account.reasonCodes.other"),
+    label: t("tenant.account.reasonCodes.other"),
   },
-];
+]);
 const rechargeReasonCode = ref("other");
 const refundReasonCode = ref("other");
 const composeReasonText = (code: string, freeText: string) => {
   const label =
-    reasonCodeOptions.find((o) => o.value === code)?.label || code;
+    reasonCodeOptions.value.find((o) => o.value === code)?.label || code;
   const note = freeText.trim();
   return note ? `[${label}] ${note}` : `[${label}]`;
 };
@@ -514,56 +501,56 @@ const rechargeForm = reactive<RechargeRequest>({
   amount: 0,
   description: "",
 });
-const rechargeRules: FormRules = {
+const rechargeRules = computed<FormRules>(() => ({
   amount: [
     {
       required: true,
-      message: $t("tenant.account.validation.rechargeAmountRequired"),
+      message: t("tenant.account.validation.rechargeAmountRequired"),
       trigger: "blur",
     },
     {
       type: "number",
       min: 0.01,
-      message: $t("tenant.account.validation.rechargeAmountPositive"),
+      message: t("tenant.account.validation.rechargeAmountPositive"),
       trigger: "blur",
     },
   ],
   description: [
     {
       required: true,
-      message: $t("tenant.account.validation.rechargeDescriptionRequired"),
+      message: t("tenant.account.validation.rechargeDescriptionRequired"),
       trigger: "blur",
     },
   ],
-};
+}));
 const refundVisible = ref(false);
 const refundFormRef = ref<FormInstance>();
 const refundForm = reactive<RefundRequest>({
   amount: 0,
   reason: "",
 });
-const refundRules: FormRules = {
+const refundRules = computed<FormRules>(() => ({
   amount: [
     {
       required: true,
-      message: $t("tenant.account.validation.refundAmountRequired"),
+      message: t("tenant.account.validation.refundAmountRequired"),
       trigger: "blur",
     },
     {
       type: "number",
       min: 0.01,
-      message: $t("tenant.account.validation.refundAmountPositive"),
+      message: t("tenant.account.validation.refundAmountPositive"),
       trigger: "blur",
     },
   ],
   reason: [
     {
       required: true,
-      message: $t("tenant.account.validation.refundReasonRequired"),
+      message: t("tenant.account.validation.refundReasonRequired"),
       trigger: "blur",
     },
   ],
-};
+}));
 const currentBalance = computed(() => {
   return parseFloat(account.value?.balance || "0");
 });
@@ -792,20 +779,13 @@ onMounted(() => {
 }
 
 .account-overview-card {
+  :deep(.el-card__header) {
+    padding: 12px 18px;
+  }
+
   :deep(.el-card__body) {
     padding: 20px 24px 24px;
   }
-}
-
-.account-overview-header {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.account-overview-subtitle {
-  font-size: 13px;
-  color: var(--text-color-secondary);
 }
 
 .account-overview-grid {
@@ -851,7 +831,7 @@ onMounted(() => {
 
 .balance-label {
   font-size: 13px;
-  color: var(--text-color-secondary);
+  color: var(--el-text-color-secondary);
   margin-bottom: 6px;
 }
 
@@ -863,7 +843,7 @@ onMounted(() => {
 
   .currency {
     font-size: 13px;
-    color: var(--text-color-secondary);
+    color: var(--el-text-color-secondary);
   }
 
   .amount {
@@ -881,54 +861,15 @@ onMounted(() => {
   }
 }
 
-.balance-meta {
-  margin-top: var(--ops-space-sm, 12px);
-  font-size: 13px;
-  color: var(--text-color-secondary);
-}
-
-.transactions-card {
-  margin-top: 0;
-
-  :deep(.el-card__header) {
-    padding: 12px 18px 10px;
-  }
-
-  :deep(.el-card__body) {
-    padding-top: 0;
-  }
-}
-
-.transactions-card-header {
-  align-items: flex-start;
-}
-
-.transactions-card-title {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.transactions-card-subtitle {
-  font-size: 12px;
-  color: var(--text-color-secondary);
-}
-
 .transactions-filter {
-  width: 104px;
-
-  :deep(.el-input__wrapper) {
-    padding-left: 8px;
-    padding-right: 8px;
-    border-radius: 999px;
-  }
+  width: 132px;
 }
 
 .transactions-table {
   :deep(.transaction-tag.el-tag) {
-    color: var(--text-color-secondary);
+    color: var(--el-text-color-secondary);
     background-color: var(--el-fill-color-light);
-    border-color: var(--border-color-lighter);
+    border-color: var(--el-border-color-lighter);
   }
 
   :deep(.el-table__header th.el-table__cell) {
@@ -944,131 +885,69 @@ onMounted(() => {
 
 .amount {
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
 
   &.positive {
-    color: var(--el-color-success-light-3);
+    color: var(--el-color-success);
   }
 
   &.negative {
-    color: var(--el-color-danger-light-3);
+    color: var(--el-color-danger);
   }
 }
 
 .balance-change {
-  color: var(--text-color-secondary);
+  color: var(--el-text-color-secondary);
   font-size: 12px;
 }
 
 .balance-change-separator {
   margin: 0 6px;
-  color: var(--border-color);
-}
-
-.pagination-wrapper {
-  margin-top: var(--ops-space-lg, 20px);
-  display: flex;
-  justify-content: flex-end;
+  color: var(--el-border-color);
 }
 
 .current-balance {
   font-size: 16px;
   font-weight: 600;
   color: var(--el-color-primary);
+  font-variant-numeric: tabular-nums;
 }
 
 .balance-preview {
   font-size: 16px;
   font-weight: 600;
   color: var(--el-color-success);
+  font-variant-numeric: tabular-nums;
 
   &.warning {
     color: var(--el-color-danger);
   }
 }
 
-.ml-2 {
-  margin-left: 8px;
+.dialog-balance-strip,
+.dialog-preview-strip {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: var(--ops-section-gap, 16px);
+  padding: 10px 12px;
+  border-radius: var(--el-border-radius-small);
+  background: var(--el-fill-color-light);
 }
 
-.surface-panel-pagination {
-  margin-top: var(--ops-space-sm, 12px);
+.dialog-preview-strip.warning {
+  background: color-mix(in srgb, var(--el-color-danger) 8%, transparent);
 }
 
-.account-action-dialog {
-  :deep(.el-dialog__body) {
-    padding: 14px 20px 10px;
-  }
-
-  :deep(.el-dialog__footer) {
-    padding: 0 20px 16px;
-  }
+.dialog-balance-label {
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
 }
 
-.compact-form {
-  :deep(.amount-input .el-input__wrapper) {
-    min-height: 38px;
-    border-radius: var(--el-border-radius-small);
-    background: var(--el-fill-color-light);
-    box-shadow: none;
-  }
-
-  :deep(.amount-input .el-input__inner) {
-    font-size: 14px;
-    font-weight: 600;
-  }
-
-  :deep(.text-input .el-input__wrapper),
-  :deep(.text-input .el-textarea__inner) {
-    min-height: 38px;
-    border-radius: var(--el-border-radius-small);
-    background: var(--el-fill-color-light);
-    box-shadow: none;
-  }
-
-  :deep(.text-input .el-textarea__inner) {
-    min-height: 82px;
-    padding-top: var(--ops-space-sm, 12px);
-    padding-bottom: var(--ops-space-sm, 12px);
-  }
-
-  :deep(.dialog-balance-strip),
-  :deep(.dialog-preview-strip) {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 12px;
-    margin-bottom: var(--ops-section-gap, 16px);
-    padding: 10px 12px;
-    border-radius: var(--el-border-radius-small);
-    background: var(--el-fill-color-light);
-  }
-
-  :deep(.dialog-preview-strip.warning) {
-    background: rgba(var(--el-color-danger-rgb), 0.08);
-  }
-
-  :deep(.dialog-balance-label) {
-    font-size: 13px;
-    color: var(--text-color-secondary);
-  }
-
-  :deep(.dialog-balance-value) {
-    font-size: 14px;
-    font-weight: 600;
-  }
-
-  :deep(.el-form-item) {
-    margin-bottom: var(--ops-section-gap, 16px);
-  }
-
-  :deep(.el-form-item__label) {
-    line-height: 32px;
-  }
-
-  :deep(.el-input__wrapper),
-  :deep(.el-textarea__inner) {
-    box-shadow: none;
-  }
+.dialog-balance-value {
+  font-size: 14px;
+  font-weight: 600;
 }
 
 @media (max-width: 768px) {
@@ -1079,29 +958,13 @@ onMounted(() => {
   }
 
   .account-overview-grid {
-    grid-template-columns: 1fr;
-    gap: 16px;
-  }
-
-  .transactions-card-header {
     flex-direction: column;
-    gap: 12px;
+    align-items: stretch;
+    gap: 16px;
   }
 
   .transactions-filter {
     width: 100%;
-  }
-
-  .account-action-dialog {
-    :deep(.el-dialog__body) {
-      padding-left: 16px;
-      padding-right: 16px;
-    }
-
-    :deep(.el-dialog__footer) {
-      padding-left: 16px;
-      padding-right: 16px;
-    }
   }
 }
 .account-inline-alert {
