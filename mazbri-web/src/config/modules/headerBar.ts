@@ -1,33 +1,32 @@
 import { HeaderBarFeatureConfig } from "@/types";
-import { $t } from "@/locales";
 export const headerBarConfig: HeaderBarFeatureConfig = {
   menuButton: {
     enabled: true,
-    description: $t("config.headerBar.menuButton"),
+    description: "config.headerBar.menuButton",
   },
   refreshButton: {
     enabled: true,
-    description: $t("config.headerBar.refreshButton"),
+    description: "config.headerBar.refreshButton",
   },
   fastEnter: {
     enabled: false,
-    description: $t("config.headerBar.fastEnter"),
+    description: "config.headerBar.fastEnter",
   },
   breadcrumb: {
     enabled: true,
-    description: $t("config.headerBar.breadcrumb"),
+    description: "config.headerBar.breadcrumb",
   },
   fullscreen: {
     enabled: false,
-    description: $t("config.headerBar.fullscreen"),
+    description: "config.headerBar.fullscreen",
   },
   language: {
-    enabled: false,
-    description: $t("config.headerBar.language"),
+    enabled: true,
+    description: "config.headerBar.language",
   },
   themeToggle: {
     enabled: true,
-    description: $t("config.headerBar.themeToggle"),
+    description: "config.headerBar.themeToggle",
   },
 };
 export default headerBarConfig;

@@ -17,29 +17,22 @@
           ]"
         >
           <ArtSvgIcon icon="ri:compass-discover-line" class="mr-0.5" />
-          路径解析助手
+          {{ t("supplier.jsonPath.trigger") }}
         </span>
       </template>
 
       <div class="helper-content">
-        <h4 class="helper-title">JSONPath 提取路径生成器</h4>
+        <h4 class="helper-title">{{ t("supplier.jsonPath.title") }}</h4>
 
         <div v-if="step === 'input'" class="step-input">
           <p class="helper-intro-text">
-            贴入上游 API 返回的**模拟 JSON 响应**数据，点击解析生成结构树：
+            {{ t("supplier.jsonPath.inputHint") }}
           </p>
           <ElInput
             v-model="rawJsonInput"
             type="textarea"
             :rows="6"
-            placeholder='例如:
-{
-  "code": 200,
-  "data": {
-    "token": "secret_token_123",
-    "expires_in": 7200
-  }
-}'
+            placeholder='{ "code": 200, "data": { "token": "secret_token_123" } }'
             size="small"
             class="mb-3"
           />
@@ -50,14 +43,14 @@
               :disabled="!rawJsonInput.trim()"
               @click="parseJson"
             >
-              开始解析 JSON
+              {{ t("supplier.jsonPath.parse") }}
             </ElButton>
           </div>
         </div>
 
         <div v-else class="step-tree">
           <p class="helper-intro-text">
-            点击展开树节点，**直接点击**要提取的字段即可自动生成 JSONPath：
+            {{ t("supplier.jsonPath.treeHint") }}
           </p>
 
           <div class="tree-container">
@@ -81,7 +74,7 @@
 
           <div class="helper-actions mt-3">
             <ElButton size="small" @click="step = 'input'">
-              重新粘贴 JSON
+              {{ t("supplier.jsonPath.repaste") }}
             </ElButton>
           </div>
         </div>
@@ -92,7 +85,10 @@
 
 <script setup lang="ts">
 import { ref } from "vue";
+import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
+
+const { t } = useI18n();
 
 interface Props {
   plain?: boolean;
@@ -182,15 +178,15 @@ const parseJson = () => {
   try {
     const parsed = JSON.parse(rawJsonInput.value.trim());
     if (typeof parsed !== "object" || parsed === null) {
-      ElMessage.warning("请粘贴有效 JSON");
+      ElMessage.warning(t("supplier.jsonPath.invalidJson"));
       return;
     }
 
     const nodes = valueToTreeNodes(parsed, "$");
     treeData.value = nodes;
     step.value = "tree";
-  } catch (e) {
-    ElMessage.error("JSON 格式有误");
+  } catch {
+    ElMessage.error(t("supplier.jsonPath.parseError"));
   }
 };
 

@@ -135,15 +135,16 @@ export function formatOpsMetricValue(
       return forAxis || !unitLabel ? rounded : `${rounded} ${unitLabel}`;
     }
     case "cores": {
+      const coreSuffix = unitLabel || "cores";
       if (value === 0) {
-        return forAxis ? "0" : `0 ${isEn ? "cores" : "核"}`;
+        return forAxis ? "0" : `0 ${coreSuffix}`;
       }
       if (Math.abs(value) < 0.1) {
         const mcpu = formatCompactDecimal(value * 1000, 2);
         return `${mcpu} mCPU`;
       }
       const cores = formatCompactDecimal(value, 2);
-      return `${cores} ${isEn ? "cores" : "核"}`;
+      return `${cores} ${coreSuffix}`;
     }
     case "bytesPerSec": {
       if (value === 0) return "0 B/s";
@@ -156,7 +157,7 @@ export function formatOpsMetricValue(
         return formatIntervalHuman(value, locale);
       }
       const sec = formatCompactDecimal(value, 2);
-      return isEn ? `${sec}s` : `${sec} 秒`;
+      return isEn ? `${sec}s` : formatIntervalHuman(sec, locale);
     }
     case "durationMs": {
       if (forAxis && unitLabel === "ms") {

@@ -136,7 +136,9 @@
       "next": "下一步",
       "prev": "上一步",
       "confirm": "确定",
-      "refresh": "刷新"
+      "refresh": "刷新",
+      "back": "返回",
+      "retry": "重试"
     },
     "searchPopover": {
       "tooltip": "搜索与筛选",
@@ -367,7 +369,9 @@
       "critical": "严重",
       "warning": "警告",
       "info": "提示"
-    }
+    },
+    "info": "说明",
+    "all": "全部"
   },
   "config": {
     "globalComponents": {
@@ -680,7 +684,8 @@
       "btnText": "确认修改",
       "success": "密码修改成功",
       "sessionExpired": "改密凭证已过期或已失效，请重新登录（若密码已修改成功，请使用新密码登录）",
-      "backToLogin": "返回登录"
+      "backToLogin": "返回登录",
+      "passwordComplexity": "密码必须包含大小写字母和数字"
     },
     "mfaSetup": {
       "title": "设置两步验证",
@@ -731,7 +736,8 @@
     "gohome": "返回首页",
     "403": "抱歉，您无权访问该页面",
     "404": "抱歉，您访问的页面不存在",
-    "500": "抱歉，服务器出错了"
+    "500": "抱歉，服务器出错了",
+    "switchAccount": "切换账号"
   },
   "menus": {
     "login": {
@@ -1877,7 +1883,7 @@
       "confirmActionTitle": "{action}确认",
       "deleteConfirmTitle": "删除确认",
       "confirmActionButton": "确定{action}",
-      "actionSuccess": "成功{action} {count} 条数据",
+      "actionSuccess": "批量{action}成功（共 {count} 项）",
       "actionFailed": "批量{action}失败"
     },
     "import": {
@@ -2666,6 +2672,30 @@
       "active": "启用",
       "inactive": "禁用",
       "suspended": "挂起"
+    },
+    "jsonPath": {
+      "trigger": "路径助手",
+      "title": "JSONPath 提取器",
+      "inputHint": "粘贴 JSON 响应示例后解析结构树：",
+      "parse": "解析 JSON",
+      "treeHint": "选择目标字段生成 JSONPath：",
+      "repaste": "重新粘贴",
+      "invalidJson": "请粘贴有效 JSON 对象或数组",
+      "parseError": "JSON 格式有误"
+    },
+    "jsonTemplate": {
+      "formMode": "表单配置",
+      "rawMode": "源码编辑",
+      "rawOnly": "仅源码",
+      "rawOnlyHint": "含复杂模板逻辑，仅支持源码编辑",
+      "formatJson": "格式化",
+      "variable": "变量",
+      "addField": "添加字段",
+      "keyCol": "参数名 (Key)",
+      "valueCol": "参数值 (Value)",
+      "valuePlaceholder": "值或模板变量",
+      "braceMismatch": "JSON 大括号不匹配",
+      "formatError": "JSON 格式化失败"
     }
   },
   "billing": {

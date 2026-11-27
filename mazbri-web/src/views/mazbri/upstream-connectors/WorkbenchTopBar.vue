@@ -223,6 +223,16 @@
       <button
         type="button"
         class="wb-topbar__icon-btn"
+        :title="$t('config.headerBar.language')"
+        :aria-label="$t('config.headerBar.language')"
+        @click="toggleLanguage"
+      >
+        <ArtSvgIcon icon="ri:translate-2" />
+      </button>
+
+      <button
+        type="button"
+        class="wb-topbar__icon-btn"
         :title="isDark ? 'Light' : 'Dark'"
         :aria-label="isDark ? 'Light' : 'Dark'"
         @click="toggleTheme"
@@ -335,9 +345,11 @@
 
 <script setup lang="ts">
 import HoppMenu from "@/components/common/hopp-menu/index.vue";
-import { SystemThemeEnum } from "@/enums/appEnum";
+import { useI18n } from "vue-i18n";
+import { LanguageEnum, SystemThemeEnum } from "@/enums/appEnum";
 import { $t } from "@/locales";
 import { useSettingStore } from "@/store/modules/setting";
+import { useUserStore } from "@/store/modules/user";
 import type { ConnectorDraft } from "@/api/upstream-connectors";
 import type { Supplier } from "@/api/supplier";
 import type { WorkbenchEnvState } from "./workbenchHelpers";
@@ -381,12 +393,21 @@ const emit = defineEmits<{
 
 import { useTheme } from "@/hooks/core/useTheme";
 
+const { locale } = useI18n();
 const settingStore = useSettingStore();
+const userStore = useUserStore();
 const { switchThemeStyles } = useTheme();
 const isDark = computed(() => Boolean(settingStore.isDark));
 const isGateReady = computed(
   () => props.gate.total > 0 && props.gate.ok >= props.gate.total,
 );
+
+function toggleLanguage() {
+  const next =
+    locale.value === LanguageEnum.ZH ? LanguageEnum.EN : LanguageEnum.ZH;
+  locale.value = next;
+  userStore.setLanguage(next);
+}
 
 function toggleTheme() {
   const next = isDark.value ? SystemThemeEnum.LIGHT : SystemThemeEnum.DARK;

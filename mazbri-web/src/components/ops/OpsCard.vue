@@ -21,7 +21,7 @@
             <button
               type="button"
               class="ops-card__info-trigger"
-              aria-label="说明"
+              :aria-label="$t('common.info')"
             >
               <ArtSvgIcon icon="ri:information-line" />
             </button>

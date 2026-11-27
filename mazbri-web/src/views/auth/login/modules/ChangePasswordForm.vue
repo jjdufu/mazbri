@@ -143,7 +143,7 @@ const formRules = reactive<FormRules>({
         const hasLower = /[a-z]/.test(value);
         const hasDigit = /[0-9]/.test(value);
         if (!hasUpper || !hasLower || !hasDigit) {
-          callback(new Error("密码必须包含大小写字母和数字"));
+          callback(new Error(t("login.changePassword.passwordComplexity")));
           return;
         }
         callback();

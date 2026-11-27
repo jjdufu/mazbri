@@ -56,21 +56,30 @@
       </div>
 
       <div class="flex-c gap-2.5">
-        <ArtIconButton
-          icon="ri:lock-line"
-          class="lock-screen-btn ml-3 max-md:!hidden"
-          @click="lockScreen"
-        />
+        <ElTooltip :content="$t('topBar.user.lockScreen')" placement="bottom">
+          <ArtIconButton
+            icon="ri:lock-line"
+            class="lock-screen-btn ml-3 max-md:!hidden"
+            :aria-label="$t('topBar.user.lockScreen')"
+            @click="lockScreen"
+          />
+        </ElTooltip>
 
         <ElDropdown
           v-if="shouldShowLanguage"
+          trigger="click"
           popper-class="langDropDownStyle"
           @command="changeLanguage"
         >
-          <ArtIconButton
-            icon="ri:translate-2"
-            class="language-btn text-[19px]"
-          />
+          <span>
+            <ElTooltip :content="$t('config.headerBar.language')" placement="bottom">
+              <ArtIconButton
+                icon="ri:translate-2"
+                class="language-btn text-[19px]"
+                :aria-label="$t('config.headerBar.language')"
+              />
+            </ElTooltip>
+          </span>
           <template #dropdown>
             <ElDropdownMenu>
               <div
@@ -93,11 +102,17 @@
           </template>
         </ElDropdown>
 
-        <ArtIconButton
+        <ElTooltip
           v-if="shouldShowThemeToggle"
-          :icon="isDark ? 'ri:sun-fill' : 'ri:moon-line'"
-          @click="handleThemeToggle"
-        />
+          :content="$t('config.headerBar.themeToggle')"
+          placement="bottom"
+        >
+          <ArtIconButton
+            :icon="isDark ? 'ri:sun-fill' : 'ri:moon-line'"
+            :aria-label="$t('config.headerBar.themeToggle')"
+            @click="handleThemeToggle"
+          />
+        </ElTooltip>
 
         <ArtUserMenu />
       </div>
@@ -184,7 +199,6 @@ const changeLanguage = (lang: LanguageEnum): void => {
   if (locale.value === lang) return;
   locale.value = lang;
   userStore.setLanguage(lang);
-  reload(50);
 };
 const lockScreen = (): void => {
   triggerLockScreen();

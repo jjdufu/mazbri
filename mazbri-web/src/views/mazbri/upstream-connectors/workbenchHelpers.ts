@@ -1190,13 +1190,13 @@ export function parseCurl(curl: string): ParsedImport {
       url = t;
     }
   }
-  if (!url) throw new Error("无法从 cURL 解析 URL");
+  if (!url) throw new Error("Cannot parse URL from cURL");
 
   let parsed: URL;
   try {
     parsed = new URL(url);
   } catch {
-    throw new Error("URL 无效");
+    throw new Error("Invalid URL");
   }
   const upstream_url = `${parsed.protocol}//${parsed.host}`;
   const path = parsed.pathname || "/";

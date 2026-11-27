@@ -233,35 +233,41 @@ export function formatBytes(bytes: number): string {
   return `${sign}${parseFloat((abs / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
 }
 
+function formatLocalizedUnit(
+  value: number,
+  unit: "second" | "minute" | "hour" | "day",
+  locale: string,
+): string {
+  const num = Number.isInteger(value) ? value : parseFloat(value.toFixed(1));
+  if (locale.toLowerCase().startsWith("en")) {
+    const suffix =
+      unit === "second" ? "s" : unit === "minute" ? "m" : unit === "hour" ? "h" : "d";
+    return `${num}${suffix}`;
+  }
+  return new Intl.NumberFormat(locale, {
+    style: "unit",
+    unit,
+    unitDisplay: "short",
+    maximumFractionDigits: 1,
+  }).format(num);
+}
+
 /**
- * 将统计步长/秒数格式化为可读双语时长（如 `60 -> "1 分钟" / "1m"`, `10800 -> "3 小时" / "3h"`）。
+ * 将统计步长/秒数格式化为可读双语时长（如 `60 -> "1分钟" / "1m"`, `10800 -> "3小时" / "3h"`）。
  */
 export function formatIntervalHuman(seconds: number, locale = "zh"): string {
-  const isEn = locale.toLowerCase().startsWith("en");
   if (!Number.isFinite(seconds) || seconds <= 0) {
-    return isEn ? "0s" : "0 秒";
+    return formatLocalizedUnit(0, "second", locale);
   }
   const total = Math.round(seconds);
   if (total < 60) {
-    return isEn ? `${total}s` : `${total} 秒`;
+    return formatLocalizedUnit(total, "second", locale);
   }
   if (total < 3600) {
-    const mins = total / 60;
-    const text = Number.isInteger(mins)
-      ? String(mins)
-      : parseFloat(mins.toFixed(1)).toString();
-    return isEn ? `${text}m` : `${text} 分钟`;
+    return formatLocalizedUnit(total / 60, "minute", locale);
   }
   if (total < 86400) {
-    const hours = total / 3600;
-    const text = Number.isInteger(hours)
-      ? String(hours)
-      : parseFloat(hours.toFixed(1)).toString();
-    return isEn ? `${text}h` : `${text} 小时`;
+    return formatLocalizedUnit(total / 3600, "hour", locale);
   }
-  const days = total / 86400;
-  const text = Number.isInteger(days)
-    ? String(days)
-    : parseFloat(days.toFixed(1)).toString();
-  return isEn ? `${text}d` : `${text} 天`;
+  return formatLocalizedUnit(total / 86400, "day", locale);
 }

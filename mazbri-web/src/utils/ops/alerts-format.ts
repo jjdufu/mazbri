@@ -88,8 +88,9 @@ export function formatAlertLabels(
 /** 静默/抑制 matchers 展示；空视为匹配全部（中文主文案）。 */
 export function formatAlertMatchers(
   matchers: Record<string, string> | null | undefined,
+  allLabel = "*",
 ): string {
-  return formatAlertLabels(matchers, "全部");
+  return formatAlertLabels(matchers, allLabel);
 }
 
 /**

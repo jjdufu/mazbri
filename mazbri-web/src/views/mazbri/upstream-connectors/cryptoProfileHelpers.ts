@@ -391,14 +391,14 @@ function checkAlgLegacy(
   if (!meta) {
     issues.push({
       code: "unknown_alg",
-      message: `${field} 算法「${algId}」不在支持的算法列表中`,
+      message: `${field} algorithm "${algId}" is not in the supported list`,
     });
     return undefined;
   }
   if (meta.legacy && !allowInsecure) {
     issues.push({
       code: "legacy_gate",
-      message: `${field} 使用旧版算法「${algId}」，需开启兼容旧版算法开关`,
+      message: `${field} uses legacy algorithm "${algId}"; enable allow_insecure to proceed`,
       legacy: true,
     });
   }
@@ -415,10 +415,10 @@ export function validateCryptoProfileClient(
   if (!profile) return [];
   const issues: CryptoProfileIssue[] = [];
   if (!profile.version || profile.version < 1) {
-    issues.push({ code: "version", message: "version 必须 ≥ 1" });
+    issues.push({ code: "version", message: "version must be >= 1" });
   }
   if (!(CRYPTO_ORDERS as readonly string[]).includes(profile.order)) {
-    issues.push({ code: "order", message: `未知 order：${profile.order}` });
+    issues.push({ code: "order", message: `Unknown order: ${profile.order}` });
     return issues;
   }
 
@@ -427,7 +427,7 @@ export function validateCryptoProfileClient(
 
   if (needsSign) {
     if (!profile.sign?.alg) {
-      issues.push({ code: "sign_required", message: `order=${profile.order} 需要 sign.alg` });
+      issues.push({ code: "sign_required", message: `order=${profile.order} requires sign.alg` });
     } else {
       const meta = checkAlgLegacy(
         profile.sign.alg,
@@ -438,20 +438,20 @@ export function validateCryptoProfileClient(
       if (meta && meta.kind !== "mac" && meta.kind !== "asym_sign") {
         issues.push({
           code: "sign_kind",
-          message: `sign.alg「${profile.sign.alg}」须为 mac 或 asym_sign`,
+          message: `sign.alg "${profile.sign.alg}" must be mac or asym_sign`,
         });
       }
     }
   } else if (profile.sign?.alg) {
     issues.push({
       code: "sign_forbidden",
-      message: `order=${profile.order} 不得设置 sign`,
+      message: `order=${profile.order} must not set sign`,
     });
   }
 
   if (needsCrypt) {
     if (!profile.crypt?.alg) {
-      issues.push({ code: "crypt_required", message: `order=${profile.order} 需要 crypt.alg` });
+      issues.push({ code: "crypt_required", message: `order=${profile.order} requires crypt.alg` });
     } else {
       const meta = checkAlgLegacy(
         profile.crypt.alg,
@@ -462,13 +462,13 @@ export function validateCryptoProfileClient(
       if (meta && meta.kind !== "aead" && meta.kind !== "block_cipher") {
         issues.push({
           code: "crypt_kind",
-          message: `crypt.alg「${profile.crypt.alg}」须为 aead 或 block_cipher`,
+          message: `crypt.alg "${profile.crypt.alg}" must be aead or block_cipher`,
         });
       }
       if (profile.order === "aead_only" && meta && meta.kind !== "aead") {
         issues.push({
           code: "aead_only",
-          message: `order=aead_only 要求 AEAD crypt.alg，当前为「${profile.crypt.alg}」`,
+          message: `order=aead_only requires an AEAD crypt.alg (got "${profile.crypt.alg}")`,
         });
       }
       if (
@@ -478,14 +478,14 @@ export function validateCryptoProfileClient(
       ) {
         issues.push({
           code: "encrypt_only_integrity",
-          message: `order=encrypt_only 禁止无完整性保护的分组密码「${profile.crypt.alg}」（改用 AEAD 或带 sign 的 order）`,
+          message: `order=encrypt_only forbids unauthenticated block cipher "${profile.crypt.alg}" (use AEAD or signed order)`,
         });
       }
     }
   } else if (profile.crypt?.alg) {
     issues.push({
       code: "crypt_forbidden",
-      message: `order=${profile.order} 不得设置 crypt`,
+      message: `order=${profile.order} must not set crypt`,
     });
   }
 
@@ -499,7 +499,7 @@ export function validateCryptoProfileClient(
     if (profile.order === "aead_only" && meta && meta.kind !== "aead") {
       issues.push({
         code: "response_aead",
-        message: `order=aead_only 时 response_crypt.alg 须为 AEAD`,
+        message: "order=aead_only requires an AEAD response_crypt.alg",
       });
     }
     if (
@@ -509,7 +509,7 @@ export function validateCryptoProfileClient(
     ) {
       issues.push({
         code: "response_integrity",
-        message: `order=encrypt_only 时 response_crypt 不可使用无完整性的分组密码`,
+        message: "order=encrypt_only forbids unauthenticated block cipher in response_crypt",
       });
     }
   }
@@ -517,7 +517,7 @@ export function validateCryptoProfileClient(
   if (profile.verify_response && !profile.sign?.alg) {
     issues.push({
       code: "verify_response_sign",
-      message: "verify_response=true 需要配置 sign.alg",
+      message: "verify_response=true requires sign.alg",
     });
   }
 
@@ -528,7 +528,7 @@ export function validateCryptoProfileClient(
   ) {
     issues.push({
       code: "decrypt_response_crypt",
-      message: "decrypt_response=true 需要配置 crypt 或 response_crypt",
+      message: "decrypt_response=true requires crypt or response_crypt",
     });
   }
 
@@ -536,13 +536,13 @@ export function validateCryptoProfileClient(
     if (!profile.crypt?.alg && !profile.response_crypt?.alg) {
       issues.push({
         code: "named_fields_crypt",
-        message: "scope=named_fields 需要 crypt 或 response_crypt",
+        message: "scope=named_fields requires crypt or response_crypt",
       });
     }
     if (profile.crypt?.alg && !(profile.crypt.fields || []).some((f) => f.trim())) {
       issues.push({
         code: "named_fields_req",
-        message: "scope=named_fields 需要 crypt.fields",
+        message: "scope=named_fields requires crypt.fields",
       });
     }
     if (
@@ -551,7 +551,7 @@ export function validateCryptoProfileClient(
     ) {
       issues.push({
         code: "named_fields_resp",
-        message: "scope=named_fields 需要 response_crypt.fields",
+        message: "scope=named_fields requires response_crypt.fields",
       });
     }
   }

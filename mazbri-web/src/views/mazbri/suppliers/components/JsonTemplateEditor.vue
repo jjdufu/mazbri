@@ -2,27 +2,29 @@
   <div class="json-template-editor">
     <div class="editor-header">
       <ElRadioGroup v-model="mode" size="small" :disabled="disabled" @change="handleModeChange">
-        <ElRadioButton label="form" :disabled="disabled || !canUseForm"
-          >表单配置</ElRadioButton
-        >
-        <ElRadioButton label="raw" :disabled="disabled">源码编辑</ElRadioButton>
+        <ElRadioButton label="form" :disabled="disabled || !canUseForm">{{
+          t("supplier.jsonTemplate.formMode")
+        }}</ElRadioButton>
+        <ElRadioButton label="raw" :disabled="disabled">{{
+          t("supplier.jsonTemplate.rawMode")
+        }}</ElRadioButton>
       </ElRadioGroup>
 
       <div class="header-actions">
         <ElTooltip
           v-if="!canUseForm"
-          content="含复杂模板逻辑，已切换源码模式"
+          :content="t('supplier.jsonTemplate.rawOnlyHint')"
           placement="top"
         >
           <span class="warning-tip mr-2">
             <ArtSvgIcon icon="ri:alert-line" class="mr-1" />
-            仅限源码模式
+            {{ t("supplier.jsonTemplate.rawOnly") }}
           </span>
         </ElTooltip>
 
         <template v-if="mode === 'raw'">
           <ElButton link type="primary" size="small" :disabled="disabled" @click="formatJson">
-            格式化 JSON
+            {{ t("supplier.jsonTemplate.formatJson") }}
           </ElButton>
         </template>
       </div>
@@ -35,21 +37,21 @@
         stripe
         class="form-kv-table"
       >
-        <ElTableColumn :label="keyColumnLabel" min-width="150">
+        <ElTableColumn :label="resolvedKeyColumnLabel" min-width="150">
           <template #default="scope">
             <ElInput
               v-model="scope.row.key"
-              :placeholder="keyPlaceholder"
+              :placeholder="resolvedKeyPlaceholder"
               :disabled="disabled"
               @input="serializeForm"
             />
           </template>
         </ElTableColumn>
-        <ElTableColumn :label="valueColumnLabel" min-width="250">
+        <ElTableColumn :label="resolvedValueColumnLabel" min-width="250">
           <template #default="scope">
             <ElInput
               v-model="scope.row.value"
-              :placeholder="valuePlaceholder"
+              :placeholder="resolvedValuePlaceholder"
               :disabled="disabled"
               @input="serializeForm"
             >
@@ -69,7 +71,7 @@
                     ]"
                   >
                     <ArtSvgIcon icon="ri:add-circle-line" class="mr-0.5" />
-                    变量
+                    {{ t("supplier.jsonTemplate.variable") }}
                   </span>
                   <template #dropdown>
                     <ElDropdownMenu>
@@ -87,7 +89,7 @@
             </ElInput>
           </template>
         </ElTableColumn>
-        <ElTableColumn :label="opColumnLabel" width="60" align="center">
+        <ElTableColumn :label="resolvedOpColumnLabel" width="60" align="center">
           <template #default="scope">
             <ElButton
               type="danger"
@@ -103,7 +105,7 @@
       <div class="form-add-row">
         <ElButton link type="primary" size="small" :disabled="disabled" @click="addFormItem">
           <ArtSvgIcon icon="ri:add-circle-line" class="mr-1" />
-          添加字段
+          {{ t("supplier.jsonTemplate.addField") }}
         </ElButton>
       </div>
     </div>
@@ -134,6 +136,7 @@
 
 <script setup lang="ts">
 import { ref, watch, onMounted, computed } from "vue";
+import { useI18n } from "vue-i18n";
 import { Codemirror } from "vue-codemirror";
 import { StreamLanguage } from "@codemirror/language";
 import { javascript } from "@codemirror/legacy-modes/mode/javascript";
@@ -154,6 +157,8 @@ interface Props {
   valuePlaceholder?: string;
 }
 
+const { t } = useI18n();
+
 const props = withDefaults(defineProps<Props>(), {
   modelValue: "",
   variables: () => [],
@@ -161,12 +166,28 @@ const props = withDefaults(defineProps<Props>(), {
   disabled: false,
   height: "180px",
   emptyPlaceholder: false,
-  keyColumnLabel: "参数名 (Key)",
-  valueColumnLabel: "参数值 (Value)",
-  opColumnLabel: "操作",
-  keyPlaceholder: "例如: username",
-  valuePlaceholder: "输入值，或右侧插入变量",
+  keyColumnLabel: "",
+  valueColumnLabel: "",
+  opColumnLabel: "",
+  keyPlaceholder: "",
+  valuePlaceholder: "",
 });
+
+const resolvedKeyColumnLabel = computed(
+  () => props.keyColumnLabel || t("supplier.jsonTemplate.keyCol"),
+);
+const resolvedValueColumnLabel = computed(
+  () => props.valueColumnLabel || t("supplier.jsonTemplate.valueCol"),
+);
+const resolvedOpColumnLabel = computed(
+  () => props.opColumnLabel || t("common.fields.operations"),
+);
+const resolvedKeyPlaceholder = computed(
+  () => props.keyPlaceholder || "username",
+);
+const resolvedValuePlaceholder = computed(
+  () => props.valuePlaceholder || t("supplier.jsonTemplate.valuePlaceholder"),
+);
 
 const emit = defineEmits<{
   (e: "update:modelValue", value: string): void;
@@ -431,7 +452,7 @@ const validateRawJinjaJson = (str: string) => {
     else if (c === "}") openBraces--;
   }
   if (openBraces !== 0) {
-    validationError.value = "JSON 大括号不匹配，请检查语法结构";
+    validationError.value = t("supplier.jsonTemplate.braceMismatch");
   } else {
     validationError.value = null;
   }
@@ -464,8 +485,7 @@ const formatJson = () => {
       formItems.value = parsedItems;
       serializeForm();
     } else {
-      validationError.value =
-        "格式化失败：JSON 语法有误或含无法格式化的模板";
+      validationError.value = t("supplier.jsonTemplate.formatError");
     }
   }
 };

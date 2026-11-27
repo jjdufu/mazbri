@@ -136,7 +136,9 @@
       "next": "Next",
       "prev": "Previous",
       "confirm": "OK",
-      "refresh": "Refresh"
+      "refresh": "Refresh",
+      "back": "Back",
+      "retry": "Retry"
     },
     "searchPopover": {
       "tooltip": "Search and filters",
@@ -367,7 +369,9 @@
       "critical": "Critical",
       "warning": "Warning",
       "info": "Info"
-    }
+    },
+    "info": "Info",
+    "all": "All"
   },
   "config": {
     "globalComponents": {
@@ -404,7 +408,7 @@
         "latest": "As of {asOf}, latest {size} records",
         "latestPrefix": "As of {asOf}, latest ",
         "latestSuffix": " records",
-        "ranged": "Search within time range (all conditions are AND)",
+        "ranged": "Custom Range",
         "selective": "Exact serial lookup (full history)",
         "unknownTime": "—"
       },
@@ -680,7 +684,8 @@
       "btnText": "Confirm",
       "success": "Password changed successfully",
       "sessionExpired": "Password reset session has expired or is no longer valid. Please sign in again (use your new password if it was already updated).",
-      "backToLogin": "Back to login"
+      "backToLogin": "Back to login",
+      "passwordComplexity": "Password must include uppercase, lowercase letters, and digits"
     },
     "mfaSetup": {
       "title": "Set Up Two-Factor Authentication",
@@ -731,7 +736,8 @@
     "gohome": "Go Home",
     "403": "Sorry, you do not have permission to access this page",
     "404": "Sorry, the page you are trying to access does not exist",
-    "500": "Sorry, there was an error on the server"
+    "500": "Sorry, there was an error on the server",
+    "switchAccount": "Switch Account"
   },
   "menus": {
     "login": {
@@ -1148,7 +1154,7 @@
       "tenant": "Tenant",
       "priority": "Priority",
       "status": "Status",
-      "routePurpose": "Route purpose (metadata label only; not used for routing)",
+      "routePurpose": "Route purpose",
       "changeReason": "Change Reason",
       "tags": "Tags",
       "effectiveWindow": "Effective Window",
@@ -1877,7 +1883,7 @@
       "confirmActionTitle": "{action} confirmation",
       "deleteConfirmTitle": "Delete confirmation",
       "confirmActionButton": "Confirm {action}",
-      "actionSuccess": "Successfully {action}ed {count} items",
+      "actionSuccess": "Batch {action}: {count} succeeded",
       "actionFailed": "Batch {action} failed"
     },
     "import": {
@@ -2666,6 +2672,30 @@
       "active": "Enabled",
       "inactive": "Disabled",
       "suspended": "Suspended"
+    },
+    "jsonPath": {
+      "trigger": "Path Helper",
+      "title": "JSONPath Extractor",
+      "inputHint": "Paste a sample JSON response to build a tree:",
+      "parse": "Parse JSON",
+      "treeHint": "Select a field to generate its JSONPath:",
+      "repaste": "Repaste",
+      "invalidJson": "Paste a valid JSON object or array",
+      "parseError": "Invalid JSON format"
+    },
+    "jsonTemplate": {
+      "formMode": "Form",
+      "rawMode": "Raw",
+      "rawOnly": "Raw only",
+      "rawOnlyHint": "Complex template syntax requires Raw mode",
+      "formatJson": "Format",
+      "variable": "Var",
+      "addField": "Add Field",
+      "keyCol": "Key",
+      "valueCol": "Value",
+      "valuePlaceholder": "Value or variable",
+      "braceMismatch": "Unbalanced JSON braces",
+      "formatError": "Failed to format JSON"
     }
   },
   "billing": {
@@ -2973,7 +3003,7 @@
         "currentKeyVersion": "Current Key Version",
         "signatureCheck": "Signature Verification",
         "nonceTtlSeconds": "Nonce TTL (seconds)",
-        "clockSkewSeconds": "Timestamp Tolerance Window (seconds)"
+        "clockSkewSeconds": "Clock Skew (s)"
       },
       "placeholders": {
         "selectActiveKey": "Select an active key",

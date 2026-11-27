@@ -27,7 +27,8 @@ test("severity / status / timeline tag mapping", () => {
 test("labels / matchers / list parsing", () => {
   assert.equal(formatAlertLabels({ a: "1", b: "2" }), "a=1, b=2");
   assert.equal(formatAlertLabels({}), "—");
-  assert.equal(formatAlertMatchers({}), "全部");
+  assert.equal(formatAlertMatchers({}), "*");
+  assert.equal(formatAlertMatchers({}, "All"), "All");
   assert.deepEqual(parseAlertLabelsText("a=1\nb=2"), { a: "1", b: "2" });
   assert.equal(parseAlertLabelsText("bad"), null);
   assert.deepEqual(parseAlertListText("a, b;c\nd"), ["a", "b", "c", "d"]);

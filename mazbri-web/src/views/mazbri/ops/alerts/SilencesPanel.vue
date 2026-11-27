@@ -25,7 +25,7 @@
         class="surface-panel-table"
       >
         <template #matchers="{ row }">
-          {{ formatAlertMatchers(row.matchers) }}
+          {{ formatAlertMatchers(row.matchers, t("common.all")) }}
         </template>
         <template #window="{ row }">
           {{ formatAlertTime(row.starts_at) }} → {{ formatAlertTime(row.ends_at) }}
@@ -54,10 +54,10 @@
         class="surface-panel-table"
       >
         <template #source="{ row }">
-          {{ formatAlertMatchers(row.source_matchers) }}
+          {{ formatAlertMatchers(row.source_matchers, t("common.all")) }}
         </template>
         <template #target="{ row }">
-          {{ formatAlertMatchers(row.target_matchers) }}
+          {{ formatAlertMatchers(row.target_matchers, t("common.all")) }}
         </template>
         <template #equal="{ row }">
           {{ row.equal_labels?.join(", ") || "—" }}
@@ -279,7 +279,7 @@ const form = reactive({
   comment: "",
 });
 const inhibitForm = reactive({
-  name: "熔断抑制错误率",
+  name: "",
   sourceText: '{"category":"upstream"}',
   targetText: '{"category":"business"}',
   equalText: "product_id",
