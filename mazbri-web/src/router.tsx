@@ -17,8 +17,13 @@ import {
 } from "@/components/ui";
 import { NotFoundPage } from "@/domains/auth/ExceptionPage";
 import { authRoutes } from "@/domains/auth/routes";
+import { billingRoutes } from "@/domains/billing/routes";
+import { callbacksRoutes } from "@/domains/callbacks/routes";
 import { controlPanelRoutes } from "@/domains/control-panel/routes";
 import { opsRoutes } from "@/domains/ops/routes";
+import { productsRoutes } from "@/domains/products/routes";
+import { tenantsRoutes } from "@/domains/tenants/routes";
+import { upstreamSupplyRoutes } from "@/domains/upstream-supply/routes";
 import { LanguageEnum } from "@/enums/appEnum";
 import { useT } from "@/locales";
 import { registerAuthLogoutRedirect, useAuthStore } from "@/stores/auth";
@@ -26,7 +31,6 @@ import { usePersonalSecurityStore } from "@/stores/personal-security";
 import type { AdminRole } from "@/types/api";
 import {
   ROLES_ALL,
-  ROLES_BIZ,
   canAccessRoles,
   isBizRole,
 } from "@/utils/ops/roles";
@@ -170,54 +174,9 @@ export const router = createBrowserRouter([
             index: true,
             element: <IndexRedirect />,
           },
-          {
-            path: "/operations/tenants",
-            element: (
-              <RequireRole allowedRoles={ROLES_ALL}>
-                <DomainPlaceholder titleKey="menus.mazbri.tenantList" />
-              </RequireRole>
-            ),
-          },
-          {
-            path: "/operations/tenants/:code",
-            element: (
-              <RequireRole allowedRoles={ROLES_ALL}>
-                <DomainPlaceholder titleKey="menus.mazbri.tenantDetail" />
-              </RequireRole>
-            ),
-          },
-          {
-            path: "/operations/product-authorization",
-            element: (
-              <RequireRole allowedRoles={ROLES_ALL}>
-                <DomainPlaceholder titleKey="menus.mazbri.productAuthorization" />
-              </RequireRole>
-            ),
-          },
-          {
-            path: "/operations/products/:id",
-            element: (
-              <RequireRole allowedRoles={ROLES_ALL}>
-                <DomainPlaceholder titleKey="menus.mazbri.productDetail" />
-              </RequireRole>
-            ),
-          },
-          {
-            path: "/operations/upstream-supply",
-            element: (
-              <RequireRole allowedRoles={ROLES_ALL}>
-                <DomainPlaceholder titleKey="menus.mazbri.upstreamSupply" />
-              </RequireRole>
-            ),
-          },
-          {
-            path: "/operations/upstream-supply/suppliers/:id",
-            element: (
-              <RequireRole allowedRoles={ROLES_ALL}>
-                <DomainPlaceholder titleKey="supplier.detail.pageTitle" />
-              </RequireRole>
-            ),
-          },
+          ...tenantsRoutes,
+          ...productsRoutes,
+          ...upstreamSupplyRoutes,
           {
             path: "/operations/upstream-supply/workbench",
             element: (
@@ -226,22 +185,8 @@ export const router = createBrowserRouter([
               </RequireRole>
             ),
           },
-          {
-            path: "/operations/callbacks",
-            element: (
-              <RequireRole allowedRoles={ROLES_ALL}>
-                <DomainPlaceholder titleKey="menus.mazbri.callbackList" />
-              </RequireRole>
-            ),
-          },
-          {
-            path: "/operations/bills",
-            element: (
-              <RequireRole allowedRoles={ROLES_BIZ}>
-                <DomainPlaceholder titleKey="menus.mazbri.billsAndReconciliation" />
-              </RequireRole>
-            ),
-          },
+          ...callbacksRoutes,
+          ...billingRoutes,
           ...opsRoutes,
           ...controlPanelRoutes,
         ],
