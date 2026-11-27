@@ -5,6 +5,7 @@ import {
   Building2,
   FileClock,
   GitFork,
+  LayoutDashboard,
   Network,
   ReceiptText,
   Settings,
@@ -98,6 +99,13 @@ export const MENU_GROUPS: readonly MenuGroup[] = [
     titleKey: "menus.mazbri.opsMonitoring",
     roles: ROLES_ALL,
     items: [
+      {
+        key: "ops-overview",
+        path: "/dashboard",
+        titleKey: "menus.mazbri.opsOverview",
+        icon: LayoutDashboard,
+        roles: ROLES_ALL,
+      },
       {
         key: "ops-traffic",
         path: "/ops/traffic",

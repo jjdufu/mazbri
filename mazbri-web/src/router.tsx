@@ -17,13 +17,14 @@ import {
 } from "@/components/ui";
 import { NotFoundPage } from "@/domains/auth/ExceptionPage";
 import { authRoutes } from "@/domains/auth/routes";
+import { controlPanelRoutes } from "@/domains/control-panel/routes";
+import { opsRoutes } from "@/domains/ops/routes";
 import { LanguageEnum } from "@/enums/appEnum";
 import { useT } from "@/locales";
 import { registerAuthLogoutRedirect, useAuthStore } from "@/stores/auth";
 import { usePersonalSecurityStore } from "@/stores/personal-security";
 import type { AdminRole } from "@/types/api";
 import {
-  ROLES_ADMIN,
   ROLES_ALL,
   ROLES_BIZ,
   canAccessRoles,
@@ -170,14 +171,6 @@ export const router = createBrowserRouter([
             element: <IndexRedirect />,
           },
           {
-            path: "/dashboard",
-            element: (
-              <RequireRole allowedRoles={ROLES_ALL}>
-                <DomainPlaceholder titleKey="menus.mazbri.opsOverview" />
-              </RequireRole>
-            ),
-          },
-          {
             path: "/operations/tenants",
             element: (
               <RequireRole allowedRoles={ROLES_ALL}>
@@ -249,86 +242,8 @@ export const router = createBrowserRouter([
               </RequireRole>
             ),
           },
-          {
-            path: "/ops/traffic",
-            element: (
-              <RequireRole allowedRoles={ROLES_ALL}>
-                <DomainPlaceholder titleKey="menus.mazbri.opsTraffic" />
-              </RequireRole>
-            ),
-          },
-          {
-            path: "/ops/traces/:traceId",
-            element: (
-              <RequireRole allowedRoles={ROLES_ADMIN}>
-                <DomainPlaceholder titleKey="menus.mazbri.opsTraceDetail" />
-              </RequireRole>
-            ),
-          },
-          {
-            path: "/ops/alerts",
-            element: (
-              <RequireRole allowedRoles={ROLES_ALL}>
-                <DomainPlaceholder titleKey="menus.mazbri.opsAlerts" />
-              </RequireRole>
-            ),
-          },
-          {
-            path: "/ops/runtime",
-            element: (
-              <RequireRole allowedRoles={ROLES_ALL}>
-                <DomainPlaceholder titleKey="menus.mazbri.opsRuntime" />
-              </RequireRole>
-            ),
-          },
-          {
-            path: "/ops/services/:service",
-            element: (
-              <RequireRole allowedRoles={ROLES_ADMIN}>
-                <DomainPlaceholder titleKey="menus.mazbri.serviceDetail" />
-              </RequireRole>
-            ),
-          },
-          {
-            path: "/control-panel/users",
-            element: (
-              <RequireRole allowedRoles={ROLES_ADMIN}>
-                <DomainPlaceholder titleKey="menus.mazbri.userManagement" />
-              </RequireRole>
-            ),
-          },
-          {
-            path: "/control-panel/certificates",
-            element: (
-              <RequireRole allowedRoles={ROLES_ADMIN}>
-                <DomainPlaceholder titleKey="menus.mazbri.certificates" />
-              </RequireRole>
-            ),
-          },
-          {
-            path: "/control-panel/system",
-            element: (
-              <RequireRole allowedRoles={ROLES_ADMIN}>
-                <DomainPlaceholder titleKey="menus.mazbri.platformSettings" />
-              </RequireRole>
-            ),
-          },
-          {
-            path: "/control-panel/audit-logs",
-            element: (
-              <RequireRole allowedRoles={ROLES_ADMIN}>
-                <DomainPlaceholder titleKey="menus.mazbri.auditLogs" />
-              </RequireRole>
-            ),
-          },
-          {
-            path: "/control-panel/config-center",
-            element: (
-              <RequireRole allowedRoles={ROLES_ADMIN}>
-                <DomainPlaceholder titleKey="menus.mazbri.configCenter" />
-              </RequireRole>
-            ),
-          },
+          ...opsRoutes,
+          ...controlPanelRoutes,
         ],
       },
     ],
