@@ -2,25 +2,29 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import {
   Activity,
-  Building2,
+  Gauge,
   Package,
+  Pencil,
   Power,
   RefreshCw,
   ShieldCheck,
   Wallet,
 } from "lucide-react";
-import { fetchTenantById, setTenantEnabled } from "@/api/tenant";
+import { fetchTenantById, setTenantEnabled, updateTenant } from "@/api/tenant";
 import {
   Button,
   ConfirmDialog,
+  CopyableText,
   EntityDetailLayout,
+  FormField,
+  FormModal,
+  Input,
   type EntityDetailMetaItem,
   type TabOption,
 } from "@/components/ui";
-import { LanguageEnum } from "@/enums/appEnum";
 import { useT } from "@/locales";
 import { useAuthStore } from "@/stores/auth";
-import type { Tenant } from "@/types/api/tenant";
+import type { Tenant, UpdateTenantRequest } from "@/types/api/tenant";
 import { getStatusLabel } from "@/utils/display-labels";
 import { EMPTY_PLACEHOLDER, formatDateTime } from "@/utils/format";
 import { isMfaStepUpCancelled } from "@/utils/http/mfa-cancelled";
@@ -29,17 +33,19 @@ import { logger } from "@/utils/sys/logger";
 import { normalizeTenantCode } from "@/utils/tenant-code";
 import { showSuccessToast } from "@/utils/ui/message-guard";
 import { AccountTab } from "./tabs/AccountTab";
-import { BasicAndKeysTab } from "./tabs/BasicAndKeysTab";
+import { CredentialsAndSecurityTab } from "./tabs/CredentialsAndSecurityTab";
 import { Overview360Tab } from "./tabs/Overview360Tab";
 import { ProductsTab } from "./tabs/ProductsTab";
-import { SecurityPoliciesTab } from "./tabs/SecurityPoliciesTab";
+import { RateLimitAndCacheTab } from "./tabs/RateLimitAndCacheTab";
 
 type TenantDetailTabKey =
   | "overview"
-  | "basic"
-  | "security"
+  | "credentials"
+  | "policies"
   | "products"
   | "account";
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function normalizeTabParam(
   raw: string | null,
@@ -49,14 +55,18 @@ function normalizeTabParam(
     case "overview":
     case "overview360":
       return "overview";
+    case "credentials":
     case "basic":
     case "api-keys":
-      return "basic";
     case "security":
     case "whitelist":
-    case "access-strategy":
     case "transport-encryption":
-      return "security";
+      return "credentials";
+    case "policies":
+    case "access-strategy":
+    case "ratelimit":
+    case "cache":
+      return "policies";
     case "products":
       return "products";
     case "account":
@@ -67,8 +77,7 @@ function normalizeTabParam(
 }
 
 export function TenantDetailPage() {
-  const { t, locale } = useT();
-  const isZh = locale === LanguageEnum.ZH;
+  const { t } = useT();
   const navigate = useNavigate();
   const params = useParams<{ code: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -82,7 +91,6 @@ export function TenantDetailPage() {
     [rawTab, canWrite],
   );
 
-  // Normalize legacy tab aliases in URL without adding history entries
   useEffect(() => {
     if (rawTab && rawTab !== activeTab) {
       setSearchParams(
@@ -109,7 +117,6 @@ export function TenantDetailPage() {
     });
   }, [activeTab]);
 
-  // Reset visited tabs when navigating to a different tenant
   const prevTenantCodeRef = useRef(tenantCode);
   useEffect(() => {
     if (prevTenantCodeRef.current !== tenantCode) {
@@ -122,6 +129,19 @@ export function TenantDetailPage() {
   const [loading, setLoading] = useState(false);
   const [toggleConfirmOpen, setToggleConfirmOpen] = useState(false);
   const [toggling, setToggling] = useState(false);
+
+  const [editOpen, setEditOpen] = useState(false);
+  const [savingBasic, setSavingBasic] = useState(false);
+  const [editForm, setEditForm] = useState<UpdateTenantRequest>({
+    name: "",
+    contact_person: "",
+    contact_phone: "",
+    contact_email: "",
+  });
+  const [editErrors, setEditErrors] = useState<{
+    name?: string;
+    contact_email?: string;
+  }>({});
 
   const abortRef = useRef<AbortController | null>(null);
 
@@ -168,6 +188,54 @@ export function TenantDetailPage() {
     [setSearchParams],
   );
 
+  const handleOpenEdit = () => {
+    if (!tenant) return;
+    setEditForm({
+      name: tenant.name,
+      contact_person: tenant.contact_person ?? "",
+      contact_phone: tenant.contact_phone ?? "",
+      contact_email: tenant.contact_email ?? "",
+    });
+    setEditErrors({});
+    setEditOpen(true);
+  };
+
+  const handleSaveBasic = async () => {
+    if (!tenant || savingBasic) return;
+    const nextErrors: { name?: string; contact_email?: string } = {};
+    const name = (editForm.name ?? "").trim();
+    const email = (editForm.contact_email ?? "").trim();
+    if (!name) {
+      nextErrors.name = t("tenant.detail.validation.nameRequired");
+    } else if (name.length < 2 || name.length > 100) {
+      nextErrors.name = t("tenant.detail.validation.nameLength");
+    }
+    if (email && !EMAIL_RE.test(email)) {
+      nextErrors.contact_email = t("tenant.detail.validation.email");
+    }
+    setEditErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) return;
+
+    setSavingBasic(true);
+    try {
+      await updateTenant(tenant.tenant_code, {
+        name,
+        contact_person: (editForm.contact_person ?? "").trim(),
+        contact_phone: (editForm.contact_phone ?? "").trim(),
+        contact_email: email,
+      });
+      showSuccessToast(t("common.feedback.saveSuccess"));
+      setEditOpen(false);
+      void loadTenant();
+    } catch (error) {
+      if (!isMfaStepUpCancelled(error)) {
+        logger.error("Failed to update tenant:", error);
+      }
+    } finally {
+      setSavingBasic(false);
+    }
+  };
+
   const handleConfirmToggle = async () => {
     if (!tenant || toggling) return;
     const nextEnabled = !tenant.enabled;
@@ -199,16 +267,16 @@ export function TenantDetailPage() {
         testId: "tenant-tab-overview",
       },
       {
-        key: "basic",
-        label: isZh ? "基础与凭据" : "Basic & Credentials",
-        icon: <Building2 className="h-3.5 w-3.5" />,
-        testId: "tenant-tab-basic",
+        key: "credentials",
+        label: t("tenant.detail.tabs.credentialsAndSecurity"),
+        icon: <ShieldCheck className="h-3.5 w-3.5" />,
+        testId: "tenant-tab-credentials",
       },
       {
-        key: "security",
-        label: isZh ? "接入与安全策略" : "Access & Security",
-        icon: <ShieldCheck className="h-3.5 w-3.5" />,
-        testId: "tenant-tab-security",
+        key: "policies",
+        label: t("tenant.detail.tabs.rateLimitAndCache"),
+        icon: <Gauge className="h-3.5 w-3.5" />,
+        testId: "tenant-tab-policies",
       },
       {
         key: "products",
@@ -220,27 +288,39 @@ export function TenantDetailPage() {
     if (canWrite) {
       list.push({
         key: "account",
-        label: isZh ? "账户与流水" : "Account & Ledger",
+        label: t("tenant.detail.tabs.account"),
         icon: <Wallet className="h-3.5 w-3.5" />,
         testId: "tenant-tab-account",
       });
     }
     return list;
-  }, [canWrite, isZh, t]);
+  }, [canWrite, t]);
 
   const meta = useMemo<EntityDetailMetaItem[]>(
     () => [
       {
         label: t("tenant.fields.accountId"),
-        value: (
-          <span className="font-mono-tech">
-            {tenant?.tenant_id || EMPTY_PLACEHOLDER}
-          </span>
+        value: tenant?.tenant_id ? (
+          <CopyableText value={tenant.tenant_id} mono />
+        ) : (
+          EMPTY_PLACEHOLDER
         ),
       },
       {
         label: t("tenant.fields.contactPerson"),
         value: tenant?.contact_person || EMPTY_PLACEHOLDER,
+      },
+      {
+        label: t("tenant.fields.contactPhone"),
+        value: (
+          <span className="font-mono-tech">
+            {tenant?.contact_phone || EMPTY_PLACEHOLDER}
+          </span>
+        ),
+      },
+      {
+        label: t("tenant.fields.contactEmail"),
+        value: tenant?.contact_email || EMPTY_PLACEHOLDER,
       },
       {
         label: t("common.fields.createdAt"),
@@ -272,6 +352,19 @@ export function TenantDetailPage() {
         onTabChange={handleTabChange}
         actions={
           <>
+            {canWrite && (
+              <Button
+                type="button"
+                variant="outline"
+                size="md"
+                disabled={!tenant || loading}
+                onClick={handleOpenEdit}
+                data-testid="tenant-basic-edit-btn"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+                {t("common.actions.edit")}
+              </Button>
+            )}
             <Button
               type="button"
               variant="outline"
@@ -306,20 +399,15 @@ export function TenantDetailPage() {
           </div>
         )}
 
-        {visitedTabs.has("basic") && (
-          <div className={activeTab === "basic" ? "block" : "hidden"}>
-            <BasicAndKeysTab
-              tenantCode={tenantCode}
-              tenant={tenant}
-              loading={loading}
-              onRefreshTenant={() => void loadTenant()}
-            />
+        {tenantCode && visitedTabs.has("credentials") && (
+          <div className={activeTab === "credentials" ? "block" : "hidden"}>
+            <CredentialsAndSecurityTab tenantCode={tenantCode} />
           </div>
         )}
 
-        {tenantCode && visitedTabs.has("security") && (
-          <div className={activeTab === "security" ? "block" : "hidden"}>
-            <SecurityPoliciesTab tenantCode={tenantCode} />
+        {tenantCode && visitedTabs.has("policies") && (
+          <div className={activeTab === "policies" ? "block" : "hidden"}>
+            <RateLimitAndCacheTab tenantCode={tenantCode} />
           </div>
         )}
 
@@ -335,6 +423,93 @@ export function TenantDetailPage() {
           </div>
         )}
       </EntityDetailLayout>
+
+      <FormModal
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+        onSubmit={handleSaveBasic}
+        title={t("tenant.detail.basicInfo.editTitle")}
+        size="md"
+        submitting={savingBasic}
+        testId="tenant-basic-edit-modal"
+      >
+        <FormField
+          label={t("common.fields.name")}
+          htmlFor="edit-tenant-name"
+          required
+          error={editErrors.name}
+        >
+          <Input
+            id="edit-tenant-name"
+            value={editForm.name ?? ""}
+            onChange={(e) => {
+              setEditForm((prev) => ({ ...prev, name: e.target.value }));
+              if (editErrors.name) {
+                setEditErrors((prev) => ({ ...prev, name: undefined }));
+              }
+            }}
+          />
+        </FormField>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <FormField
+            label={t("tenant.fields.contactPerson")}
+            htmlFor="edit-tenant-contact-person"
+          >
+            <Input
+              id="edit-tenant-contact-person"
+              value={editForm.contact_person ?? ""}
+              onChange={(e) =>
+                setEditForm((prev) => ({
+                  ...prev,
+                  contact_person: e.target.value,
+                }))
+              }
+            />
+          </FormField>
+
+          <FormField
+            label={t("tenant.fields.contactPhone")}
+            htmlFor="edit-tenant-contact-phone"
+          >
+            <Input
+              id="edit-tenant-contact-phone"
+              value={editForm.contact_phone ?? ""}
+              onChange={(e) =>
+                setEditForm((prev) => ({
+                  ...prev,
+                  contact_phone: e.target.value,
+                }))
+              }
+              className="font-mono-tech"
+            />
+          </FormField>
+        </div>
+
+        <FormField
+          label={t("tenant.fields.contactEmail")}
+          htmlFor="edit-tenant-contact-email"
+          error={editErrors.contact_email}
+        >
+          <Input
+            id="edit-tenant-contact-email"
+            type="email"
+            value={editForm.contact_email ?? ""}
+            onChange={(e) => {
+              setEditForm((prev) => ({
+                ...prev,
+                contact_email: e.target.value,
+              }));
+              if (editErrors.contact_email) {
+                setEditErrors((prev) => ({
+                  ...prev,
+                  contact_email: undefined,
+                }));
+              }
+            }}
+          />
+        </FormField>
+      </FormModal>
 
       <ConfirmDialog
         open={toggleConfirmOpen}

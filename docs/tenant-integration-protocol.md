@@ -1,6 +1,6 @@
 # mazbri 租户接入协议 v1（对外）
 
-> 本文描述外部租户调用 mazbri 网关所需的全部线上协议：API Key 换 token、传输加密信封、请求绑定签名、回调签名、错误码。
+> 本文描述外部租户调用 mazbri 网关所需的全部线上协议：API Key 换 token、传输加密信封、回调签名、错误码。
 > 所有字段、拼接顺序、编码方式均**以代码为准**；出处在每节末尾以「实现」标注，向量由 Rust 测试对实现逐字节校验。
 >
 > - 固定测试向量：[`docs/protocol-vectors/tenant-integration-v1.json`](protocol-vectors/tenant-integration-v1.json)
@@ -19,7 +19,6 @@
  │                                               │
  │ POST /api/v1/gateway                          │
  │   Authorization: Bearer <access_token>        │  ① JWT 校验 + scope + 租户活性/IP 白名单
- │   [X-Mazbri-* 请求绑定头]                       │  ② 请求绑定（按租户 profile，可选/必选）
  │   body = 明文 GatewayRequest | 加密信封          │  ③ 信封：时间窗 → 验签解密(c2g) → nonce 去重
  │ ─────────────────────────────────────────────▶│  ④ 产品门禁 / 幂等校验 / 转发上游
  │ ◀──── 明文响应 | 加密信封(g2c, mode=full)──────│  ⑤ mode=full 时以 g2c 子密钥封装响应
@@ -30,9 +29,8 @@
 | 材料 | 用途 | 来源（mgmt） |
 |---|---|---|
 | API Key | 换 token | 租户 API Key 管理 |
-| 传输密钥 `tenantSecretKey`（32 字节，base64）+ `keyVersion` | 加密信封的数据密钥与 MAC 密钥 | `POST /tenants/{code}/crypto-keys`、`.../rotate`（`shownOnce: true`） |
+| 传输密钥 `tenantSecretKey`（32 字节，base64） | 加密信封的数据密钥与 MAC 密钥 | `POST /tenants/{code}/crypto-keys`、`.../rotate`（`shownOnce: true`） |
 | 传输 profile（mode / 算法 / 时间窗等） | 决定信封用什么算法 | `GET /tenants/{code}/crypto` |
-| 请求绑定 `kid` + 密钥 | 请求绑定签名 | `POST /tenants/{code}/request-keys`：HMAC 由平台生成 `hmacKey`（只展示一次）；非对称由租户自持私钥、只上传公钥（SPKI PEM） |
 | 回调 secret | 校验平台回调 | 回调订阅配置 |
 
 ## 1. API Key 换 token
@@ -155,15 +153,13 @@ RateLimit: "tenant";r=998;t=1
 | 字段 | 取值 | 说明 |
 |---|---|---|
 | `encryption_mode` | `none` / `request` / `full` | `request`：请求必须加密，响应明文；`full`：请求、响应都加密 |
-| `suite` | `suite/tenant-default-2026-11`（aes-256-gcm）、`suite/gm-sm4-hmac-sm3`（sm4-cbc-pkcs7 + hmac-sm3）、`suite/tenant-chacha20`（chacha20-poly1305） | `data_alg`/`mac_alg` 为空时由套件决定 |
+| `suite` | `suite/aes-256-gcm`（aes-256-gcm）、`suite/gm-sm4-hmac-sm3`（sm4-cbc-pkcs7 + hmac-sm3）、`suite/tenant-chacha20`（chacha20-poly1305） | `data_alg`/`mac_alg` 为空时由套件决定 |
 | `data_alg` | 见 §3.4 | 显式数据算法，优先于 suite |
 | `mac_alg` | `hmac-sha256` / `hmac-sha384` / `hmac-sha512` / `hmac-sm3`（legacy：`hmac-md5`） | 外挂 MAC；AEAD 可不配，非 AEAD **必须**配（profile 校验报 `data_alg ... requires mac_alg`） |
 | `require_signature` | bool | 为 true 时必须配置 `mac_alg`（信封必须带外挂 MAC） |
 | `allow_insecure` | bool | 仅为 legacy 算法（ECB / DES / HMAC-MD5）开闸，默认 false |
-| `current_key_version` | 如 `v1` | 响应加密使用的密钥版本；请求信封里的 `keyVersion` 可以是任一有效版本 |
 | `clock_skew_seconds` | 默认 300 | 信封 `timestamp` 与请求绑定时间戳的允许偏差 |
 | `nonce_ttl_seconds` | 默认 300 | nonce 去重窗口 |
-| `require_request_binding`、`signature_version` | 见 §4 | 请求绑定 |
 
 信封中的 `dataAlg` / `macAlg` 必须与 profile 生效算法**完全一致**，否则 400 `E4000`（`invalid transport envelope/profile: ...`）。
 算法 id 为 kebab-case 闭集，不接受大小写变体或历史别名。
@@ -173,7 +169,7 @@ RateLimit: "tenant";r=998;t=1
 传输主密钥 `tenantSecretKey` 恒为 32 字节（base64 解码后）。请求与响应、数据加密与外挂 MAC 分别使用单向正交子密钥（RFC 5869 `HKDF-SHA256`）：
 
 - `ikm` = `tenantSecretKey`（32 字节）；
-- `salt` = `keyVersion` 的 UTF-8 字节（如 `b"v1"`）；
+- `salt` = `tenant_id` 的 UTF-8 字节；
 - 方向标识 `direction`：客户端 → 网关请求为 `"c2g"`，网关 → 客户端响应为 `"g2c"`；
 - **数据加密子密钥**：`info = "mazbri-transport-v1|{tenant_id}|{direction}|enc"`，输出长度 = `key_len(data_alg)` 字节（见 §3.4）；
 - **外挂 MAC 子密钥**：`info = "mazbri-transport-v1|{tenant_id}|{direction}|mac"`，输出长度 = 32 字节。
@@ -185,7 +181,6 @@ RateLimit: "tenant";r=998;t=1
 ```json
 {
   "encrypted": true,
-  "keyVersion": "v1",
   "dataAlg": "aes-256-gcm",
   "macAlg": "hmac-sha256",
   "timestamp": 1767225600,
@@ -200,10 +195,9 @@ RateLimit: "tenant";r=998;t=1
 | 字段 | 编码 | 说明 |
 |---|---|---|
 | `encrypted` | bool | 必须为 `true` |
-| `keyVersion` | string | 传输密钥版本（非空） |
 | `dataAlg` / `macAlg` | string | 与 profile 一致；无 MAC 时省略 `macAlg` |
 | `timestamp` | 整数（unix 秒） | 与服务器时间偏差 ≤ `clock_skew_seconds` |
-| `nonce` | base64url 无填充 | 防重放；参考实现为 16 字节随机数（22 字符）。同租户 + 同 keyVersion 在 `nonce_ttl_seconds` 内只能用一次 |
+| `nonce` | base64url 无填充 | 防重放；参考实现为 16 字节随机数（22 字符）。同租户在 `nonce_ttl_seconds` 内只能用一次 |
 | `iv` | 标准 base64 | 每次随机，长度见 §3.4（ECB 模式为 0 字节 `""`） |
 | `ciphertext` | 标准 base64 | 明文 = `GatewayRequest` JSON（或响应 JSON）的 UTF-8 字节 |
 | `tag` | 标准 base64 | AEAD 的 16 字节认证标签；非 AEAD 为 `""` |
@@ -212,13 +206,13 @@ RateLimit: "tenant";r=998;t=1
 **AEAD AAD**（仅 AEAD，UTF-8 字节，9 个 `\n`，无结尾换行）：
 
 ```
-v1\n{direction}\n{tenant_id}\n{http_path}\n{keyVersion}\n{dataAlg}\n{macAlg_or_empty}\n{timestamp}\n{nonce}\n{iv}
+v1\n{direction}\n{tenant_id}\n{http_path}\n{dataAlg}\n{macAlg_or_empty}\n{timestamp}\n{nonce}\n{iv}
 ```
 
 **MAC canonical string**（11 个 `\n`，无结尾换行，在 AEAD AAD 基础上追加 `ciphertext` 与 `tag`）：
 
 ```
-v1\n{direction}\n{tenant_id}\n{http_path}\n{keyVersion}\n{dataAlg}\n{macAlg_or_empty}\n{timestamp}\n{nonce}\n{iv}\n{ciphertext}\n{tag}
+v1\n{direction}\n{tenant_id}\n{http_path}\n{dataAlg}\n{macAlg_or_empty}\n{timestamp}\n{nonce}\n{iv}\n{ciphertext}\n{tag}
 ```
 
 - `direction`：请求侧固定为 `"c2g"`，响应侧固定为 `"g2c"`；
@@ -233,7 +227,7 @@ v1\n{direction}\n{tenant_id}\n{http_path}\n{keyVersion}\n{dataAlg}\n{macAlg_or_e
 **响应（仅 `full`）**：凡经上游处理的响应（含上游返回的非 2xx）都以 `direction = "g2c"` 封装：使用 `current_key_version`、新的 timestamp/nonce/iv、`g2c` 派生子密钥与相同 `http_path`；HTTP 状态码保持上游状态。租户应按 `"g2c"` 校验 MAC 并解密。
 网关自身在鉴权、绑定、信封校验、限流等阶段产生的错误**不加密**，按 §6 的明文错误体返回——客户端应先看 HTTP 状态与 body 是否为信封再处理。
 
-实现：`mazbri-libs/mazbri-core/src/crypto/transport.rs`（`EnvelopeDirection`、`derive_transport_enc_key`、`derive_transport_mac_key`、`canonical_envelope_aad`、`canonical_signature_payload`、`seal_envelope`、`open_envelope`、`iv_len_for`、`data_key_len`、`validate_transport_algorithms`）；`mazbri-bin/mazbri-gateway/src/crypto.rs`（`decrypt_request_value_with_precheck`、`encrypt_response_bytes`、`validate_timestamp`、`check_nonce`）。
+实现：`mazbri-libs/mazbri-core/src/crypto/transport.rs`（`EnvelopeDirection`、`derive_transport_enc_key`、`derive_transport_mac_key`、`canonical_envelope_aad`、`canonical_signature_payload`、`seal_envelope`、`open_envelope`、`iv_len_for`、`data_key_len`、`validate_transport_algorithms`）；`mazbri-bin/mazbri-gateway/src/crypto.rs`（`decrypt_request_value`、`encrypt_response_bytes`、`validate_timestamp`、`check_nonce`）。
 
 ### 3.4 数据算法参数
 
@@ -251,69 +245,6 @@ v1\n{direction}\n{tenant_id}\n{http_path}\n{keyVersion}\n{dataAlg}\n{macAlg_or_e
 | legacy `des-cbc-pkcs5` | 分组 | 8 | 8 | PKCS#5 | 无 | 必须 |
 
 legacy 算法（以及 `hmac-md5`）仅在 profile `allow_insecure=true` 时可用，未开闸时 profile 校验失败（`LegacyNotAllowed`），网关也拒绝此类信封。仅为兼容存量系统，新接入请勿使用。
-
-## 4. 请求绑定（X-Mazbri-* 签名）
-
-请求绑定把 HTTP 请求（路径、时间、nonce、原始 body）与租户持有的密钥绑在一起，防止 token 被截获后伪造/重放请求。它与 §3 的传输加密**相互独立**，可叠加：加密信封作为 body 时，签的是信封 JSON 原文。
-
-### 4.1 何时校验
-
-- profile `require_request_binding=true`（或网关全局开启）→ 必须带全部 5 个头；
-- 否则：一个绑定头都不带 → 跳过；**只要带了任意一个**，就按完整规则校验。
-- 校验发生在 JWT 校验之后、信封解密之前，仅针对 `POST /api/v1/gateway`。
-
-### 4.2 请求头
-
-| Header（大小写不敏感） | 取值 |
-|---|---|
-| `X-Mazbri-Timestamp` | unix 秒，十进制整数，不带前导零；与服务器偏差 ≤ `clock_skew_seconds` |
-| `X-Mazbri-Nonce` | 16–128 个字符，字符集 `[A-Za-z0-9._-]`；同租户在 `nonce_ttl_seconds` 内只能用一次 |
-| `X-Mazbri-Signature` | 签名字节的**标准 base64**（带填充） |
-| `X-Mazbri-Signature-Input` | `{alg}=v1`，如 `hmac-sha256=v1`、`rsa-pkcs1v15-sign-sha256=v1` |
-| `X-Mazbri-Key-Id` | mgmt 登记的 `kid` |
-
-### 4.3 签名串（canonical string）
-
-```
-POST\n{path_and_query}\n{timestamp}\n{nonce}\n{body}
-```
-
-- `POST` 固定大写；`path_and_query` 为请求行中的 path（含 `?query`，如有），即 `/api/v1/gateway`；
-- `timestamp` 为整数的十进制表示（与头一致）；
-- `body` 为 HTTP 请求体**原始字节**按 UTF-8 解释（明文 JSON 或信封 JSON），**发送的字节必须与签名用的字节完全一致**（不要在签名后重新序列化）；
-- 行间 `\n`，无结尾换行。
-
-### 4.4 协议档与算法
-
-profile `signature_version` 决定允许的协议档，`X-Mazbri-Signature-Input` 声明的 `alg` 必须等于该 `kid` 登记的算法，且属于该协议档：
-
-| `signature_version` | 允许的 `alg` | 签名 | 密钥 | 确定性 |
-|---|---|---|---|---|
-| `hmac-v1` | `hmac-sha256` / `hmac-sha384` / `hmac-sha512` / `hmac-sm3` | HMAC 输出原始字节 | mgmt 返回的 `hmacKey` **base64 解码后**的字节 | 是 |
-| `rsa-v1` | `rsa-pkcs1v15-sign-sha256` / `-sha384` / `-sha512` | **RSASSA-PKCS1-v1_5**（不是 PSS） | 租户私钥 PKCS#8 PEM；登记公钥 SPKI PEM（向量用 2048 位） | 是 |
-| `ecdsa-v1` | `ecdsa-p256-sha256` / `ecdsa-p384-sha384` | IEEE P1363 `r‖s` 定长（P-256 64 字节、P-384 96 字节），**不是 DER** | PKCS#8 / SPKI PEM | 否（随机 k） |
-| `ed25519-v1` | `ed25519` | RFC 8032 64 字节 | PKCS#8 / SPKI PEM | 是 |
-| `sm2-v1` | `sm2-sign` | GB/T 32918 SM2 + SM3，**DER** 编码 `(r, s)`，用户 ID 为默认 `1234567812345678` | PKCS#8 / SPKI PEM | 否 |
-
-> **没有 RSA-PSS。** `rsa-v1` 固定为 PKCS#1 v1.5，签名对同一输入是确定的，因此 RSA 向量可逐字节复现；ECDSA / SM2 向量只能「可验签」，不能复现。
-
-`hmac-md5` 等不安全算法不能用于请求绑定。
-
-### 4.5 错误
-
-全部返回 401，带 `WWW-Authenticate: Bearer realm="mazbri", error="invalid_token"`，body 为 §6 的网关错误体：
-
-| 码 | 含义 |
-|---|---|
-| `40110` | 需要绑定但缺少任一头 |
-| `40111` | 时间戳非整数 / ≤0 / 超出时间窗 |
-| `40112` | nonce 已使用（重放） |
-| `40113` | 签名不符；或 Signature-Input 格式非法、算法与 kid / 协议档不符；或 nonce 格式非法 |
-| `40114` | kid 不存在或已停用 |
-
-校验顺序：头齐全 → Signature-Input 格式 → nonce 格式 → 时间窗 → kid → 验签 → nonce 去重（验签通过后才占用 nonce）。
-
-实现：`mazbri-libs/mazbri-core/src/crypto/request_binding.rs`（`canonical_http_binding`、`SignatureVersion::allows`、`validate_binding_nonce`、`sign_binding`）；`mazbri-bin/mazbri-gateway/src/gateway/request_binding.rs`（`enforce_request_binding`、`verify_binding_signature`）。
 
 ## 5. 回调签名（平台 → 租户）
 

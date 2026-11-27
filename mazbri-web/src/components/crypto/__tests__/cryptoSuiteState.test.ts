@@ -12,7 +12,7 @@ describe("cryptoSuiteState", () => {
   it("initializes to suite mode when suite is present or empty without custom alg", () => {
     assert.equal(
       resolveInitialSelectionMode({
-        suite: "suite/tenant-default-2026-11",
+        suite: "suite/aes-256-gcm",
         dataAlg: null,
         macAlg: null,
       }),
@@ -37,7 +37,7 @@ describe("cryptoSuiteState", () => {
 
   it("switches to custom without bouncing back and restores suite cleanly", () => {
     const start: CryptoSuiteSelectValue = {
-      suite: "suite/tenant-default-2026-11",
+      suite: "suite/aes-256-gcm",
       dataAlg: null,
       macAlg: null,
       allowInsecure: false,

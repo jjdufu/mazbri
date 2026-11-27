@@ -1,13 +1,16 @@
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 
 macro_rules! profile_returning {
     () => {
-        "tenant_id, encryption_mode, profile_version, suite, data_alg, mac_alg, \
-         require_signature, allow_insecure, require_request_binding, signature_version, \
-         current_key_version, nonce_ttl_seconds, clock_skew_seconds, \
-         config, created_at, updated_at"
+        "tenant_id, encryption_mode, suite, data_alg, mac_alg,          require_signature, allow_insecure, nonce_ttl_seconds, clock_skew_seconds,          config, created_at, updated_at"
+    };
+}
+
+macro_rules! key_returning {
+    () => {
+        "id, tenant_id, encrypted_secret_key, secret_key_digest, wrapping_key_id,          wrapping_algorithm, last_used_at, created_at, updated_at, metadata"
     };
 }
 
@@ -15,15 +18,11 @@ macro_rules! profile_returning {
 pub struct TenantCryptoProfileRow {
     pub tenant_id: uuid::Uuid,
     pub encryption_mode: String,
-    pub profile_version: i32,
     pub suite: Option<String>,
     pub data_alg: Option<String>,
     pub mac_alg: Option<String>,
     pub require_signature: bool,
     pub allow_insecure: bool,
-    pub require_request_binding: bool,
-    pub signature_version: String,
-    pub current_key_version: Option<String>,
     pub nonce_ttl_seconds: i32,
     pub clock_skew_seconds: i32,
     pub config: serde_json::Value,
@@ -35,20 +34,11 @@ pub struct TenantCryptoProfileRow {
 pub struct TenantCryptoKeyRow {
     pub id: uuid::Uuid,
     pub tenant_id: uuid::Uuid,
-    pub key_version: String,
     #[serde(skip_serializing)]
     pub encrypted_secret_key: String,
     pub secret_key_digest: String,
     pub wrapping_key_id: String,
     pub wrapping_algorithm: String,
-    pub data_algorithm: String,
-    pub signature_algorithm: String,
-    pub status: String,
-    pub not_before: Option<DateTime<Utc>>,
-    pub expires_at: Option<DateTime<Utc>>,
-    pub activated_at: Option<DateTime<Utc>>,
-    pub deprecated_at: Option<DateTime<Utc>>,
-    pub disabled_at: Option<DateTime<Utc>>,
     pub last_used_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -60,7 +50,6 @@ pub struct TenantCryptoKeyEventRow {
     pub id: uuid::Uuid,
     pub tenant_id: uuid::Uuid,
     pub key_id: Option<uuid::Uuid>,
-    pub key_version: Option<String>,
     pub event_type: String,
     pub actor_type: String,
     pub actor_id: Option<uuid::Uuid>,
@@ -71,10 +60,6 @@ pub struct TenantCryptoKeyEventRow {
 
 /// 读取租户 Profile；不存在时插入默认行。
 ///
-/// 已存在的行只读不写：`ON CONFLICT DO UPDATE` 即使是空更新也会触发
-/// `BEFORE UPDATE` 触发器改写 `updated_at`，使读接口产生副作用，故用
-/// `DO NOTHING` + 回读已有行。
-///
 /// # Errors
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
@@ -83,21 +68,13 @@ pub async fn upsert_profile_defaults(
     tenant_id: uuid::Uuid,
 ) -> Result<TenantCryptoProfileRow, sqlx::Error> {
     sqlx::query_as::<_, TenantCryptoProfileRow>(concat!(
-        "WITH inserted AS ( \
-            INSERT INTO tenant_crypto_profiles (tenant_id) \
-            VALUES ($1) \
-            ON CONFLICT (tenant_id) DO NOTHING \
-            RETURNING ",
+        "WITH inserted AS (             INSERT INTO tenant_crypto_profiles (tenant_id)             VALUES ($1)             ON CONFLICT (tenant_id) DO NOTHING             RETURNING ",
         profile_returning!(),
-        ") \
-         SELECT ",
+        ")          SELECT ",
         profile_returning!(),
-        " FROM inserted \
-         UNION ALL \
-         SELECT ",
+        " FROM inserted          UNION ALL          SELECT ",
         profile_returning!(),
-        " FROM tenant_crypto_profiles \
-         WHERE tenant_id = $1 AND NOT EXISTS (SELECT 1 FROM inserted)"
+        " FROM tenant_crypto_profiles          WHERE tenant_id = $1 AND NOT EXISTS (SELECT 1 FROM inserted)"
     ))
     .bind(tenant_id)
     .fetch_one(pool)
@@ -112,11 +89,8 @@ pub struct UpdateCryptoProfileParams<'a> {
     pub mac_alg: Option<&'a str>,
     pub require_signature: bool,
     pub allow_insecure: bool,
-    pub require_request_binding: bool,
-    pub signature_version: &'a str,
     pub nonce_ttl_seconds: i32,
     pub clock_skew_seconds: i32,
-    pub current_key_version: Option<&'a str>,
     pub actor_id: uuid::Uuid,
 }
 
@@ -128,66 +102,20 @@ pub async fn update_profile(
     params: UpdateCryptoProfileParams<'_>,
 ) -> Result<TenantCryptoProfileRow, sqlx::Error> {
     sqlx::query_as::<_, TenantCryptoProfileRow>(concat!(
-        "INSERT INTO tenant_crypto_profiles ( \
-            tenant_id, encryption_mode, suite, data_alg, mac_alg, \
-            require_signature, allow_insecure, require_request_binding, signature_version, \
-            nonce_ttl_seconds, clock_skew_seconds, current_key_version, \
-            created_by, updated_by \
-        ) \
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $13) \
-        ON CONFLICT (tenant_id) DO UPDATE SET \
-            encryption_mode = EXCLUDED.encryption_mode, \
-            suite = EXCLUDED.suite, \
-            data_alg = EXCLUDED.data_alg, \
-            mac_alg = EXCLUDED.mac_alg, \
-            require_signature = EXCLUDED.require_signature, \
-            allow_insecure = EXCLUDED.allow_insecure, \
-            require_request_binding = EXCLUDED.require_request_binding, \
-            signature_version = EXCLUDED.signature_version, \
-            nonce_ttl_seconds = EXCLUDED.nonce_ttl_seconds, \
-            clock_skew_seconds = EXCLUDED.clock_skew_seconds, \
-            current_key_version = EXCLUDED.current_key_version, \
-            updated_by = EXCLUDED.updated_by, \
-            updated_at = NOW() \
-        RETURNING ",
+        "INSERT INTO tenant_crypto_profiles (             tenant_id, encryption_mode, suite, data_alg, mac_alg,             require_signature, allow_insecure, nonce_ttl_seconds, clock_skew_seconds,             created_by, updated_by         )         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)         ON CONFLICT (tenant_id) DO UPDATE SET             encryption_mode = EXCLUDED.encryption_mode,             suite = EXCLUDED.suite,             data_alg = EXCLUDED.data_alg,             mac_alg = EXCLUDED.mac_alg,             require_signature = EXCLUDED.require_signature,             allow_insecure = EXCLUDED.allow_insecure,             nonce_ttl_seconds = EXCLUDED.nonce_ttl_seconds,             clock_skew_seconds = EXCLUDED.clock_skew_seconds,             updated_by = EXCLUDED.updated_by,             updated_at = NOW()         RETURNING ",
         profile_returning!()
     ))
-        .bind(params.tenant_id)
-        .bind(params.encryption_mode)
-        .bind(params.suite)
-        .bind(params.data_alg)
-        .bind(params.mac_alg)
-        .bind(params.require_signature)
-        .bind(params.allow_insecure)
-        .bind(params.require_request_binding)
-        .bind(params.signature_version)
-        .bind(params.nonce_ttl_seconds)
-        .bind(params.clock_skew_seconds)
-        .bind(params.current_key_version)
-        .bind(params.actor_id)
-        .fetch_one(pool)
-        .await
-}
-
-/// # Errors
-///
-/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub async fn list_keys(
-    pool: &PgPool,
-    tenant_id: uuid::Uuid,
-) -> Result<Vec<TenantCryptoKeyRow>, sqlx::Error> {
-    sqlx::query_as::<_, TenantCryptoKeyRow>(
-        r"
-        SELECT id, tenant_id, key_version, encrypted_secret_key, secret_key_digest, wrapping_key_id,
-            wrapping_algorithm, data_algorithm, signature_algorithm, status, not_before, expires_at,
-            activated_at, deprecated_at, disabled_at, last_used_at, created_at, updated_at, metadata
-        FROM tenant_crypto_keys
-        WHERE tenant_id = $1
-        ORDER BY created_at DESC
-        ",
-    )
-    .bind(tenant_id)
-    .fetch_all(pool)
+    .bind(params.tenant_id)
+    .bind(params.encryption_mode)
+    .bind(params.suite)
+    .bind(params.data_alg)
+    .bind(params.mac_alg)
+    .bind(params.require_signature)
+    .bind(params.allow_insecure)
+    .bind(params.nonce_ttl_seconds)
+    .bind(params.clock_skew_seconds)
+    .bind(params.actor_id)
+    .fetch_one(pool)
     .await
 }
 
@@ -197,169 +125,24 @@ pub async fn list_keys(
 pub async fn find_key(
     pool: &PgPool,
     tenant_id: uuid::Uuid,
-    key_version: &str,
 ) -> Result<Option<TenantCryptoKeyRow>, sqlx::Error> {
-    sqlx::query_as::<_, TenantCryptoKeyRow>(
-        r"
-        SELECT id, tenant_id, key_version, encrypted_secret_key, secret_key_digest, wrapping_key_id,
-            wrapping_algorithm, data_algorithm, signature_algorithm, status, not_before, expires_at,
-            activated_at, deprecated_at, disabled_at, last_used_at, created_at, updated_at, metadata
-        FROM tenant_crypto_keys
-        WHERE tenant_id = $1 AND key_version = $2
-        ",
-    )
+    sqlx::query_as::<_, TenantCryptoKeyRow>(concat!(
+        "SELECT ",
+        key_returning!(),
+        " FROM tenant_crypto_keys WHERE tenant_id = $1"
+    ))
     .bind(tenant_id)
-    .bind(key_version)
     .fetch_optional(pool)
     .await
 }
 
-pub struct InsertCryptoKeyParams<'a> {
+pub struct UpsertCryptoKeyParams<'a> {
     pub tenant_id: uuid::Uuid,
-    pub key_version: &'a str,
     pub encrypted_secret_key: &'a str,
     pub secret_key_digest: &'a str,
     pub wrapping_key_id: &'a str,
-    pub data_algorithm: &'a str,
-    pub signature_algorithm: &'a str,
-    pub status: &'a str,
     pub actor_id: uuid::Uuid,
     pub metadata: &'a serde_json::Value,
-}
-
-/// # Errors
-///
-/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub async fn insert_key(
-    pool: &PgPool,
-    params: InsertCryptoKeyParams<'_>,
-) -> Result<TenantCryptoKeyRow, sqlx::Error> {
-    sqlx::query_as::<_, TenantCryptoKeyRow>(
-        r"
-        INSERT INTO tenant_crypto_keys (
-            tenant_id, key_version, encrypted_secret_key, secret_key_digest, wrapping_key_id,
-            data_algorithm, signature_algorithm,
-            status, activated_at, created_by, updated_by, metadata
-        )
-        VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8,
-            CASE WHEN $8 = 'active' THEN NOW() ELSE NULL END,
-            $9, $9, $10
-        )
-        RETURNING id, tenant_id, key_version, encrypted_secret_key, secret_key_digest, wrapping_key_id,
-            wrapping_algorithm, data_algorithm, signature_algorithm, status, not_before, expires_at,
-            activated_at, deprecated_at, disabled_at, last_used_at, created_at, updated_at, metadata
-        ",
-    )
-    .bind(params.tenant_id)
-    .bind(params.key_version)
-    .bind(params.encrypted_secret_key)
-    .bind(params.secret_key_digest)
-    .bind(params.wrapping_key_id)
-    .bind(params.data_algorithm)
-    .bind(params.signature_algorithm)
-    .bind(params.status)
-    .bind(params.actor_id)
-    .bind(params.metadata)
-    .fetch_one(pool)
-    .await
-}
-
-/// # Errors
-///
-/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub async fn update_key_status(
-    pool: &PgPool,
-    tenant_id: uuid::Uuid,
-    key_version: &str,
-    status: &str,
-    actor_id: uuid::Uuid,
-) -> Result<Option<TenantCryptoKeyRow>, sqlx::Error> {
-    macro_rules! key_returning {
-        () => {
-            " WHERE tenant_id = $3 AND key_version = $4 \
-             RETURNING id, tenant_id, key_version, encrypted_secret_key, secret_key_digest, wrapping_key_id, \
-                 wrapping_algorithm, data_algorithm, signature_algorithm, status, not_before, expires_at, \
-                 activated_at, deprecated_at, disabled_at, last_used_at, created_at, updated_at, metadata"
-        };
-    }
-    let sql = match status {
-        "active" => concat!(
-            "UPDATE tenant_crypto_keys SET status = $1, updated_by = $2, updated_at = NOW(), activated_at = NOW()",
-            key_returning!()
-        ),
-        "deprecated" => concat!(
-            "UPDATE tenant_crypto_keys SET status = $1, updated_by = $2, updated_at = NOW(), deprecated_at = NOW()",
-            key_returning!()
-        ),
-        "disabled" => concat!(
-            "UPDATE tenant_crypto_keys SET status = $1, updated_by = $2, updated_at = NOW(), disabled_at = NOW()",
-            key_returning!()
-        ),
-        _ => concat!(
-            "UPDATE tenant_crypto_keys SET status = $1, updated_by = $2, updated_at = NOW()",
-            key_returning!()
-        ),
-    };
-    sqlx::query_as::<_, TenantCryptoKeyRow>(sql)
-        .bind(status)
-        .bind(actor_id)
-        .bind(tenant_id)
-        .bind(key_version)
-        .fetch_optional(pool)
-        .await
-}
-
-/// # Errors
-///
-/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub async fn deprecate_other_active_keys(
-    pool: &PgPool,
-    tenant_id: uuid::Uuid,
-    except_version: &str,
-    actor_id: uuid::Uuid,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        r"
-        UPDATE tenant_crypto_keys
-        SET status = 'deprecated', deprecated_at = COALESCE(deprecated_at, NOW()),
-            updated_at = NOW(), updated_by = $3
-        WHERE tenant_id = $1 AND key_version <> $2 AND status = 'active'
-        ",
-    )
-    .bind(tenant_id)
-    .bind(except_version)
-    .bind(actor_id)
-    .execute(pool)
-    .await?;
-    Ok(())
-}
-
-/// # Errors
-///
-/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub async fn set_current_key_version(
-    pool: &PgPool,
-    tenant_id: uuid::Uuid,
-    key_version: Option<&str>,
-    actor_id: uuid::Uuid,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        r"
-        INSERT INTO tenant_crypto_profiles (tenant_id, current_key_version, created_by, updated_by)
-        VALUES ($1, $2, $3, $3)
-        ON CONFLICT (tenant_id) DO UPDATE SET
-            current_key_version = EXCLUDED.current_key_version,
-            updated_by = EXCLUDED.updated_by,
-            updated_at = NOW()
-        ",
-    )
-    .bind(tenant_id)
-    .bind(key_version)
-    .bind(actor_id)
-    .execute(pool)
-    .await?;
-    Ok(())
 }
 
 /// # Errors
@@ -369,7 +152,6 @@ pub async fn log_key_event(
     pool: &PgPool,
     tenant_id: uuid::Uuid,
     key_id: Option<uuid::Uuid>,
-    key_version: Option<&str>,
     event_type: &str,
     actor_id: uuid::Uuid,
     details: &serde_json::Value,
@@ -377,33 +159,19 @@ pub async fn log_key_event(
     sqlx::query(
         r"
         INSERT INTO tenant_crypto_key_events (
-            tenant_id, key_id, key_version, event_type, actor_type, actor_id, details
+            tenant_id, key_id, event_type, actor_type, actor_id, details
         )
-        VALUES ($1, $2, $3, $4, 'admin', $5, $6)
+        VALUES ($1, $2, $3, 'admin', $4, $5)
         ",
     )
     .bind(tenant_id)
     .bind(key_id)
-    .bind(key_version)
     .bind(event_type)
     .bind(actor_id)
     .bind(details)
     .execute(pool)
     .await?;
     Ok(())
-}
-
-/// # Errors
-///
-/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub async fn active_key_count(pool: &PgPool, tenant_id: uuid::Uuid) -> Result<i64, sqlx::Error> {
-    sqlx::query(
-        "SELECT COUNT(*) FROM tenant_crypto_keys WHERE tenant_id = $1 AND status = 'active'",
-    )
-    .bind(tenant_id)
-    .fetch_one(pool)
-    .await
-    .map(|row| row.get::<i64, _>(0))
 }
 
 /// # Errors
@@ -423,15 +191,11 @@ pub async fn list_all_profiles(pool: &PgPool) -> Result<Vec<TenantCryptoProfileR
 ///
 /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
 pub async fn list_all_keys(pool: &PgPool) -> Result<Vec<TenantCryptoKeyRow>, sqlx::Error> {
-    sqlx::query_as::<_, TenantCryptoKeyRow>(
-        r"
-        SELECT id, tenant_id, key_version, encrypted_secret_key, secret_key_digest, wrapping_key_id,
-            wrapping_algorithm, data_algorithm, signature_algorithm, status, not_before, expires_at,
-            activated_at, deprecated_at, disabled_at, last_used_at, created_at, updated_at, metadata
-        FROM tenant_crypto_keys
-        ORDER BY tenant_id, key_version
-        ",
-    )
+    sqlx::query_as::<_, TenantCryptoKeyRow>(concat!(
+        "SELECT ",
+        key_returning!(),
+        " FROM tenant_crypto_keys ORDER BY tenant_id"
+    ))
     .fetch_all(pool)
     .await
 }
@@ -444,7 +208,7 @@ pub async fn list_all_key_events(
 ) -> Result<Vec<TenantCryptoKeyEventRow>, sqlx::Error> {
     sqlx::query_as::<_, TenantCryptoKeyEventRow>(
         r"
-        SELECT id, tenant_id, key_id, key_version, event_type, actor_type, actor_id,
+        SELECT id, tenant_id, key_id, event_type, actor_type, actor_id,
             request_id, details, created_at
         FROM tenant_crypto_key_events
         ORDER BY tenant_id, created_at
@@ -454,30 +218,7 @@ pub async fn list_all_key_events(
     .await
 }
 
-/// # Errors
-///
-/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub async fn delete_crypto_key(
-    pool: &PgPool,
-    tenant_id: uuid::Uuid,
-    key_version: &str,
-) -> Result<Option<TenantCryptoKeyRow>, sqlx::Error> {
-    sqlx::query_as::<_, TenantCryptoKeyRow>(
-        r"
-        DELETE FROM tenant_crypto_keys
-        WHERE tenant_id = $1 AND key_version = $2
-        RETURNING id, tenant_id, key_version, encrypted_secret_key, secret_key_digest, wrapping_key_id,
-            wrapping_algorithm, data_algorithm, signature_algorithm, status, not_before, expires_at,
-            activated_at, deprecated_at, disabled_at, last_used_at, created_at, updated_at, metadata
-        ",
-    )
-    .bind(tenant_id)
-    .bind(key_version)
-    .fetch_optional(pool)
-    .await
-}
-
-/// 在单事务内锁定租户行（防并发密钥创建/切换竞态）。
+/// 在单事务内锁定租户行（防并发密钥创建/轮换竞态）。
 ///
 /// # Errors
 ///
@@ -502,52 +243,20 @@ pub async fn upsert_profile_defaults_tx(
     tenant_id: uuid::Uuid,
 ) -> Result<TenantCryptoProfileRow, sqlx::Error> {
     sqlx::query_as::<_, TenantCryptoProfileRow>(concat!(
-        "WITH inserted AS ( \
-            INSERT INTO tenant_crypto_profiles (tenant_id) \
-            VALUES ($1) \
-            ON CONFLICT (tenant_id) DO NOTHING \
-            RETURNING ",
+        "WITH inserted AS (             INSERT INTO tenant_crypto_profiles (tenant_id)             VALUES ($1)             ON CONFLICT (tenant_id) DO NOTHING             RETURNING ",
         profile_returning!(),
-        ") \
-         SELECT ",
+        ")          SELECT ",
         profile_returning!(),
-        " FROM inserted \
-         UNION ALL \
-         SELECT ",
+        " FROM inserted          UNION ALL          SELECT ",
         profile_returning!(),
-        " FROM tenant_crypto_profiles \
-         WHERE tenant_id = $1 AND NOT EXISTS (SELECT 1 FROM inserted)"
+        " FROM tenant_crypto_profiles          WHERE tenant_id = $1 AND NOT EXISTS (SELECT 1 FROM inserted)"
     ))
     .bind(tenant_id)
     .fetch_one(&mut **tx)
     .await
 }
 
-/// 在单事务内列出租户密钥。
-///
-/// # Errors
-///
-/// 底层数据库查询失败时返回错误。
-pub async fn list_keys_tx(
-    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    tenant_id: uuid::Uuid,
-) -> Result<Vec<TenantCryptoKeyRow>, sqlx::Error> {
-    sqlx::query_as::<_, TenantCryptoKeyRow>(
-        r"
-        SELECT id, tenant_id, key_version, encrypted_secret_key, secret_key_digest, wrapping_key_id,
-            wrapping_algorithm, data_algorithm, signature_algorithm, status, not_before, expires_at,
-            activated_at, deprecated_at, disabled_at, last_used_at, created_at, updated_at, metadata
-        FROM tenant_crypto_keys
-        WHERE tenant_id = $1
-        ORDER BY created_at DESC
-        ",
-    )
-    .bind(tenant_id)
-    .fetch_all(&mut **tx)
-    .await
-}
-
-/// 在单事务内查找指定版本密钥。
+/// 在单事务内查找租户主密钥。
 ///
 /// # Errors
 ///
@@ -555,179 +264,36 @@ pub async fn list_keys_tx(
 pub async fn find_key_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     tenant_id: uuid::Uuid,
-    key_version: &str,
 ) -> Result<Option<TenantCryptoKeyRow>, sqlx::Error> {
-    sqlx::query_as::<_, TenantCryptoKeyRow>(
-        r"
-        SELECT id, tenant_id, key_version, encrypted_secret_key, secret_key_digest, wrapping_key_id,
-            wrapping_algorithm, data_algorithm, signature_algorithm, status, not_before, expires_at,
-            activated_at, deprecated_at, disabled_at, last_used_at, created_at, updated_at, metadata
-        FROM tenant_crypto_keys
-        WHERE tenant_id = $1 AND key_version = $2
-        ",
-    )
+    sqlx::query_as::<_, TenantCryptoKeyRow>(concat!(
+        "SELECT ",
+        key_returning!(),
+        " FROM tenant_crypto_keys WHERE tenant_id = $1"
+    ))
     .bind(tenant_id)
-    .bind(key_version)
     .fetch_optional(&mut **tx)
     .await
 }
 
-/// 在单事务内插入新租户密钥。
+/// 在单事务内插入或轮换替换租户唯一主密钥。
 ///
 /// # Errors
 ///
 /// 底层数据库查询失败时返回错误。
-pub async fn insert_key_tx(
+pub async fn upsert_key_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    params: InsertCryptoKeyParams<'_>,
+    params: UpsertCryptoKeyParams<'_>,
 ) -> Result<TenantCryptoKeyRow, sqlx::Error> {
-    sqlx::query_as::<_, TenantCryptoKeyRow>(
-        r"
-        INSERT INTO tenant_crypto_keys (
-            tenant_id, key_version, encrypted_secret_key, secret_key_digest, wrapping_key_id,
-            data_algorithm, signature_algorithm,
-            status, activated_at, created_by, updated_by, metadata
-        )
-        VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8,
-            CASE WHEN $8 = 'active' THEN NOW() ELSE NULL END,
-            $9, $9, $10
-        )
-        RETURNING id, tenant_id, key_version, encrypted_secret_key, secret_key_digest, wrapping_key_id,
-            wrapping_algorithm, data_algorithm, signature_algorithm, status, not_before, expires_at,
-            activated_at, deprecated_at, disabled_at, last_used_at, created_at, updated_at, metadata
-        ",
-    )
+    sqlx::query_as::<_, TenantCryptoKeyRow>(concat!(
+        "INSERT INTO tenant_crypto_keys (             tenant_id, encrypted_secret_key, secret_key_digest, wrapping_key_id,             created_by, updated_by, metadata         )         VALUES ($1, $2, $3, $4, $5, $5, $6)         ON CONFLICT (tenant_id) DO UPDATE SET             encrypted_secret_key = EXCLUDED.encrypted_secret_key,             secret_key_digest = EXCLUDED.secret_key_digest,             wrapping_key_id = EXCLUDED.wrapping_key_id,             updated_by = EXCLUDED.updated_by,             updated_at = NOW(),             metadata = EXCLUDED.metadata         RETURNING ",
+        key_returning!()
+    ))
     .bind(params.tenant_id)
-    .bind(params.key_version)
     .bind(params.encrypted_secret_key)
     .bind(params.secret_key_digest)
     .bind(params.wrapping_key_id)
-    .bind(params.data_algorithm)
-    .bind(params.signature_algorithm)
-    .bind(params.status)
     .bind(params.actor_id)
     .bind(params.metadata)
-    .fetch_one(&mut **tx)
-    .await
-}
-
-/// 在单事务内更新密钥状态。
-///
-/// # Errors
-///
-/// 底层数据库查询失败时返回错误。
-pub async fn update_key_status_tx(
-    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    tenant_id: uuid::Uuid,
-    key_version: &str,
-    status: &str,
-    actor_id: uuid::Uuid,
-) -> Result<Option<TenantCryptoKeyRow>, sqlx::Error> {
-    macro_rules! key_returning {
-        () => {
-            " WHERE tenant_id = $3 AND key_version = $4 \
-             RETURNING id, tenant_id, key_version, encrypted_secret_key, secret_key_digest, wrapping_key_id, \
-                 wrapping_algorithm, data_algorithm, signature_algorithm, status, not_before, expires_at, \
-                 activated_at, deprecated_at, disabled_at, last_used_at, created_at, updated_at, metadata"
-        };
-    }
-    let sql = match status {
-        "active" => concat!(
-            "UPDATE tenant_crypto_keys SET status = $1, updated_by = $2, updated_at = NOW(), activated_at = NOW()",
-            key_returning!()
-        ),
-        "deprecated" => concat!(
-            "UPDATE tenant_crypto_keys SET status = $1, updated_by = $2, updated_at = NOW(), deprecated_at = NOW()",
-            key_returning!()
-        ),
-        "disabled" => concat!(
-            "UPDATE tenant_crypto_keys SET status = $1, updated_by = $2, updated_at = NOW(), disabled_at = NOW()",
-            key_returning!()
-        ),
-        _ => concat!(
-            "UPDATE tenant_crypto_keys SET status = $1, updated_by = $2, updated_at = NOW()",
-            key_returning!()
-        ),
-    };
-    sqlx::query_as::<_, TenantCryptoKeyRow>(sql)
-        .bind(status)
-        .bind(actor_id)
-        .bind(tenant_id)
-        .bind(key_version)
-        .fetch_optional(&mut **tx)
-        .await
-}
-
-/// 在单事务内将其他激活密钥降级为 `deprecated`。
-///
-/// # Errors
-///
-/// 底层数据库查询失败时返回错误。
-pub async fn deprecate_other_active_keys_tx(
-    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    tenant_id: uuid::Uuid,
-    except_version: &str,
-    actor_id: uuid::Uuid,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        r"
-        UPDATE tenant_crypto_keys
-        SET status = 'deprecated', deprecated_at = COALESCE(deprecated_at, NOW()),
-            updated_at = NOW(), updated_by = $3
-        WHERE tenant_id = $1 AND key_version <> $2 AND status = 'active'
-        ",
-    )
-    .bind(tenant_id)
-    .bind(except_version)
-    .bind(actor_id)
-    .execute(&mut **tx)
-    .await?;
-    Ok(())
-}
-
-/// 在单事务内更新当前激活密钥版本。
-///
-/// # Errors
-///
-/// 底层数据库查询失败时返回错误。
-pub async fn set_current_key_version_tx(
-    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    tenant_id: uuid::Uuid,
-    key_version: Option<&str>,
-    actor_id: uuid::Uuid,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        r"
-        INSERT INTO tenant_crypto_profiles (tenant_id, current_key_version, created_by, updated_by)
-        VALUES ($1, $2, $3, $3)
-        ON CONFLICT (tenant_id) DO UPDATE SET
-            current_key_version = EXCLUDED.current_key_version,
-            updated_by = EXCLUDED.updated_by,
-            updated_at = NOW()
-        ",
-    )
-    .bind(tenant_id)
-    .bind(key_version)
-    .bind(actor_id)
-    .execute(&mut **tx)
-    .await?;
-    Ok(())
-}
-
-/// 在单事务内统计激活密钥数量。
-///
-/// # Errors
-///
-/// 底层数据库查询失败时返回错误。
-pub async fn active_key_count_tx(
-    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    tenant_id: uuid::Uuid,
-) -> Result<i64, sqlx::Error> {
-    sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM tenant_crypto_keys WHERE tenant_id = $1 AND status = 'active'",
-    )
-    .bind(tenant_id)
     .fetch_one(&mut **tx)
     .await
 }
@@ -738,19 +304,12 @@ pub async fn active_key_count_tx(
 pub async fn delete_crypto_key_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     tenant_id: uuid::Uuid,
-    key_version: &str,
 ) -> Result<Option<TenantCryptoKeyRow>, sqlx::Error> {
-    sqlx::query_as::<_, TenantCryptoKeyRow>(
-        r"
-        DELETE FROM tenant_crypto_keys
-        WHERE tenant_id = $1 AND key_version = $2
-        RETURNING id, tenant_id, key_version, encrypted_secret_key, secret_key_digest, wrapping_key_id,
-            wrapping_algorithm, data_algorithm, signature_algorithm, status, not_before, expires_at,
-            activated_at, deprecated_at, disabled_at, last_used_at, created_at, updated_at, metadata
-        ",
-    )
+    sqlx::query_as::<_, TenantCryptoKeyRow>(concat!(
+        "DELETE FROM tenant_crypto_keys WHERE tenant_id = $1 RETURNING ",
+        key_returning!()
+    ))
     .bind(tenant_id)
-    .bind(key_version)
     .fetch_optional(&mut **tx)
     .await
 }
@@ -762,7 +321,6 @@ pub async fn log_key_event_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     tenant_id: uuid::Uuid,
     key_id: Option<uuid::Uuid>,
-    key_version: Option<&str>,
     event_type: &str,
     actor_id: uuid::Uuid,
     details: &serde_json::Value,
@@ -770,149 +328,17 @@ pub async fn log_key_event_tx(
     sqlx::query(
         r"
         INSERT INTO tenant_crypto_key_events (
-            tenant_id, key_id, key_version, event_type, actor_type, actor_id, details
+            tenant_id, key_id, event_type, actor_type, actor_id, details
         )
-        VALUES ($1, $2, $3, $4, 'admin', $5, $6)
+        VALUES ($1, $2, $3, 'admin', $4, $5)
         ",
     )
     .bind(tenant_id)
     .bind(key_id)
-    .bind(key_version)
     .bind(event_type)
     .bind(actor_id)
     .bind(details)
     .execute(&mut **tx)
     .await?;
     Ok(())
-}
-
-#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
-pub struct TenantRequestKeyRow {
-    pub id: uuid::Uuid,
-    pub tenant_id: uuid::Uuid,
-    pub kid: String,
-    pub alg: String,
-    pub status: String,
-    /// 非对称请求密钥登记的公钥文本（SPKI PEM 或 Base64 原始字节）；HMAC 密钥为 `None`。
-    pub public_key: Option<String>,
-    pub not_before: Option<DateTime<Utc>>,
-    pub not_after: Option<DateTime<Utc>>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-/// # Errors
-///
-/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub async fn list_request_keys(
-    pool: &PgPool,
-    tenant_id: uuid::Uuid,
-) -> Result<Vec<TenantRequestKeyRow>, sqlx::Error> {
-    sqlx::query_as::<_, TenantRequestKeyRow>(
-        r"
-        SELECT id, tenant_id, kid, alg, status, public_key, not_before, not_after, created_at, updated_at
-        FROM tenant_request_keys
-        WHERE tenant_id = $1
-        ORDER BY created_at
-        ",
-    )
-    .bind(tenant_id)
-    .fetch_all(pool)
-    .await
-}
-
-/// `insert_request_key` 要写入的字段。
-pub struct NewRequestKey<'a> {
-    pub tenant_id: uuid::Uuid,
-    pub kid: &'a str,
-    pub alg: &'a str,
-    pub material: RequestKeyMaterial<'a>,
-    /// HMAC：密钥完整性摘要；非对称：公钥文本完整性摘要（同一 `secret_key_digest` 口径）。
-    pub material_digest: &'a str,
-    pub actor_id: uuid::Uuid,
-}
-
-/// 请求密钥材料：对称密钥包装后入库，非对称只存公钥。
-pub enum RequestKeyMaterial<'a> {
-    /// HMAC 密钥（根保护包装后的密文与包装 key id）。
-    Wrapped {
-        encrypted_material: &'a str,
-        wrapping_key_id: &'a str,
-    },
-    /// 非对称签名公钥文本。
-    PublicKey(&'a str),
-}
-
-/// # Errors
-///
-/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub async fn insert_request_key(
-    pool: &PgPool,
-    params: NewRequestKey<'_>,
-) -> Result<TenantRequestKeyRow, sqlx::Error> {
-    let NewRequestKey {
-        tenant_id,
-        kid,
-        alg,
-        material,
-        material_digest,
-        actor_id,
-    } = params;
-    let (encrypted_material, wrapping_key_id, public_key) = match material {
-        RequestKeyMaterial::Wrapped {
-            encrypted_material,
-            wrapping_key_id,
-        } => (Some(encrypted_material), Some(wrapping_key_id), None),
-        RequestKeyMaterial::PublicKey(public_key) => (None, None, Some(public_key)),
-    };
-    sqlx::query_as::<_, TenantRequestKeyRow>(
-        r"
-        INSERT INTO tenant_request_keys (
-            tenant_id, kid, alg, encrypted_material, material_digest, wrapping_key_id,
-            wrapping_algorithm, public_key, status, created_by, updated_by
-        )
-        VALUES (
-            $1, $2, $3, $4, $5, $6,
-            CASE WHEN $4::text IS NULL THEN NULL ELSE 'aes-256-gcm' END,
-            $7, 'active', $8, $8
-        )
-        RETURNING id, tenant_id, kid, alg, status, public_key, not_before, not_after, created_at, updated_at
-        ",
-    )
-    .bind(tenant_id)
-    .bind(kid)
-    .bind(alg)
-    .bind(encrypted_material)
-    .bind(material_digest)
-    .bind(wrapping_key_id)
-    .bind(public_key)
-    .bind(actor_id)
-    .fetch_one(pool)
-    .await
-}
-
-/// # Errors
-///
-/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub async fn set_request_key_status(
-    pool: &PgPool,
-    tenant_id: uuid::Uuid,
-    kid: &str,
-    status: &str,
-    actor_id: uuid::Uuid,
-) -> Result<Option<TenantRequestKeyRow>, sqlx::Error> {
-    sqlx::query_as::<_, TenantRequestKeyRow>(
-        r"
-        UPDATE tenant_request_keys
-        SET status = $3, updated_by = $4, updated_at = NOW()
-        WHERE tenant_id = $1 AND kid = $2
-        RETURNING id, tenant_id, kid, alg, status, public_key, not_before, not_after, created_at, updated_at
-        ",
-    )
-    .bind(tenant_id)
-    .bind(kid)
-    .bind(status)
-    .bind(actor_id)
-    .fetch_optional(pool)
-    .await
 }

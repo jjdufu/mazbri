@@ -3,22 +3,18 @@ use crate::gateway::validation::GatewayRequest;
 use crate::gateway::validation::GatewayRequestPayload;
 use crate::redis_client::RedisClient;
 use chrono::Utc;
-use mazbri_core::crypto::request_binding::{
-    binding_key_ref, parse_binding_alg, public_key_digest_scope,
-};
 use mazbri_core::crypto::supplier_secrets::{
     RootMaterialKeyring, install_root_material_keyring,
 };
 use mazbri_core::crypto::tenant_key::{
     fetch_root_protection_keyring, unwrap_and_verify_tenant_key_with_keyring,
-    verify_secret_key_digest,
 };
 use mazbri_core::crypto::transport::{
     EnvelopeDirection, SealEnvelopeParams, TransportEnvelope, open_envelope, seal_envelope,
 };
 use mazbri_core::crypto::{
-    AlgorithmId, AlgorithmKind, AlgorithmRegistry, CryptoError, KeyRef, KeySelection, TenantTransportProfile,
-    TransportMode, parse_algorithm_id,
+    AlgorithmId, AlgorithmRegistry, CryptoError, TenantTransportProfile, TransportMode,
+    parse_algorithm_id,
 };
 use mazbri_core::metrics::{MetricsBuilder, REGISTRY, register_collector_once};
 use prometheus::{CounterVec, HistogramOpts, HistogramVec};
@@ -100,15 +96,11 @@ pub fn register_crypto_metrics() -> Result<(), prometheus::Error> {
 #[derive(Debug, Clone, Deserialize, sqlx::FromRow)]
 pub struct TenantCryptoProfile {
     pub encryption_mode: String,
-    pub profile_version: i32,
     pub suite: Option<String>,
     pub data_alg: Option<String>,
     pub mac_alg: Option<String>,
     pub require_signature: bool,
     pub allow_insecure: bool,
-    pub require_request_binding: bool,
-    pub signature_version: String,
-    pub current_key_version: Option<String>,
     pub nonce_ttl_seconds: i32,
     pub clock_skew_seconds: i32,
 }
@@ -123,12 +115,6 @@ impl TenantCryptoProfile {
         let mode = parse_transport_mode(&self.encryption_mode)?;
         let data_alg = parse_optional_alg(self.data_alg.as_deref(), "data_alg")?;
         let mac_alg = parse_optional_alg(self.mac_alg.as_deref(), "mac_alg")?;
-        let key = self.current_key_version.as_ref().map(|version| KeySelection::Latest {
-            key_id: version.clone(),
-        });
-        let profile_version = u32::try_from(self.profile_version).map_err(|_| {
-            ProxyError::InternalError("tenant crypto profile_version must be >= 0".to_string())
-        })?;
         let nonce_ttl_secs = u32::try_from(self.nonce_ttl_seconds).map_err(|_| {
             ProxyError::InternalError("tenant crypto nonce_ttl_seconds must be >= 0".to_string())
         })?;
@@ -136,19 +122,12 @@ impl TenantCryptoProfile {
             ProxyError::InternalError("tenant crypto clock_skew_seconds must be >= 0".to_string())
         })?;
         Ok(TenantTransportProfile {
-            version: if profile_version == 0 {
-                1
-            } else {
-                profile_version
-            },
             mode,
             suite: self.suite.clone(),
             data_alg,
             mac_alg,
-            key,
             require_signature: self.require_signature,
             allow_insecure: self.allow_insecure,
-            binding: None,
             nonce_ttl_secs,
             clock_skew_secs,
         })
@@ -158,31 +137,23 @@ impl TenantCryptoProfile {
 #[derive(Debug, Clone, Deserialize, sqlx::FromRow)]
 pub struct TenantCryptoKey {
     pub tenant_id: Uuid,
-    pub key_version: String,
     pub encrypted_secret_key: String,
     pub secret_key_digest: String,
-    pub status: String,
 }
 
 #[derive(Debug, Clone, Deserialize, sqlx::FromRow)]
 struct TenantCryptoSnapshotRow {
     pub tenant_id: Uuid,
     pub encryption_mode: String,
-    pub profile_version: i32,
     pub suite: Option<String>,
     pub data_alg: Option<String>,
     pub mac_alg: Option<String>,
     pub require_signature: bool,
     pub allow_insecure: bool,
-    pub require_request_binding: bool,
-    pub signature_version: String,
-    pub current_key_version: Option<String>,
     pub nonce_ttl_seconds: i32,
     pub clock_skew_seconds: i32,
-    pub key_version: Option<String>,
     pub encrypted_secret_key: Option<String>,
     pub secret_key_digest: Option<String>,
-    pub key_status: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -202,18 +173,11 @@ pub struct TenantCryptoTiming {
     pub transport_total: u64,
 }
 
-/// Marker inserted by `jwt_auth_middleware` when the encrypted envelope's nonce was
-/// already verified and consumed together with the request-binding nonce in a single
-/// Redis pipeline RTT.
-#[derive(Debug, Clone, Copy)]
-pub struct EnvelopeNoncePrechecked;
-
 #[derive(Clone)]
 pub struct TenantCryptoState {
     db: Arc<PgPool>,
     profile_cache: moka::sync::Cache<Uuid, TenantCryptoProfile>,
-    key_cache: moka::sync::Cache<String, Arc<Zeroizing<Vec<u8>>>>,
-    request_key_cache: moka::sync::Cache<(Uuid, String), Arc<RequestBindingKey>>,
+    key_cache: moka::sync::Cache<Uuid, Arc<Zeroizing<Vec<u8>>>>,
     root_material_cache: moka::sync::Cache<String, Arc<RootMaterialKeyring>>,
     root_material_refresh_lock: Arc<tokio::sync::Mutex<()>>,
     http_client: reqwest::Client,
@@ -247,12 +211,6 @@ impl TenantCryptoState {
                 .support_invalidation_closures()
                 .time_to_live(Duration::from_mins(15))
                 .build(),
-            // 请求绑定密钥：已解析的 KeyRef（RSA/SM2 解析开销大，按 kid 缓存）；
-            // TTL 较短，使 retire / 过期在 1 分钟内生效。
-            request_key_cache: moka::sync::Cache::builder()
-                .max_capacity(100_000)
-                .time_to_live(Duration::from_mins(1))
-                .build(),
             root_material_cache: moka::sync::Cache::builder()
                 .max_capacity(1)
                 .time_to_live(Duration::from_secs(300))
@@ -280,15 +238,11 @@ impl TenantCryptoState {
         let Some(snapshot) = snapshot else {
             let profile = TenantCryptoProfile {
                 encryption_mode: "none".to_string(),
-                profile_version: 1,
                 suite: None,
                 data_alg: None,
                 mac_alg: None,
                 require_signature: false,
                 allow_insecure: false,
-                require_request_binding: false,
-                signature_version: "hmac-v1".to_string(),
-                current_key_version: None,
                 nonce_ttl_seconds: 300,
                 clock_skew_seconds: 300,
             };
@@ -302,10 +256,9 @@ impl TenantCryptoState {
             && let Err(error) = self.materialize_key_row_with_root(&key_row).await
         {
             warn!(
-                tenant_id = % tenant_id,
-                key_version = % key_row.key_version,
-                error = % error,
-                "Tenant crypto current key warmup failed"
+                tenant_id = %tenant_id,
+                error = %error,
+                "Tenant crypto key warmup failed"
             );
         }
         record_crypto_lookup_duration("profile", "miss", lookup_started_at.elapsed());
@@ -333,8 +286,6 @@ impl TenantCryptoState {
         } else {
             record_crypto_maintenance("snapshot_warmup", "success", snapshot_started_at.elapsed());
         }
-        // SM2 g_table 必须在对外 ready 前于 blocking 线程建好，避免首条 bearer+sig
-        // 把 tokio worker 卡住约 1s+，并误报成 tenant_request_keys 慢 SQL。
         let sm2_started_at = Instant::now();
         match tokio::task::spawn_blocking(mazbri_core::crypto::warm_sm2).await {
             Ok(warm_elapsed) => {
@@ -421,14 +372,13 @@ impl TenantCryptoState {
     pub async fn refresh_active_crypto_snapshot_cache(&self) -> Result<(), ProxyError> {
         let snapshots = sqlx::query_as::<_, TenantCryptoSnapshotRow>(
             r"
-            SELECT p.tenant_id, p.encryption_mode, p.profile_version, p.suite, p.data_alg, p.mac_alg,
-                p.require_signature, p.allow_insecure, p.require_request_binding,
-                p.signature_version, p.current_key_version,
-                p.nonce_ttl_seconds, p.clock_skew_seconds, k.key_version, k.encrypted_secret_key,
-                k.secret_key_digest, k.status AS key_status
+            SELECT p.tenant_id, p.encryption_mode, p.suite, p.data_alg, p.mac_alg,
+                p.require_signature, p.allow_insecure,
+                p.nonce_ttl_seconds, p.clock_skew_seconds,
+                k.encrypted_secret_key, k.secret_key_digest
             FROM tenant_crypto_profiles p
             LEFT JOIN tenant_crypto_keys k
-                ON k.tenant_id = p.tenant_id AND k.key_version = p.current_key_version
+                ON k.tenant_id = p.tenant_id
             WHERE p.encryption_mode <> 'none'
             ORDER BY p.tenant_id
             ",
@@ -454,34 +404,26 @@ impl TenantCryptoState {
                 if let Some(keyring) = root_keyring.as_deref() {
                     match Self::materialize_key_row(&key_row, keyring) {
                         Ok(key) => {
-                            self.key_cache.insert(
-                                Self::cache_key(&key_row.tenant_id, &key_row.key_version),
-                                key,
-                            );
+                            self.key_cache.insert(key_row.tenant_id, key);
                         }
                         Err(error) => {
                             warn!(
-                                tenant_id = % key_row.tenant_id,
-                                key_version = % key_row.key_version,
-                                error = % error,
+                                tenant_id = %key_row.tenant_id,
+                                error = %error,
                                 "Tenant crypto key refresh failed"
                             );
                         }
                     }
                 } else {
                     warn!(
-                        tenant_id = % snapshot.tenant_id,
-                        key_version = % key_row.key_version,
+                        tenant_id = %snapshot.tenant_id,
                         "Tenant crypto key refresh skipped because root material cache was unavailable"
                     );
                 }
-            } else if matches!(snapshot.encryption_mode.as_str(), "request" | "full")
-                && snapshot.current_key_version.is_some()
-            {
+            } else if matches!(snapshot.encryption_mode.as_str(), "request" | "full") {
                 warn!(
-                    tenant_id = % snapshot.tenant_id,
-                    current_key_version = ? snapshot.current_key_version,
-                    "Tenant crypto current key row was not found during snapshot refresh"
+                    tenant_id = %snapshot.tenant_id,
+                    "Tenant crypto key row was not found during snapshot refresh"
                 );
             }
         }
@@ -492,13 +434,12 @@ impl TenantCryptoState {
         &self,
         active_tenants: HashSet<Uuid>,
     ) -> Result<(), ProxyError> {
-        let usable_key_rows = sqlx::query_as::<_, (Uuid, String)>(
+        let usable_key_tenants = sqlx::query_scalar::<_, Uuid>(
             r"
-            SELECT k.tenant_id, k.key_version
+            SELECT k.tenant_id
             FROM tenant_crypto_keys k
             JOIN tenant_crypto_profiles p ON p.tenant_id = k.tenant_id
             WHERE p.encryption_mode <> 'none'
-              AND k.status IN ('active', 'deprecated')
             ",
         )
         .fetch_all(self.db.as_ref())
@@ -506,17 +447,14 @@ impl TenantCryptoState {
         .map_err(|error| {
             ProxyError::InternalError(format!("usable crypto keys query failed: {error}"))
         })?;
-        let mut usable_cache_keys = HashSet::with_capacity(usable_key_rows.len());
-        for (tid, kver) in usable_key_rows {
-            usable_cache_keys.insert(Self::cache_key(&tid, &kver));
-        }
-        let usable_cache_keys = Arc::new(usable_cache_keys);
+        let usable_cache_keys: Arc<HashSet<Uuid>> =
+            Arc::new(usable_key_tenants.into_iter().collect());
         if let Err(error) = self.key_cache.invalidate_entries_if({
             let usable_cache_keys = Arc::clone(&usable_cache_keys);
-            move |cache_key, _| !usable_cache_keys.contains(cache_key)
+            move |tenant_id, _| !usable_cache_keys.contains(tenant_id)
         }) {
             warn!(
-                error = % error,
+                error = %error,
                 "Tenant crypto key cache invalidation closure is unavailable"
             );
         }
@@ -528,7 +466,7 @@ impl TenantCryptoState {
         });
         if let Err(error) = invalidate_result {
             warn!(
-                error = % error,
+                error = %error,
                 "Tenant crypto profile cache invalidation closure is unavailable"
             );
         }
@@ -552,14 +490,13 @@ impl TenantCryptoState {
     ) -> Result<Option<TenantCryptoSnapshotRow>, ProxyError> {
         sqlx::query_as::<_, TenantCryptoSnapshotRow>(
             r"
-            SELECT p.tenant_id, p.encryption_mode, p.profile_version, p.suite, p.data_alg, p.mac_alg,
-                p.require_signature, p.allow_insecure, p.require_request_binding,
-                p.signature_version, p.current_key_version,
-                p.nonce_ttl_seconds, p.clock_skew_seconds, k.key_version, k.encrypted_secret_key,
-                k.secret_key_digest, k.status AS key_status
+            SELECT p.tenant_id, p.encryption_mode, p.suite, p.data_alg, p.mac_alg,
+                p.require_signature, p.allow_insecure,
+                p.nonce_ttl_seconds, p.clock_skew_seconds,
+                k.encrypted_secret_key, k.secret_key_digest
             FROM tenant_crypto_profiles p
             LEFT JOIN tenant_crypto_keys k
-                ON k.tenant_id = p.tenant_id AND k.key_version = p.current_key_version
+                ON k.tenant_id = p.tenant_id
             WHERE p.tenant_id = $1
             ",
         )
@@ -574,15 +511,11 @@ impl TenantCryptoState {
     fn profile_from_snapshot(snapshot: &TenantCryptoSnapshotRow) -> TenantCryptoProfile {
         TenantCryptoProfile {
             encryption_mode: snapshot.encryption_mode.clone(),
-            profile_version: snapshot.profile_version,
             suite: snapshot.suite.clone(),
             data_alg: snapshot.data_alg.clone(),
             mac_alg: snapshot.mac_alg.clone(),
             require_signature: snapshot.require_signature,
             allow_insecure: snapshot.allow_insecure,
-            require_request_binding: snapshot.require_request_binding,
-            signature_version: snapshot.signature_version.clone(),
-            current_key_version: snapshot.current_key_version.clone(),
             nonce_ttl_seconds: snapshot.nonce_ttl_seconds,
             clock_skew_seconds: snapshot.clock_skew_seconds,
         }
@@ -591,30 +524,18 @@ impl TenantCryptoState {
     fn key_from_snapshot(snapshot: &TenantCryptoSnapshotRow) -> Option<TenantCryptoKey> {
         Some(TenantCryptoKey {
             tenant_id: snapshot.tenant_id,
-            key_version: snapshot.key_version.clone()?,
             encrypted_secret_key: snapshot.encrypted_secret_key.clone()?,
             secret_key_digest: snapshot.secret_key_digest.clone()?,
-            status: snapshot.key_status.clone()?,
         })
-    }
-
-    fn cache_key(tenant_id: &Uuid, key_version: &str) -> String {
-        format!("{tenant_id}:{key_version}")
     }
 
     fn materialize_key_row(
         row: &TenantCryptoKey,
         keyring: &RootMaterialKeyring,
     ) -> Result<Arc<Zeroizing<Vec<u8>>>, ProxyError> {
-        if !matches!(row.status.as_str(), "active" | "deprecated") {
-            return Err(ProxyError::Forbidden(
-                "Invalid encrypted request".to_string(),
-            ));
-        }
         let key = unwrap_and_verify_tenant_key_with_keyring(
             &row.encrypted_secret_key,
             &row.tenant_id.to_string(),
-            &row.key_version,
             &row.secret_key_digest,
             keyring,
         )
@@ -628,31 +549,24 @@ impl TenantCryptoState {
     ) -> Result<Arc<Zeroizing<Vec<u8>>>, ProxyError> {
         let keyring = self.root_materials().await?;
         if let Ok(key) = Self::materialize_key_row(row, &keyring) {
-            self.key_cache.insert(
-                Self::cache_key(&row.tenant_id, &row.key_version),
-                Arc::clone(&key),
-            );
+            self.key_cache.insert(row.tenant_id, Arc::clone(&key));
             return Ok(key);
         }
         self.refresh_root_material_cache().await?;
         let refreshed = self.root_materials().await?;
         let key = Self::materialize_key_row(row, &refreshed)?;
-        self.key_cache.insert(
-            Self::cache_key(&row.tenant_id, &row.key_version),
-            Arc::clone(&key),
-        );
+        self.key_cache.insert(row.tenant_id, Arc::clone(&key));
         Ok(key)
     }
 
     /// # Errors
     ///
     /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-    pub async fn decrypt_request_value_with_precheck(
+    pub async fn decrypt_request_value(
         &self,
         tenant_id: Uuid,
         body: GatewayRequestPayload,
         http_path: &str,
-        envelope_nonce_prechecked: bool,
     ) -> Result<
         (
             GatewayRequest,
@@ -688,9 +602,7 @@ impl TenantCryptoState {
                 let preflight_started_at = Instant::now();
                 validate_timestamp(&envelope, profile.clock_skew_seconds)?;
                 timing.preflight = mazbri_core::num::millis_u64(preflight_started_at.elapsed());
-                let tenant_key = self
-                    .tenant_key(tenant_id, &envelope.key_version, &mut timing)
-                    .await?;
+                let tenant_key = self.tenant_key(tenant_id, &mut timing).await?;
                 let signature_started_at = Instant::now();
                 let decrypt_started_at = Instant::now();
                 let plaintext = open_envelope(
@@ -705,10 +617,8 @@ impl TenantCryptoState {
                 .map_err(map_transport_crypto_error)?;
                 timing.signature = mazbri_core::num::millis_u64(signature_started_at.elapsed());
                 timing.decrypt = mazbri_core::num::millis_u64(decrypt_started_at.elapsed());
-                if !envelope_nonce_prechecked {
-                    self.check_nonce(tenant_id, &envelope, profile.nonce_ttl_seconds, &mut timing)
-                        .await?;
-                }
+                self.check_nonce(tenant_id, &envelope, profile.nonce_ttl_seconds, &mut timing)
+                    .await?;
                 let parse_started_at = Instant::now();
                 let req = serde_json::from_slice::<GatewayRequest>(&plaintext).map_err(|_| {
                     ProxyError::BadRequest("Decrypted request body is invalid".to_string())
@@ -735,19 +645,15 @@ impl TenantCryptoState {
                 "response encryption requires encryption_mode=full".to_string(),
             ));
         }
-        let key_version = profile.current_key_version.as_deref().ok_or_else(|| {
-            ProxyError::InternalError("tenant crypto current key is not configured".to_string())
-        })?;
         let transport = profile.transport_profile()?;
         let mut timing = TenantCryptoTiming::default();
-        let tenant_key = self.tenant_key(tenant_id, key_version, &mut timing).await?;
+        let tenant_key = self.tenant_key(tenant_id, &mut timing).await?;
         let tenant_id_str = tenant_id.to_string();
         seal_envelope(SealEnvelopeParams {
             profile: &transport,
             registry: AlgorithmRegistry::global(),
             master_key: tenant_key.as_slice(),
             direction: EnvelopeDirection::GatewayToClient,
-            key_version,
             tenant_id: &tenant_id_str,
             http_path,
             plaintext,
@@ -759,12 +665,10 @@ impl TenantCryptoState {
     async fn tenant_key(
         &self,
         tenant_id: Uuid,
-        key_version: &str,
         timing: &mut TenantCryptoTiming,
     ) -> Result<Arc<Zeroizing<Vec<u8>>>, ProxyError> {
         let started_at = Instant::now();
-        let cache_key = Self::cache_key(&tenant_id, key_version);
-        if let Some(key) = self.key_cache.get(&cache_key) {
+        if let Some(key) = self.key_cache.get(&tenant_id) {
             record_crypto_cache_result("key", "hit");
             record_crypto_lookup_duration("key", "hit", started_at.elapsed());
             timing.tenant_key = mazbri_core::num::millis_u64(started_at.elapsed());
@@ -774,13 +678,12 @@ impl TenantCryptoState {
         let db_started_at = Instant::now();
         let row = sqlx::query_as::<_, TenantCryptoKey>(
             r"
-            SELECT tenant_id, key_version, encrypted_secret_key, secret_key_digest, status
+            SELECT tenant_id, encrypted_secret_key, secret_key_digest
             FROM tenant_crypto_keys
-            WHERE tenant_id = $1 AND key_version = $2
+            WHERE tenant_id = $1
             ",
         )
         .bind(tenant_id)
-        .bind(key_version)
         .fetch_optional(self.db.as_ref())
         .await;
         timing.tenant_key_db = mazbri_core::num::millis_u64(db_started_at.elapsed());
@@ -789,11 +692,6 @@ impl TenantCryptoState {
                 ProxyError::InternalError(format!("crypto key lookup failed: {error}"))
             })?
             .ok_or_else(|| ProxyError::Forbidden("Invalid encrypted request".to_string()))?;
-        if !matches!(row.status.as_str(), "active" | "deprecated") {
-            return Err(ProxyError::Forbidden(
-                "Invalid encrypted request".to_string(),
-            ));
-        }
         let root_material_started_at = Instant::now();
         let mut keyring = self.root_materials().await?;
         timing.tenant_key_root_material =
@@ -808,7 +706,7 @@ impl TenantCryptoState {
         };
         timing.tenant_key_local = mazbri_core::num::millis_u64(local_started_at.elapsed());
         timing.tenant_key = mazbri_core::num::millis_u64(started_at.elapsed());
-        self.key_cache.insert(cache_key, Arc::clone(&key));
+        self.key_cache.insert(tenant_id, Arc::clone(&key));
         record_crypto_lookup_duration("key", "miss", started_at.elapsed());
         Ok(key)
     }
@@ -858,12 +756,7 @@ impl TenantCryptoState {
         let started_at = Instant::now();
         let inserted = retry_once("SET NX EX", || async {
             self.redis
-                .set_nonce_if_absent(
-                    tenant_id,
-                    &envelope.key_version,
-                    &envelope.nonce,
-                    ttl_seconds,
-                )
+                .set_nonce_if_absent(tenant_id, &envelope.nonce, ttl_seconds)
                 .await
                 .map_err(|error| {
                     ProxyError::InternalError(format!("nonce redis operation failed: {error}"))
@@ -888,182 +781,6 @@ impl TenantCryptoState {
             .ping()
             .await
             .map_err(|error| anyhow::anyhow!(error.to_string()))
-    }
-
-    /// # Errors
-    ///
-    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-    pub async fn consume_binding_nonce(
-        &self,
-        prefix: &str,
-        tenant_id: Uuid,
-        nonce: &str,
-        ttl_seconds: i32,
-    ) -> Result<bool, ProxyError> {
-        self.redis
-            .set_gateway_binding_nonce_if_absent(prefix, tenant_id, nonce, ttl_seconds)
-            .await
-            .map_err(|error| {
-                ProxyError::InternalError(format!("binding nonce redis operation failed: {error}"))
-            })
-    }
-
-    /// # Errors
-    ///
-    /// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-    pub async fn consume_binding_and_envelope_nonces(
-        &self,
-        prefix: &str,
-        tenant_id: Uuid,
-        binding_nonce: &str,
-        key_version: &str,
-        envelope_nonce: &str,
-        ttl_seconds: i32,
-    ) -> Result<(bool, bool), ProxyError> {
-        self.redis
-            .set_binding_and_envelope_nonces_if_absent(
-                prefix,
-                tenant_id,
-                binding_nonce,
-                key_version,
-                envelope_nonce,
-                ttl_seconds,
-            )
-            .await
-            .map_err(|error| {
-                ProxyError::InternalError(format!("nonce pipeline redis operation failed: {error}"))
-            })
-    }
-
-    /// 按 (tenant, kid) 取可用的请求绑定密钥（HMAC 解包 / 公钥校验完整性摘要后解析）。
-    ///
-    /// kid 不存在、非 active/retiring、不在有效期、算法不在绑定闭集时返回 `Ok(None)`。
-    ///
-    /// # Errors
-    ///
-    /// 数据库 / 根材料失败返回 `InternalError`；密钥材料被篡改或非法返回 `Forbidden`。
-    pub async fn request_binding_key(
-        &self,
-        tenant_id: Uuid,
-        kid: &str,
-    ) -> Result<Option<Arc<RequestBindingKey>>, ProxyError> {
-        let cache_key = (tenant_id, kid.to_owned());
-        if let Some(key) = self.request_key_cache.get(&cache_key) {
-            return Ok(Some(key));
-        }
-        let row = sqlx::query_as::<_, TenantRequestKeyRow>(
-            r"
-            SELECT tenant_id, kid, alg, encrypted_material, public_key, material_digest, status,
-                not_before, not_after
-            FROM tenant_request_keys
-            WHERE tenant_id = $1 AND kid = $2
-            ",
-        )
-        .bind(tenant_id)
-        .bind(kid)
-        .fetch_optional(self.db.as_ref())
-        .await
-        .map_err(|error| {
-            ProxyError::InternalError(format!("request key lookup failed: {error}"))
-        })?;
-        let Some(row) = row else {
-            return Ok(None);
-        };
-        if !row.usable_at(Utc::now()) {
-            return Ok(None);
-        }
-        let Ok(alg) = parse_binding_alg(&row.alg) else {
-            return Ok(None);
-        };
-        let material = self.request_key_material(&row, alg).await?;
-        let key = binding_key_ref(alg, &material)
-            .map_err(|_| ProxyError::Forbidden("Invalid request binding key".to_string()))?;
-        let key = Arc::new(RequestBindingKey { alg, key });
-        self.request_key_cache.insert(cache_key, Arc::clone(&key));
-        Ok(Some(key))
-    }
-
-    async fn request_key_material(
-        &self,
-        row: &TenantRequestKeyRow,
-        alg: AlgorithmId,
-    ) -> Result<Zeroizing<Vec<u8>>, ProxyError> {
-        let invalid = || ProxyError::Forbidden("Invalid request binding key".to_string());
-        let mut keyring = self.root_materials().await?;
-        let tenant = row.tenant_id.to_string();
-        if alg.kind() == AlgorithmKind::Mac {
-            let wrapped = row.encrypted_material.as_deref().ok_or_else(invalid)?;
-            if let Ok(key) = unwrap_and_verify_tenant_key_with_keyring(
-                wrapped,
-                &tenant,
-                &row.kid,
-                &row.material_digest,
-                &keyring,
-            ) {
-                return Ok(key);
-            }
-            self.refresh_root_material_cache().await?;
-            keyring = self.root_materials().await?;
-            return unwrap_and_verify_tenant_key_with_keyring(
-                wrapped,
-                &tenant,
-                &row.kid,
-                &row.material_digest,
-                &keyring,
-            )
-            .map_err(|_| invalid());
-        }
-
-        let public = row.public_key.as_deref().ok_or_else(invalid)?;
-        let material = Zeroizing::new(public.as_bytes().to_vec());
-        let scope = public_key_digest_scope(&row.kid);
-        let verify_with_ring = |ring: &RootMaterialKeyring| -> bool {
-            ring.versions().into_iter().any(|ver| {
-                ring.integrity_key_for_version(ver).is_some_and(|ik| {
-                    verify_secret_key_digest(ik, &tenant, &scope, &material, &row.material_digest)
-                        .unwrap_or(false)
-                })
-            })
-        };
-        if verify_with_ring(&keyring) {
-            return Ok(material);
-        }
-        self.refresh_root_material_cache().await?;
-        keyring = self.root_materials().await?;
-        if verify_with_ring(&keyring) {
-            return Ok(material);
-        }
-        Err(invalid())
-    }
-}
-
-/// 已校验、已解析的请求绑定密钥。
-#[derive(Debug, Clone)]
-pub struct RequestBindingKey {
-    /// 密钥算法（绑定闭集内）。
-    pub alg: AlgorithmId,
-    /// HMAC 原始密钥或客户端公钥。
-    pub key: KeyRef,
-}
-
-#[derive(Debug, Clone, Deserialize, sqlx::FromRow)]
-struct TenantRequestKeyRow {
-    pub tenant_id: Uuid,
-    pub kid: String,
-    pub alg: String,
-    pub encrypted_material: Option<String>,
-    pub public_key: Option<String>,
-    pub material_digest: String,
-    pub status: String,
-    pub not_before: Option<chrono::DateTime<Utc>>,
-    pub not_after: Option<chrono::DateTime<Utc>>,
-}
-
-impl TenantRequestKeyRow {
-    fn usable_at(&self, now: chrono::DateTime<Utc>) -> bool {
-        matches!(self.status.as_str(), "active" | "retiring")
-            && self.not_before.is_none_or(|not_before| now >= not_before)
-            && self.not_after.is_none_or(|not_after| now < not_after)
     }
 }
 
@@ -1229,30 +946,25 @@ fn map_transport_crypto_error(
 #[cfg(test)]
 mod transport_profile_tests {
     use super::{
-        map_crypto_profile_error, map_transport_crypto_error, parse_optional_alg,
-        parse_transport_mode, TenantCryptoProfile,
+        TenantCryptoProfile, map_crypto_profile_error, map_transport_crypto_error,
+        parse_optional_alg, parse_transport_mode,
     };
     use crate::gateway::ProxyError;
     use mazbri_core::crypto::transport::{
-        EnvelopeDirection, SealEnvelopeParams, open_envelope, seal_envelope, TransportCryptoError,
+        EnvelopeDirection, SealEnvelopeParams, TransportCryptoError, open_envelope, seal_envelope,
     };
     use mazbri_core::crypto::{
-        AlgorithmId, AlgorithmRegistry, CryptoError, KeySelection, TransportMode,
-        SUITE_TENANT_DEFAULT_2026_11,
+        AlgorithmId, AlgorithmRegistry, CryptoError, SUITE_AES_256_GCM, TransportMode,
     };
 
     fn full_aes_db_profile() -> TenantCryptoProfile {
         TenantCryptoProfile {
             encryption_mode: "full".into(),
-            profile_version: 1,
-            suite: Some(SUITE_TENANT_DEFAULT_2026_11.into()),
+            suite: Some(SUITE_AES_256_GCM.into()),
             data_alg: Some("aes-256-gcm".into()),
             mac_alg: None,
             require_signature: false,
             allow_insecure: false,
-            require_request_binding: false,
-            signature_version: "hmac-v1".into(),
-            current_key_version: Some("v1".into()),
             nonce_ttl_seconds: 300,
             clock_skew_seconds: 300,
         }
@@ -1295,7 +1007,6 @@ mod transport_profile_tests {
             registry,
             master_key: &key,
             direction: EnvelopeDirection::ClientToGateway,
-            key_version: "v1",
             tenant_id: "11111111-1111-1111-1111-111111111111",
             http_path: "/api/v1/gateway",
             plaintext,
@@ -1332,15 +1043,11 @@ mod transport_profile_tests {
     fn mode_none_cannot_be_used_for_encrypting_profile_fields() {
         let profile = TenantCryptoProfile {
             encryption_mode: "none".into(),
-            profile_version: 1,
             suite: None,
             data_alg: None,
             mac_alg: None,
             require_signature: false,
             allow_insecure: false,
-            require_request_binding: false,
-            signature_version: "hmac-v1".into(),
-            current_key_version: None,
             nonce_ttl_seconds: 300,
             clock_skew_seconds: 300,
         };
@@ -1364,14 +1071,5 @@ mod transport_profile_tests {
         }
         let err = map_transport_crypto_error(TransportCryptoError::UnsupportedAlgorithm);
         assert!(matches!(err, ProxyError::BadRequest(_)));
-    }
-
-    #[test]
-    fn key_selection_uses_current_key_version() {
-        let transport = full_aes_db_profile().transport_profile().unwrap();
-        match transport.key {
-            Some(KeySelection::Latest { key_id }) => assert_eq!(key_id, "v1"),
-            other => panic!("unexpected key {other:?}"),
-        }
     }
 }

@@ -595,7 +595,7 @@ async fn insert_route_bindings(
         .bind(cid)
         .bind(i32::saturating_from(i + 1))
         .bind(&switch_condition)
-        .bind(&route.version_tag)
+        .bind(route.version_tag.as_deref().map(str::trim).filter(|s| !s.is_empty()))
         .bind(route.weight)
         .fetch_one(&mut **tx)
         .await

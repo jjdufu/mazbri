@@ -26,8 +26,6 @@ use tower::ServiceExt;
 const SENSITIVE_READS_OPEN_TO_ALL_ROLES: &[&str] = &[
     // 只返回密钥版本、算法、状态与摘要等元数据；加密后的密钥字段 skip_serializing。
     "/tenants/{code}/crypto",
-    // 只返回请求密钥 kid、状态与时间，不返回密钥值。
-    "/tenants/{code}/request-keys",
 ];
 
 /// 允许 `SelfService` 的路由：只能作用于调用者本人。
@@ -626,7 +624,7 @@ fn viewer_is_denied_on_biz_write_routes() {
         ("PUT", "/tenants/{code}/config/cache"),
         ("PUT", "/tenants/{code}/config/ratelimit"),
         ("DELETE", "/tenants/{code}/config/ratelimit"),
-        ("DELETE", "/tenants/{code}/crypto-keys/{version}"),
+        ("DELETE", "/tenants/{code}/crypto-keys"),
         ("POST", "/tenants/{code}/crypto-keys"),
         ("PUT", "/tenants/{code}/crypto-profile"),
         ("POST", "/products/{product_id}/grant"),

@@ -5,6 +5,7 @@ import {
   Loader2,
   Pencil,
   Plus,
+  Power,
   RefreshCw,
   Search,
   Trash2,
@@ -36,6 +37,7 @@ import {
   Switch,
   Textarea,
   type DataTableColumn,
+  type EntityDetailMetaItem,
   type TabOption,
 } from "@/components/ui";
 import { useT } from "@/locales";
@@ -55,12 +57,11 @@ import { AuthorizationConfigModal } from "./AuthorizationConfigModal";
 import { CreateAuthorizationModal } from "./CreateAuthorizationModal";
 import { ProductRoutesSection } from "./routes-management/ProductRoutesSection";
 
-type ProductDetailTab = "info" | "routes" | "tenants";
+type ProductDetailTab = "routes" | "tenants";
 
 function resolveTab(raw: string | null): ProductDetailTab {
-  if (raw === "routes") return "routes";
   if (raw === "tenants") return "tenants";
-  return "info";
+  return "routes";
 }
 
 export function ProductDetailPage() {
@@ -459,7 +460,6 @@ export function ProductDetailPage() {
   );
 
   const tabItems: TabOption<ProductDetailTab>[] = [
-    { key: "info", label: t("product.detail.tabs.info"), testId: "tab-info" },
     {
       key: "routes",
       label: t("product.detail.tabs.routes"),
@@ -473,6 +473,48 @@ export function ProductDetailPage() {
   ];
 
   const isEnabled = product?.enabled !== false;
+
+  const productMeta = useMemo<EntityDetailMetaItem[]>(() => {
+    const items: EntityDetailMetaItem[] = [
+      {
+        label: t("product.fields.timeout"),
+        value: (
+          <span className="font-mono-tech tabular-nums">
+            {product?.timeout_secs != null
+              ? `${product.timeout_secs} ${t("ops.units.s")}`
+              : EMPTY_PLACEHOLDER}
+          </span>
+        ),
+      },
+      {
+        label: t("product.fields.cbProEnabled"),
+        value: product?.cb_pro_enabled ? (
+          <span className="font-mono-tech">
+            {t("common.status.enabled")} ({product.cb_failure_threshold}/
+            {product.cb_success_threshold}/{product.cb_cooldown_secs}
+            {t("ops.units.s")})
+          </span>
+        ) : (
+          t("common.status.disabled")
+        ),
+      },
+      {
+        label: t("common.fields.createdAt"),
+        value: (
+          <span className="font-mono-tech">
+            {formatDateTime(product?.created_at)}
+          </span>
+        ),
+      },
+    ];
+    if (product?.description?.trim()) {
+      items.push({
+        label: t("product.fields.description"),
+        value: product.description.trim(),
+      });
+    }
+    return items;
+  }, [product, t]);
 
   return (
     <>
@@ -488,13 +530,14 @@ export function ProductDetailPage() {
             {t("product.detail.billingModePayPerCall")}
           </Badge>
         }
+        meta={productMeta}
         onBack={() => navigate("/operations/product-authorization?tab=products")}
         actions={
           canWrite ? (
             <>
               <Button
                 type="button"
-                variant="primary"
+                variant="outline"
                 size="md"
                 disabled={!product}
                 onClick={handleOpenEdit}
@@ -503,6 +546,21 @@ export function ProductDetailPage() {
                 <Pencil className="h-3.5 w-3.5" />
                 {t("common.actions.edit")}
               </Button>
+              {product && (
+                <Button
+                  type="button"
+                  variant={product.enabled ? "warning" : "primary"}
+                  size="md"
+                  loading={statusLoading}
+                  onClick={() => void handleStatusChange(!product.enabled)}
+                  data-testid="product-detail-toggle-btn"
+                >
+                  <Power className="h-3.5 w-3.5" />
+                  {product.enabled
+                    ? t("common.actions.disable")
+                    : t("common.actions.enable")}
+                </Button>
+              )}
               <Button
                 type="button"
                 variant="danger"
@@ -522,144 +580,10 @@ export function ProductDetailPage() {
         onTabChange={handleTabChange}
         testId="product-detail-page"
       >
-        {activeTab === "info" && (
-          <EntityDetailCard
-            title={t("product.detail.basicInfoTitle")}
-            testId="product-info-card"
-          >
-            {loading && !product ? (
-              <div className="flex items-center justify-center gap-2 py-10 text-xs text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin text-primary" />
-              </div>
-            ) : (
-              <dl className="grid grid-cols-1 md:grid-cols-2 border border-border rounded-lg overflow-hidden divide-y md:divide-y-0">
-                <div className="grid grid-cols-[140px_1fr] border-b border-border">
-                  <dt className="bg-card px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
-                    {t("product.fields.internalId")}
-                  </dt>
-                  <dd className="px-3 py-2.5 text-xs text-foreground min-w-0">
-                    {product?.id ? (
-                      <CopyableText value={product.id} truncate />
-                    ) : (
-                      EMPTY_PLACEHOLDER
-                    )}
-                  </dd>
-                </div>
-
-                <div className="grid grid-cols-[140px_1fr] border-b border-border md:border-l">
-                  <dt className="bg-card px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
-                    {t("product.fields.name")}
-                  </dt>
-                  <dd className="px-3 py-2.5 text-xs text-foreground">
-                    {product?.name || EMPTY_PLACEHOLDER}
-                  </dd>
-                </div>
-
-                <div className="grid grid-cols-[140px_1fr] border-b border-border">
-                  <dt className="bg-card px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
-                    {t("product.fields.enabled")}
-                  </dt>
-                  <dd className="px-3 py-2.5 text-xs text-foreground flex items-center gap-2">
-                    <Switch
-                      checked={Boolean(product?.enabled)}
-                      disabled={!canWrite || statusLoading || !product}
-                      onCheckedChange={(next) => void handleStatusChange(next)}
-                      aria-label={t("product.fields.enabled")}
-                    />
-                    <span className="text-muted-foreground">
-                      {product?.enabled
-                        ? t("common.status.enabled")
-                        : t("common.status.disabled")}
-                    </span>
-                  </dd>
-                </div>
-
-                <div className="grid grid-cols-[140px_1fr] border-b border-border md:border-l">
-                  <dt className="bg-card px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
-                    {t("product.fields.timeout")}
-                  </dt>
-                  <dd className="px-3 py-2.5 text-xs text-foreground font-mono-tech tabular-nums">
-                    {product?.timeout_secs != null
-                      ? `${product.timeout_secs} ${t("ops.units.s")}`
-                      : EMPTY_PLACEHOLDER}
-                  </dd>
-                </div>
-
-                <div className="grid grid-cols-[140px_1fr] border-b border-border md:col-span-2">
-                  <dt className="bg-card px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
-                    {t("product.fields.description")}
-                  </dt>
-                  <dd className="px-3 py-2.5 text-xs text-foreground">
-                    {product?.description?.trim() || EMPTY_PLACEHOLDER}
-                  </dd>
-                </div>
-
-                <div className="grid grid-cols-[140px_1fr] border-b border-border">
-                  <dt className="bg-card px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
-                    {t("product.fields.cbProEnabled")}
-                  </dt>
-                  <dd className="px-3 py-2.5 text-xs text-foreground">
-                    <Badge
-                      variant={product?.cb_pro_enabled ? "xblue" : "neutral"}
-                    >
-                      {product?.cb_pro_enabled
-                        ? t("common.status.enabled")
-                        : t("common.status.disabled")}
-                    </Badge>
-                  </dd>
-                </div>
-
-                {product?.cb_pro_enabled ? (
-                  <>
-                    <div className="grid grid-cols-[140px_1fr] border-b border-border md:border-l">
-                      <dt className="bg-card px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
-                        {t("product.fields.cbFailureThresholdLabel")}
-                      </dt>
-                      <dd className="px-3 py-2.5 text-xs text-foreground font-mono-tech tabular-nums">
-                        {product.cb_failure_threshold} {t("ops.units.times")}
-                      </dd>
-                    </div>
-                    <div className="grid grid-cols-[140px_1fr] border-b border-border">
-                      <dt className="bg-card px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
-                        {t("product.fields.cbSuccessThresholdLabel")}
-                      </dt>
-                      <dd className="px-3 py-2.5 text-xs text-foreground font-mono-tech tabular-nums">
-                        {product.cb_success_threshold} {t("ops.units.times")}
-                      </dd>
-                    </div>
-                    <div className="grid grid-cols-[140px_1fr] border-b border-border md:border-l">
-                      <dt className="bg-card px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
-                        {t("product.fields.cbCooldownLabel")}
-                      </dt>
-                      <dd className="px-3 py-2.5 text-xs text-foreground font-mono-tech tabular-nums">
-                        {product.cb_cooldown_secs} {t("ops.units.s")}
-                      </dd>
-                    </div>
-                  </>
-                ) : (
-                  <div className="hidden md:block border-b border-border md:border-l bg-card" />
-                )}
-
-                <div className="grid grid-cols-[140px_1fr]">
-                  <dt className="bg-card px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
-                    {t("common.fields.createdAt")}
-                  </dt>
-                  <dd className="px-3 py-2.5 text-xs text-foreground font-mono-tech">
-                    {formatDateTime(product?.created_at)}
-                  </dd>
-                </div>
-
-                <div className="grid grid-cols-[140px_1fr] border-t md:border-t-0 border-border md:border-l">
-                  <dt className="bg-card px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
-                    {t("common.fields.updatedAt")}
-                  </dt>
-                  <dd className="px-3 py-2.5 text-xs text-foreground font-mono-tech">
-                    {formatDateTime(product?.updated_at)}
-                  </dd>
-                </div>
-              </dl>
-            )}
-          </EntityDetailCard>
+        {activeTab === "routes" && loading && !product && (
+          <div className="flex items-center justify-center gap-2 py-10 text-xs text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin text-primary" />
+          </div>
         )}
 
         {product?.id && loadedTabs.has("routes") && (

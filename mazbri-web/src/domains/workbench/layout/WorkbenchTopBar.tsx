@@ -17,6 +17,7 @@ import {
   UploadCloud,
 } from "lucide-react";
 import {
+  AutoThemeIcon,
   Badge,
   Button,
   IconButton,
@@ -25,9 +26,10 @@ import {
   Tooltip,
   cn,
 } from "@/components/ui";
+import { LanguageEnum } from "@/enums/appEnum";
 import { useT } from "@/locales";
 import { useAuthStore } from "@/stores/auth";
-import { useThemeStore } from "@/stores/theme";
+import { formatThemeTooltip, useThemeStore } from "@/stores/theme";
 import { canWriteUpstreamConnector } from "@/utils/ops/roles";
 import {
   selectActiveNamedEnv,
@@ -48,11 +50,12 @@ export function WorkbenchTopBar({
   onBack,
   onOpenEnvDrawer,
 }: WorkbenchTopBarProps) {
-  const { t, toggleLocale } = useT();
+  const { t, locale, toggleLocale } = useT();
   const navigate = useNavigate();
   const role = useAuthStore((s) => s.info.role);
   const canWrite = canWriteUpstreamConnector(role);
-  const isDark = useThemeStore((s) => s.isDark);
+  const theme = useThemeStore((s) => s.theme);
+  const wbThemeTooltip = formatThemeTooltip(theme, locale === LanguageEnum.ZH);
   const toggleTheme = useThemeStore((s) => s.toggleTheme);
 
   const draft = useWorkbenchStore((s) => s.draft);
@@ -511,14 +514,16 @@ export function WorkbenchTopBar({
           <IconButton
             size="sm"
             onClick={toggleTheme}
-            title={t("config.headerBar.themeToggle")}
-            aria-label={t("config.headerBar.themeToggle")}
+            title={wbThemeTooltip}
+            aria-label={wbThemeTooltip}
             data-testid="wb-topbar-theme"
           >
-            {isDark ? (
-              <Sun className="h-3.5 w-3.5" />
+            {theme === "auto" ? (
+              <AutoThemeIcon className="h-3.5 w-3.5 shrink-0" />
+            ) : theme === "dark" ? (
+              <Moon className="h-3.5 w-3.5 shrink-0" />
             ) : (
-              <Moon className="h-3.5 w-3.5" />
+              <Sun className="h-3.5 w-3.5 shrink-0" />
             )}
           </IconButton>
 

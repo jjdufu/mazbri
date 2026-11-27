@@ -5,18 +5,14 @@ use crate::services::root_package::{
     fetch_root_material_bundle, fetch_root_protection_keyring_cached,
 };
 use crate::services::tenant::resolve_tenant_id;
-use mazbri_core::crypto::request_binding::{
-    DEFAULT_BINDING_MAC_ALG, SignatureVersion, parse_binding_alg, public_key_digest_scope,
-};
 use mazbri_core::crypto::supplier_secrets::{RootMaterialKeyring, install_root_material_keyring};
 use mazbri_core::crypto::tenant_key::{
     COMMERCIAL_ROOT_PROTECTION_WRAPPING_KEY_ID, decode_configured_key, default_key_metadata,
-    generate_key_version, secret_key_digest, unwrap_and_verify_tenant_key_with_keyring,
-    wrap_new_tenant_key,
+    unwrap_and_verify_tenant_key_with_keyring, wrap_new_tenant_key,
 };
 use mazbri_core::crypto::{
-    AlgorithmId, AlgorithmRegistry, BindingSpec, KeySelection, SUITE_TENANT_DEFAULT_2026_11,
-    TenantTransportProfile, TransportMode, resolve_suite,
+    AlgorithmId, AlgorithmRegistry, SUITE_AES_256_GCM, TenantTransportProfile, TransportMode,
+    resolve_suite,
 };
 use serde::Deserialize;
 use sqlx::PgPool;
@@ -45,16 +41,10 @@ pub struct UpdateCryptoProfileRequest {
     pub allow_insecure: bool,
     #[serde(default = "default_require_signature")]
     pub require_signature: bool,
-    #[serde(default)]
-    pub require_request_binding: bool,
-    #[serde(default = "default_signature_version")]
-    pub signature_version: String,
     #[serde(default = "default_nonce_ttl_seconds")]
     pub nonce_ttl_seconds: i32,
     #[serde(default = "default_clock_skew_seconds")]
     pub clock_skew_seconds: i32,
-    #[serde(default)]
-    pub current_key_version: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -76,9 +66,6 @@ pub fn is_migration_export(mode: &str) -> bool {
 
 fn default_require_signature() -> bool {
     true
-}
-fn default_signature_version() -> String {
-    "hmac-v1".to_string()
 }
 
 fn default_nonce_ttl_seconds() -> i32 {
@@ -161,13 +148,6 @@ fn normalized_optional_string(value: Option<&String>) -> Option<&str> {
 
 impl UpdateCryptoProfileRequest {
     fn validate_against_profile(&self) -> Result<TenantTransportProfile, ApiError> {
-        if SignatureVersion::parse(&self.signature_version).is_err() {
-            let allowed: Vec<&str> = SignatureVersion::ALL.iter().map(|v| v.as_str()).collect();
-            return Err(ApiError::validation(format!(
-                "invalid signature_version (allowed: {})",
-                allowed.join(", ")
-            )));
-        }
         if !(60..=3600).contains(&self.nonce_ttl_seconds) {
             return Err(ApiError::validation(
                 "nonce_ttl_seconds must be between 60 and 3600",
@@ -181,8 +161,10 @@ impl UpdateCryptoProfileRequest {
 
         let mode = parse_transport_mode(&self.encryption_mode)?;
         let suite = normalized_optional_string(self.suite.as_ref()).map(str::to_owned);
-        let data_alg = parse_optional_alg(normalized_optional_string(self.data_alg.as_ref()), "data_alg")?;
-        let mac_alg = parse_optional_alg(normalized_optional_string(self.mac_alg.as_ref()), "mac_alg")?;
+        let data_alg =
+            parse_optional_alg(normalized_optional_string(self.data_alg.as_ref()), "data_alg")?;
+        let mac_alg =
+            parse_optional_alg(normalized_optional_string(self.mac_alg.as_ref()), "mac_alg")?;
 
         let (suite, data_alg, mac_alg, allow_insecure, require_signature) =
             if matches!(mode, TransportMode::None) {
@@ -197,37 +179,13 @@ impl UpdateCryptoProfileRequest {
                 )
             };
 
-        let key = match mode {
-            TransportMode::None => None,
-            TransportMode::Request | TransportMode::Full => {
-                let version = self
-                    .current_key_version
-                    .as_deref()
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty())
-                    .ok_or_else(|| {
-                        ApiError::validation(
-                            "current_key_version is required when encryption is enabled",
-                        )
-                    })?;
-                Some(KeySelection::Latest {
-                    key_id: version.to_owned(),
-                })
-            }
-        };
-
         let profile = TenantTransportProfile {
-            version: 1,
             mode,
             suite,
             data_alg,
             mac_alg,
-            key,
             require_signature,
             allow_insecure,
-            binding: self
-                .require_request_binding
-                .then_some(BindingSpec { required: true }),
             nonce_ttl_secs: u32::try_from(self.nonce_ttl_seconds).map_err(|_| {
                 ApiError::validation("nonce_ttl_seconds must be between 60 and 3600")
             })?,
@@ -240,7 +198,6 @@ impl UpdateCryptoProfileRequest {
             .map_err(|error| map_crypto_validation(&error))?;
         Ok(profile)
     }
-
 }
 
 fn persistence_fields(
@@ -265,7 +222,7 @@ fn resolve_key_algorithms(
     profile: &repo::TenantCryptoProfileRow,
 ) -> Result<(String, String), ApiError> {
     if profile.encryption_mode == "none" {
-        let spec = resolve_suite(SUITE_TENANT_DEFAULT_2026_11).map_err(|error| map_crypto_validation(&error))?;
+        let spec = resolve_suite(SUITE_AES_256_GCM).map_err(|error| map_crypto_validation(&error))?;
         let mac = spec
             .mac_alg
             .map_or(DEFAULT_COMPANION_MAC, AlgorithmId::as_str);
@@ -276,26 +233,22 @@ fn resolve_key_algorithms(
     let data_alg = parse_optional_alg(profile.data_alg.as_deref(), "data_alg")?;
     let mac_alg = parse_optional_alg(profile.mac_alg.as_deref(), "mac_alg")?;
     let transport = TenantTransportProfile {
-        version: u32::try_from(profile.profile_version).unwrap_or(1).max(1),
         mode,
         suite: profile.suite.clone(),
         data_alg,
         mac_alg,
-        key: Some(KeySelection::Latest {
-            key_id: profile
-                .current_key_version
-                .clone()
-                .unwrap_or_else(|| "pending".to_owned()),
-        }),
         require_signature: profile.require_signature,
         allow_insecure: profile.allow_insecure,
-        binding: None,
         nonce_ttl_secs: u32::try_from(profile.nonce_ttl_seconds).unwrap_or(300),
         clock_skew_secs: u32::try_from(profile.clock_skew_seconds).unwrap_or(300),
     };
-    let (data, mac) = transport.effective_algs().map_err(|error| map_crypto_validation(&error))?;
+    let (data, mac) = transport
+        .effective_algs()
+        .map_err(|error| map_crypto_validation(&error))?;
     let data = data
-        .ok_or_else(|| ApiError::validation("profile requires data_alg or suite before creating keys"))?
+        .ok_or_else(|| {
+            ApiError::validation("profile requires data_alg or suite before creating keys")
+        })?
         .as_str()
         .to_owned();
     let mac = mac.map_or(DEFAULT_COMPANION_MAC.to_owned(), |id| id.as_str().to_owned());
@@ -350,20 +303,12 @@ pub async fn update_profile(
     let tenant_id = resolve_tenant_id(pool, code).await?;
     if !matches!(validated.mode, TransportMode::None) {
         ensure_tenant_crypto_enabled(cert_client, cert_service_url, cert_service_token).await?;
-        let version = payload
-            .current_key_version
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .ok_or_else(|| {
-                ApiError::validation("current_key_version is required when encryption is enabled")
-            })?;
-        let key = repo::find_key(pool, tenant_id, version)
+        let key = repo::find_key(pool, tenant_id)
             .await
             .map_err(|error| ApiError::internal(format!("Failed to check crypto key: {error}")))?;
-        if !matches!(key.as_ref().map(|row| row.status.as_str()), Some("active")) {
+        if key.is_none() {
             return Err(ApiError::validation(
-                "current_key_version must reference an active key",
+                "启用传输加密前请先生成租户加密密钥",
             ));
         }
     }
@@ -380,15 +325,8 @@ pub async fn update_profile(
             mac_alg,
             require_signature,
             allow_insecure,
-            require_request_binding: payload.require_request_binding,
-            signature_version: &payload.signature_version,
             nonce_ttl_seconds: payload.nonce_ttl_seconds,
             clock_skew_seconds: payload.clock_skew_seconds,
-            current_key_version: if matches!(validated.mode, TransportMode::None) {
-                None
-            } else {
-                payload.current_key_version.as_deref()
-            },
             actor_id,
         },
     )
@@ -398,20 +336,7 @@ pub async fn update_profile(
     Ok(serde_json::to_value(profile).unwrap_or_default())
 }
 
-/// # Errors
-///
-/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub async fn list_keys(pool: &PgPool, code: &str) -> Result<serde_json::Value, ApiError> {
-    let tenant_id = resolve_tenant_id(pool, code).await?;
-    let keys = repo::list_keys(pool, tenant_id)
-        .await
-        .map_err(|error| ApiError::internal(format!("Failed to list crypto keys: {error}")))?;
-    Ok(serde_json::json!({ "keys": keys }))
-}
-
-/// 租户传输加密页单一读取契约：`profile` + `keys` + `license_status` + `actions`。
-///
-/// `license_status` 经 cert 服务令牌拉取，**不按角色裁剪**；写能力只体现在 `actions`。
+/// 租户传输加密页单一读取契约：`profile` + `key` + `license_status` + `actions`。
 ///
 /// # Errors
 ///
@@ -425,25 +350,23 @@ pub async fn get_crypto_bundle(
     can_write: bool,
     is_super_admin: bool,
 ) -> Result<serde_json::Value, ApiError> {
-    let profile = get_profile(pool, code).await?;
-    let keys_value = list_keys(pool, code).await?;
-    let keys = keys_value
-        .get("keys")
-        .cloned()
-        .unwrap_or_else(|| serde_json::json!([]));
+    let tenant_id = resolve_tenant_id(pool, code).await?;
+    let profile = repo::upsert_profile_defaults(pool, tenant_id)
+        .await
+        .map_err(|error| ApiError::internal(format!("Failed to get crypto profile: {error}")))?;
+    let key = repo::find_key(pool, tenant_id)
+        .await
+        .map_err(|error| ApiError::internal(format!("Failed to get crypto key: {error}")))?;
     let license_status =
         fetch_license_status(cert_client, cert_service_url, cert_service_token).await?;
     Ok(serde_json::json!({
         "profile": profile,
-        "keys": keys,
+        "key": key,
         "license_status": license_status,
         "actions": {
             "update_profile": can_write,
             "create_key": can_write,
             "rotate_key": can_write,
-            "activate_key": can_write,
-            "deprecate_key": can_write,
-            "disable_key": can_write,
             "delete_key": can_write,
             "allow_insecure": is_super_admin,
             "manage_root_package": is_super_admin,
@@ -455,7 +378,6 @@ async fn log_create_key_events_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     tenant_id: uuid::Uuid,
     key_id: uuid::Uuid,
-    key_version: &str,
     rotate: bool,
     actor_id: uuid::Uuid,
     details: &serde_json::Value,
@@ -464,7 +386,6 @@ async fn log_create_key_events_tx(
         tx,
         tenant_id,
         Some(key_id),
-        Some(key_version),
         if rotate { "rotate" } else { "create" },
         actor_id,
         details,
@@ -475,54 +396,12 @@ async fn log_create_key_events_tx(
         tx,
         tenant_id,
         Some(key_id),
-        Some(key_version),
         "reveal_once",
         actor_id,
         &serde_json::json!({ "shownOnce": true }),
     )
     .await
     .map_err(|error| ApiError::internal(format!("Failed to log crypto key event: {error}")))
-}
-
-async fn sync_profile_current_version_tx(
-    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    tenant_id: uuid::Uuid,
-    version: &str,
-    status: &str,
-    actor_id: uuid::Uuid,
-) -> Result<(), ApiError> {
-    if status == "active" {
-        repo::set_current_key_version_tx(tx, tenant_id, Some(version), actor_id)
-            .await
-            .map_err(|error| {
-                ApiError::internal(format!("Failed to update current crypto key: {error}"))
-            })
-    } else {
-        sqlx::query(
-            r"
-            UPDATE tenant_crypto_profiles
-            SET current_key_version = (
-                    SELECT key_version
-                    FROM tenant_crypto_keys
-                    WHERE tenant_id = $1 AND status = 'active'
-                    ORDER BY activated_at DESC NULLS LAST, created_at DESC
-                    LIMIT 1
-                ),
-                updated_by = $2,
-                updated_at = NOW()
-            WHERE tenant_id = $1 AND current_key_version = $3
-            ",
-        )
-        .bind(tenant_id)
-        .bind(actor_id)
-        .bind(version)
-        .execute(&mut **tx)
-        .await
-        .map(|_| ())
-        .map_err(|error| {
-            ApiError::internal(format!("Failed to refresh current crypto key: {error}"))
-        })
-    }
 }
 
 /// # Errors
@@ -554,69 +433,51 @@ pub async fn create_key(
         return Err(ApiError::not_found("tenant".to_string(), code.to_string()));
     }
 
+    let existing = repo::find_key_tx(&mut tx, tenant_id)
+        .await
+        .map_err(|error| ApiError::internal(format!("Failed to check crypto key: {error}")))?;
+    if !rotate && existing.is_some() {
+        return Err(ApiError::validation(
+            "租户已存在传输加密密钥，请使用轮换密钥",
+        ));
+    }
+
     let profile = repo::upsert_profile_defaults_tx(&mut tx, tenant_id)
         .await
         .map_err(|error| ApiError::internal(format!("Failed to load crypto profile: {error}")))?;
     let (data_algorithm, signature_algorithm) = resolve_key_algorithms(&profile)?;
-    let existing = repo::list_keys_tx(&mut tx, tenant_id)
-        .await
-        .map_err(|error| ApiError::internal(format!("Failed to list crypto keys: {error}")))?;
-    let versions: Vec<String> = existing.iter().map(|row| row.key_version.clone()).collect();
-    let key_version = generate_key_version(&versions);
     let wrapped = wrap_new_tenant_key(
         &tenant_id.to_string(),
-        &key_version,
         &master_key,
         &integrity_key,
         COMMERCIAL_ROOT_PROTECTION_WRAPPING_KEY_ID,
     )
     .map_err(|error| ApiError::internal(format!("Failed to wrap tenant key: {error}")))?;
-    let active_count = repo::active_key_count_tx(&mut tx, tenant_id)
-        .await
-        .map_err(|error| ApiError::internal(format!("Failed to count active keys: {error}")))?;
-    let status = if rotate || active_count > 0 {
-        "pending"
-    } else {
-        "active"
-    };
     let key_metadata = key_metadata_for(
         &data_algorithm,
         &signature_algorithm,
         profile.suite.as_deref(),
     );
-    let key = repo::insert_key_tx(
+    let key = repo::upsert_key_tx(
         &mut tx,
-        repo::InsertCryptoKeyParams {
+        repo::UpsertCryptoKeyParams {
             tenant_id,
-            key_version: &key_version,
             encrypted_secret_key: &wrapped.encrypted_secret_key,
             secret_key_digest: &wrapped.secret_key_digest,
             wrapping_key_id: &wrapped.wrapping_key_id,
-            data_algorithm: &data_algorithm,
-            signature_algorithm: &signature_algorithm,
-            status,
             actor_id,
             metadata: &key_metadata,
         },
     )
     .await
-    .map_err(|error| ApiError::internal(format!("Failed to create crypto key: {error}")))?;
-    if status == "active" {
-        repo::set_current_key_version_tx(&mut tx, tenant_id, Some(&key_version), actor_id)
-            .await
-            .map_err(|error| {
-                ApiError::internal(format!("Failed to update current crypto key: {error}"))
-            })?;
-    }
+    .map_err(|error| ApiError::internal(format!("Failed to save crypto key: {error}")))?;
     log_create_key_events_tx(
         &mut tx,
         tenant_id,
         key.id,
-        &key_version,
         rotate,
         actor_id,
         &serde_json::json!({
-            "status": status,
             "dataAlg": data_algorithm,
             "macAlg": signature_algorithm
         }),
@@ -627,102 +488,12 @@ pub async fn create_key(
         .map_err(|error| ApiError::internal(format!("Failed to commit transaction: {error}")))?;
     notify_tenant_crypto_invalidation(pool).await;
     Ok(serde_json::json!({
-        "keyVersion": key_version,
+        "id": key.id,
         "tenantSecretKey": wrapped.tenant_secret_key_b64,
-        "algorithm": data_algorithm,
-        "signatureAlgorithm": signature_algorithm,
         "shownOnce": true,
-        "status": status
+        "createdAt": key.created_at,
+        "updatedAt": key.updated_at
     }))
-}
-
-pub struct SetKeyStatusArgs<'a> {
-    pub pool: &'a PgPool,
-    pub cert_client: &'a reqwest::Client,
-    pub cert_service_url: &'a str,
-    pub cert_service_token: &'a str,
-    pub code: &'a str,
-    pub version: &'a str,
-    pub status: &'a str,
-    pub actor_id: uuid::Uuid,
-}
-
-/// # Errors
-///
-/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub async fn set_key_status(args: SetKeyStatusArgs<'_>) -> Result<serde_json::Value, ApiError> {
-    let pool = args.pool;
-    let code = args.code;
-    let version = args.version;
-    let status = args.status;
-    let actor_id = args.actor_id;
-
-    if !matches!(status, "active" | "deprecated" | "disabled") {
-        return Err(ApiError::validation("invalid key status transition"));
-    }
-    if matches!(status, "active" | "deprecated") {
-        ensure_tenant_crypto_enabled(args.cert_client, args.cert_service_url, args.cert_service_token)
-            .await?;
-    }
-    let tenant_id = resolve_tenant_id(pool, code).await?;
-
-    let mut tx = pool
-        .begin()
-        .await
-        .map_err(|error| ApiError::internal(format!("Failed to start transaction: {error}")))?;
-    if repo::lock_tenant_tx(&mut tx, tenant_id)
-        .await
-        .map_err(|error| ApiError::internal(format!("Failed to lock tenant: {error}")))?
-        .is_none()
-    {
-        return Err(ApiError::not_found("tenant".to_string(), code.to_string()));
-    }
-    // 单事务原子守卫：先确认目标版本存在，防止目标不存在时误将存量 active 密钥降级为 deprecated！
-    if repo::find_key_tx(&mut tx, tenant_id, version)
-        .await
-        .map_err(|error| ApiError::internal(format!("Failed to check crypto key: {error}")))?
-        .is_none()
-    {
-        return Err(ApiError::not_found(
-            "tenant_crypto_key".to_string(),
-            version.to_string(),
-        ));
-    }
-    if status == "active" {
-        repo::deprecate_other_active_keys_tx(&mut tx, tenant_id, version, actor_id)
-            .await
-            .map_err(|error| {
-                ApiError::internal(format!("Failed to deprecate old crypto keys: {error}"))
-            })?;
-    }
-    let key = repo::update_key_status_tx(&mut tx, tenant_id, version, status, actor_id)
-        .await
-        .map_err(|error| ApiError::internal(format!("Failed to update crypto key: {error}")))?
-        .ok_or_else(|| {
-            ApiError::not_found("tenant_crypto_key".to_string(), version.to_string())
-        })?;
-    sync_profile_current_version_tx(&mut tx, tenant_id, version, status, actor_id).await?;
-    repo::log_key_event_tx(
-        &mut tx,
-        tenant_id,
-        Some(key.id),
-        Some(version),
-        match status {
-            "active" => "activate",
-            "deprecated" => "deprecate",
-            "disabled" => "disable",
-            _ => unreachable!(),
-        },
-        actor_id,
-        &serde_json::json!({ "status": status }),
-    )
-    .await
-    .map_err(|error| ApiError::internal(format!("Failed to log crypto key event: {error}")))?;
-    tx.commit()
-        .await
-        .map_err(|error| ApiError::internal(format!("Failed to commit transaction: {error}")))?;
-    notify_tenant_crypto_invalidation(pool).await;
-    Ok(serde_json::to_value(key).unwrap_or_default())
 }
 
 /// # Errors
@@ -772,7 +543,6 @@ pub async fn export_crypto_data(
         let _ = repo::log_key_event(
             pool,
             tenant_id,
-            None,
             None,
             "export",
             actor_id,
@@ -834,7 +604,6 @@ pub async fn verify_crypto_keys(
         let result = unwrap_and_verify_tenant_key_with_keyring(
             &key.encrypted_secret_key,
             &tenant_id,
-            &key.key_version,
             &key.secret_key_digest,
             &keyring,
         );
@@ -845,7 +614,6 @@ pub async fn verify_crypto_keys(
                     pool,
                     key.tenant_id,
                     Some(key.id),
-                    Some(&key.key_version),
                     "verify",
                     actor_id,
                     &serde_json::json!({ "result": "ok" }),
@@ -854,8 +622,7 @@ pub async fn verify_crypto_keys(
             }
             Err(_) => failed.push(serde_json::json!({
                 "tenant_id": key.tenant_id,
-                "key_version": key.key_version,
-                "status": key.status
+                "key_id": key.id,
             })),
         }
     }
@@ -882,10 +649,6 @@ pub async fn purge_all_crypto_materials(
         .await
         .map_err(|error| ApiError::internal(format!("Failed to delete crypto keys: {error}")))?
         .rows_affected();
-    sqlx::query("DELETE FROM tenant_request_keys")
-        .execute(&mut *tx)
-        .await
-        .map_err(|error| ApiError::internal(format!("Failed to delete request keys: {error}")))?;
     let reset_profiles = sqlx::query(
         r"
         UPDATE tenant_crypto_profiles
@@ -895,11 +658,9 @@ pub async fn purge_all_crypto_materials(
             mac_alg = NULL,
             allow_insecure = false,
             require_signature = false,
-            current_key_version = NULL,
             updated_by = $1,
             updated_at = NOW()
         WHERE encryption_mode <> 'none'
-           OR current_key_version IS NOT NULL
            OR suite IS NOT NULL
            OR data_alg IS NOT NULL
            OR mac_alg IS NOT NULL
@@ -929,7 +690,6 @@ pub async fn purge_all_crypto_materials(
 pub async fn delete_crypto_key(
     pool: &PgPool,
     code: &str,
-    version: &str,
     actor_id: uuid::Uuid,
 ) -> Result<serde_json::Value, ApiError> {
     let tenant_id = resolve_tenant_id(pool, code).await?;
@@ -939,32 +699,37 @@ pub async fn delete_crypto_key(
         .await
         .map_err(|error| ApiError::internal(format!("Failed to start transaction: {error}")))?;
 
-    let key = repo::delete_crypto_key_tx(&mut tx, tenant_id, version)
+    let key = repo::delete_crypto_key_tx(&mut tx, tenant_id)
         .await
         .map_err(|error| ApiError::internal(format!("Failed to delete crypto key: {error}")))?
-        .ok_or_else(|| ApiError::not_found("tenant_crypto_key".to_string(), version.to_string()))?;
+        .ok_or_else(|| ApiError::not_found("tenant_crypto_key".to_string(), code.to_string()))?;
 
     sqlx::query(
         r"
         UPDATE tenant_crypto_profiles
-        SET current_key_version = NULL, updated_by = $1, updated_at = NOW()
-        WHERE tenant_id = $2 AND current_key_version = $3
+        SET encryption_mode = 'none',
+            suite = NULL,
+            data_alg = NULL,
+            mac_alg = NULL,
+            allow_insecure = false,
+            require_signature = false,
+            updated_by = $1,
+            updated_at = NOW()
+        WHERE tenant_id = $2
         ",
     )
     .bind(actor_id)
     .bind(tenant_id)
-    .bind(version)
     .execute(&mut *tx)
     .await
     .map_err(|error| {
-        ApiError::internal(format!("Failed to update tenant crypto profile: {error}"))
+        ApiError::internal(format!("Failed to reset tenant crypto profile: {error}"))
     })?;
 
     repo::log_key_event_tx(
         &mut tx,
         tenant_id,
         None,
-        Some(version),
         "delete",
         actor_id,
         &serde_json::json!({ "status": "deleted" }),
@@ -976,180 +741,7 @@ pub async fn delete_crypto_key(
         .await
         .map_err(|error| ApiError::internal(format!("Failed to commit transaction: {error}")))?;
 
-    Ok(serde_json::to_value(key).unwrap_or_default())
-}
-
-/// # Errors
-///
-/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub async fn list_request_keys(pool: &PgPool, code: &str) -> Result<serde_json::Value, ApiError> {
-    let tenant_id = resolve_tenant_id(pool, code).await?;
-    let keys = repo::list_request_keys(pool, tenant_id)
-        .await
-        .map_err(|error| ApiError::internal(format!("Failed to list request keys: {error}")))?;
-    Ok(serde_json::json!({ "keys": keys }))
-}
-
-/// 创建请求绑定密钥的请求体（可省略：默认生成 `hmac-sha256` 密钥）。
-#[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[serde(deny_unknown_fields)]
-pub struct CreateRequestKeyRequest {
-    /// 密钥算法（闭集，见 `request_binding::binding_alg_allowed`）；缺省 `hmac-sha256`。
-    #[serde(default)]
-    pub alg: Option<String>,
-    /// 非对称算法必填：客户端公钥（SPKI PEM，或 Base64 原始字节）；HMAC 算法不得提供。
-    #[serde(default)]
-    pub public_key: Option<String>,
-}
-
-/// 校验后的请求密钥规格。
-#[derive(Debug, PartialEq, Eq)]
-enum RequestKeySpec {
-    Hmac(AlgorithmId),
-    Public { alg: AlgorithmId, public_key: String },
-}
-
-impl CreateRequestKeyRequest {
-    fn validate(&self) -> Result<RequestKeySpec, ApiError> {
-        let raw_alg = normalized_optional_string(self.alg.as_ref()).unwrap_or(DEFAULT_BINDING_MAC_ALG);
-        let alg = parse_binding_alg(raw_alg)
-            .map_err(|_| ApiError::validation(format!("unsupported request key alg: {raw_alg}")))?;
-        let public_key = normalized_optional_string(self.public_key.as_ref());
-        if alg.kind() == mazbri_core::crypto::AlgorithmKind::Mac {
-            if public_key.is_some() {
-                return Err(ApiError::validation(
-                    "publicKey must not be provided for HMAC request keys",
-                ));
-            }
-            return Ok(RequestKeySpec::Hmac(alg));
-        }
-        let public_key = public_key.ok_or_else(|| {
-            ApiError::validation(format!("publicKey is required for {raw_alg} request keys"))
-        })?;
-        if public_key.contains("PRIVATE KEY") {
-            return Err(ApiError::validation(
-                "publicKey must be a public key; never upload private keys",
-            ));
-        }
-        mazbri_core::crypto::validate_sign_public_key(alg, public_key)
-            .map_err(|error| ApiError::validation(format!("invalid publicKey: {error}")))?;
-        Ok(RequestKeySpec::Public {
-            alg,
-            public_key: public_key.to_owned(),
-        })
-    }
-}
-
-/// # Errors
-///
-/// 参数非法（算法 / 公钥）、租户不存在、根材料不可用或数据库失败时返回错误。
-pub async fn create_request_key(
-    pool: &PgPool,
-    cert_client: &reqwest::Client,
-    cert_service_url: &str,
-    cert_service_token: &str,
-    code: &str,
-    request: &CreateRequestKeyRequest,
-    actor_id: uuid::Uuid,
-) -> Result<serde_json::Value, ApiError> {
-    let spec = request.validate()?;
-    ensure_tenant_crypto_enabled(cert_client, cert_service_url, cert_service_token).await?;
-    let tenant_id = resolve_tenant_id(pool, code).await?;
-    let existing = repo::list_request_keys(pool, tenant_id)
-        .await
-        .map_err(|error| ApiError::internal(format!("Failed to list request keys: {error}")))?;
-    let next_kid = existing
-        .iter()
-        .filter_map(|row| row.kid.parse::<u64>().ok())
-        .max()
-        .unwrap_or(0)
-        .saturating_add(1);
-    let kid = next_kid.max(1).to_string();
-    let (master_key, integrity_key) =
-        load_root_materials(cert_client, cert_service_url, cert_service_token).await?;
-    let tenant = tenant_id.to_string();
-    match spec {
-        RequestKeySpec::Hmac(alg) => {
-            let wrapped = wrap_new_tenant_key(
-                &tenant,
-                &kid,
-                &master_key,
-                &integrity_key,
-                COMMERCIAL_ROOT_PROTECTION_WRAPPING_KEY_ID,
-            )
-            .map_err(|error| ApiError::internal(format!("Failed to wrap request key: {error}")))?;
-            let key = repo::insert_request_key(
-                pool,
-                repo::NewRequestKey {
-                    tenant_id,
-                    kid: &kid,
-                    alg: alg.as_str(),
-                    material: repo::RequestKeyMaterial::Wrapped {
-                        encrypted_material: &wrapped.encrypted_secret_key,
-                        wrapping_key_id: &wrapped.wrapping_key_id,
-                    },
-                    material_digest: &wrapped.secret_key_digest,
-                    actor_id,
-                },
-            )
-            .await
-            .map_err(|error| ApiError::internal(format!("Failed to create request key: {error}")))?;
-            Ok(serde_json::json!({
-                "kid": key.kid,
-                "alg": key.alg,
-                "status": key.status,
-                "hmacKey": wrapped.tenant_secret_key_b64,
-                "shownOnce": true
-            }))
-        }
-        RequestKeySpec::Public { alg, public_key } => {
-            let digest = secret_key_digest(
-                AlgorithmRegistry::global(),
-                &integrity_key,
-                &tenant,
-                &public_key_digest_scope(&kid),
-                public_key.as_bytes(),
-            )
-            .map_err(|error| ApiError::internal(format!("Failed to digest public key: {error}")))?;
-            let key = repo::insert_request_key(
-                pool,
-                repo::NewRequestKey {
-                    tenant_id,
-                    kid: &kid,
-                    alg: alg.as_str(),
-                    material: repo::RequestKeyMaterial::PublicKey(&public_key),
-                    material_digest: &digest,
-                    actor_id,
-                },
-            )
-            .await
-            .map_err(|error| ApiError::internal(format!("Failed to create request key: {error}")))?;
-            Ok(serde_json::json!({
-                "kid": key.kid,
-                "alg": key.alg,
-                "status": key.status,
-                "publicKey": key.public_key,
-                "shownOnce": false
-            }))
-        }
-    }
-}
-
-/// # Errors
-///
-/// 底层依赖（数据库、网络、序列化或参数校验）失败时返回错误。
-pub async fn retire_request_key(
-    pool: &PgPool,
-    code: &str,
-    kid: &str,
-    actor_id: uuid::Uuid,
-) -> Result<serde_json::Value, ApiError> {
-    let tenant_id = resolve_tenant_id(pool, code).await?;
-    let key = repo::set_request_key_status(pool, tenant_id, kid, "retiring", actor_id)
-        .await
-        .map_err(|error| ApiError::internal(format!("Failed to retire request key: {error}")))?
-        .ok_or_else(|| ApiError::not_found("tenant_request_key".to_string(), kid.to_string()))?;
+    notify_tenant_crypto_invalidation(pool).await;
     Ok(serde_json::to_value(key).unwrap_or_default())
 }
 
@@ -1157,83 +749,16 @@ pub async fn retire_request_key(
 mod tests {
     use super::*;
 
-    #[test]
-    fn create_request_key_defaults_to_hmac_sha256() {
-        let spec = CreateRequestKeyRequest::default().validate().unwrap();
-        assert_eq!(spec, RequestKeySpec::Hmac(AlgorithmId::HmacSha256));
-        let sm3 = CreateRequestKeyRequest {
-            alg: Some("hmac-sm3".into()),
-            public_key: None,
-        };
-        assert_eq!(sm3.validate().unwrap(), RequestKeySpec::Hmac(AlgorithmId::HmacSm3));
-    }
-
-    #[test]
-    fn create_request_key_rejects_weak_or_mismatched_material() {
-        let pair = mazbri_core::crypto::generate_sign_keypair(AlgorithmId::Ed25519).unwrap();
-        let cases = [
-            (Some("hmac-md5"), None),
-            (Some("aes-256-gcm"), None),
-            (Some("hmac-sha256"), Some(pair.public_pem.clone())),
-            (Some("ed25519"), None),
-            (Some("ed25519"), Some(pair.private_pem.to_string())),
-            (Some("ecdsa-p256-sha256"), Some(pair.public_pem.clone())),
-            (Some("rsa-pkcs1v15-sign-sha256"), Some("garbage".to_owned())),
-        ];
-        for (alg, public_key) in cases {
-            let request = CreateRequestKeyRequest {
-                alg: alg.map(str::to_owned),
-                public_key,
-            };
-            assert!(request.validate().is_err(), "{alg:?} must be rejected");
-        }
-    }
-
-    #[test]
-    fn create_request_key_accepts_public_keys_for_every_asym_version() {
-        for version in SignatureVersion::ALL.into_iter().filter(|v| !v.is_symmetric()) {
-            let alg = version.default_alg();
-            let pair = mazbri_core::crypto::generate_sign_keypair(alg).unwrap();
-            let request = CreateRequestKeyRequest {
-                alg: Some(alg.as_str().to_owned()),
-                public_key: Some(format!("  {}\n", pair.public_pem)),
-            };
-            assert_eq!(
-                request.validate().unwrap(),
-                RequestKeySpec::Public {
-                    alg,
-                    public_key: pair.public_pem.trim().to_owned()
-                },
-                "{version}"
-            );
-        }
-    }
-
-    #[test]
-    fn signature_version_accepts_all_families_only() {
-        for version in SignatureVersion::ALL {
-            let mut request = base_request();
-            request.signature_version = version.as_str().into();
-            assert!(request.validate_against_profile().is_ok(), "{version}");
-        }
-        let mut request = base_request();
-        request.signature_version = "hmac-v2".into();
-        assert!(request.validate_against_profile().is_err());
-    }
-
     fn base_request() -> UpdateCryptoProfileRequest {
         UpdateCryptoProfileRequest {
             encryption_mode: "full".into(),
-            suite: Some(SUITE_TENANT_DEFAULT_2026_11.into()),
+            suite: Some(SUITE_AES_256_GCM.into()),
             data_alg: None,
             mac_alg: None,
             allow_insecure: false,
             require_signature: false,
-            require_request_binding: false,
-            signature_version: "hmac-v1".into(),
             nonce_ttl_seconds: 300,
             clock_skew_seconds: 300,
-            current_key_version: Some("v1".into()),
         }
     }
 
@@ -1242,10 +767,7 @@ mod tests {
         let req = base_request();
         let profile = req.validate_against_profile().expect("valid");
         assert_eq!(profile.mode, TransportMode::Full);
-        assert_eq!(
-            profile.suite.as_deref(),
-            Some(SUITE_TENANT_DEFAULT_2026_11)
-        );
+        assert_eq!(profile.suite.as_deref(), Some(SUITE_AES_256_GCM));
     }
 
     #[test]
@@ -1273,7 +795,7 @@ mod tests {
         let mut req = base_request();
         req.encryption_mode = "none".into();
         req.require_signature = true;
-        req.suite = Some(SUITE_TENANT_DEFAULT_2026_11.into());
+        req.suite = Some(SUITE_AES_256_GCM.into());
         let profile = req.validate_against_profile().expect("none ok");
         assert!(profile.suite.is_none());
         assert!(!profile.require_signature);

@@ -190,14 +190,6 @@ pub static GATEWAY_PANIC_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
     ))
     .expect("gateway_panic_total metric")
 });
-/// Overload rejections (`max_connections` concurrency limit).
-pub static GATEWAY_REQUEST_BINDING_TOTAL: LazyLock<CounterVec> = LazyLock::new(|| {
-    MetricsBuilder::new().counter(
-        "gateway_request_binding_total",
-        "Tenant request binding results (ok, skipped, or machine code)",
-        &["result"],
-    )
-});
 pub static GATEWAY_JWT_KID_TOTAL: LazyLock<CounterVec> = LazyLock::new(|| {
     MetricsBuilder::new().counter(
         "gateway_jwt_kid",
@@ -357,7 +349,6 @@ pub fn register_proxy_metrics() -> Result<(), prometheus::Error> {
         &REGISTRY,
         Box::new(GATEWAY_IDEMPOTENCY_UNAVAILABLE_TOTAL.clone()),
     )?;
-    register_collector_once(&REGISTRY, Box::new(GATEWAY_REQUEST_BINDING_TOTAL.clone()))?;
     register_collector_once(&REGISTRY, Box::new(GATEWAY_JWT_KID_TOTAL.clone()))?;
     register_collector_once(
         &REGISTRY,

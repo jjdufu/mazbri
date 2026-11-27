@@ -123,7 +123,6 @@ const CODE: Option<&str> = Some("code");
 const PRODUCT: Option<&str> = Some("product_id");
 const SUPPLIER: Option<&str> = Some("supplier_id");
 const SERVICE: Option<&str> = Some("service_name");
-const VERSION: Option<&str> = Some("version");
 
 pub static ROUTES: &[RouteAudit] = &[
     // ---- auth ----
@@ -495,32 +494,11 @@ pub static ROUTES: &[RouteAudit] = &[
         CODE,
     ),
     secure(
-        "POST",
-        "/tenants/{code}/crypto-keys/{version}/activate",
-        A::TenantCryptoKeyActivate,
-        R::Tenant,
-        VERSION,
-    ),
-    secure(
-        "POST",
-        "/tenants/{code}/crypto-keys/{version}/deprecate",
-        A::TenantCryptoKeyDeprecate,
-        R::Tenant,
-        VERSION,
-    ),
-    secure(
-        "POST",
-        "/tenants/{code}/crypto-keys/{version}/disable",
-        A::TenantCryptoKeyDisable,
-        R::Tenant,
-        VERSION,
-    ),
-    secure(
         "DELETE",
-        "/tenants/{code}/crypto-keys/{version}",
+        "/tenants/{code}/crypto-keys",
         A::TenantCryptoKeyDelete,
         R::Tenant,
-        VERSION,
+        CODE,
     ),
     sensitive(
         "/tenant-crypto/export",
@@ -535,27 +513,6 @@ pub static ROUTES: &[RouteAudit] = &[
         A::TenantCryptoVerify,
         R::Tenant,
         None,
-    ),
-    sensitive(
-        "/tenants/{code}/request-keys",
-        A::RequestKeyList,
-        R::Tenant,
-        CODE,
-        false,
-    ),
-    secure(
-        "POST",
-        "/tenants/{code}/request-keys",
-        A::RequestKeyCreate,
-        R::Tenant,
-        CODE,
-    ),
-    secure(
-        "POST",
-        "/tenants/{code}/request-keys/{kid}/retire",
-        A::RequestKeyRetire,
-        R::Tenant,
-        Some("kid"),
     ),
     read("/tenants/{code}/products", R::Product),
     read("/tenants/{code}/products/{product_id}/config", R::Product),
@@ -1231,7 +1188,6 @@ mod tests {
             "/audit-logs/export",
             "/tenants/{code}/api-keys",
             "/tenants/{code}/crypto",
-            "/tenants/{code}/request-keys",
             "/config-center/configs/{service_name}",
             "/config-center/configs/{service_name}/history",
             "/config-center/export",

@@ -920,7 +920,7 @@ export function NumberInput({
         disabled={disabled}
         min={min}
         max={max}
-        step={step}
+        step="any"
         value={Number.isFinite(value) ? value : 0}
         onChange={(e) => {
           const parsed = Number(e.target.value);
@@ -1639,6 +1639,12 @@ export function Tooltip({
   }, [side]);
 
   useEffect(() => {
+    if (disabled) {
+      setVisible(false);
+    }
+  }, [disabled]);
+
+  useEffect(() => {
     if (!visible) return;
     updateCoords();
     window.addEventListener("scroll", updateCoords, true);
@@ -1671,6 +1677,7 @@ export function Tooltip({
           setVisible(true);
         }}
         onMouseLeave={() => setVisible(false)}
+        onPointerDown={() => setVisible(false)}
         onFocus={() => {
           updateCoords();
           setVisible(true);

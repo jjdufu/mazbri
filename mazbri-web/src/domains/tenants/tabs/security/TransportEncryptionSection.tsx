@@ -7,15 +7,14 @@ import {
   Lock,
   LockOpen,
   LogIn,
+  Plus,
   RefreshCw,
   Save,
-  ShieldCheck,
+  Trash2,
 } from "lucide-react";
 import {
-  activateTenantCryptoKey,
   createTenantCryptoKey,
   deleteTenantCryptoKey,
-  disableTenantCryptoKey,
   fetchTenantCrypto,
   rotateTenantCryptoKey,
   updateTenantCryptoProfile,
@@ -24,19 +23,17 @@ import {
   CryptoSuiteSelect,
   type CryptoSuiteSelectValue,
 } from "@/components/crypto/CryptoSuiteSelect";
+import { DEFAULT_CRYPTO_SUITE_ID } from "@/components/crypto/cryptoSuiteState";
 import {
   Button,
   ConfirmDialog,
-  EmptyState,
   EntityDetailCard,
   Modal,
   NumberInput,
-  Select,
   StatusBadge,
   Switch,
   Textarea,
   cn,
-  type SelectOptionItem,
 } from "@/components/ui";
 import { useT } from "@/locales";
 import type {
@@ -48,7 +45,7 @@ import type {
   TenantEncryptionMode,
 } from "@/types/api/tenant";
 import { getStatusLabel } from "@/utils/display-labels";
-import { EMPTY_PLACEHOLDER, formatDateTime } from "@/utils/format";
+import { formatDateTime } from "@/utils/format";
 import { isMfaStepUpCancelled } from "@/utils/http/mfa-cancelled";
 import { logger } from "@/utils/sys/logger";
 import { copyWithFeedback } from "@/utils/ui/copy-feedback";
@@ -62,26 +59,10 @@ const DEFAULT_ACTIONS: TenantCryptoActions = {
   update_profile: false,
   create_key: false,
   rotate_key: false,
-  activate_key: false,
-  deprecate_key: false,
-  disable_key: false,
   delete_key: false,
   allow_insecure: false,
   manage_root_package: false,
 };
-
-function splitDateTime(value: string | undefined): {
-  date: string;
-  time: string;
-} {
-  const formatted = formatDateTime(value);
-  const idx = formatted.indexOf(" ");
-  if (idx === -1) return { date: formatted, time: "" };
-  return {
-    date: formatted.slice(0, idx),
-    time: formatted.slice(idx + 1),
-  };
-}
 
 export function TransportEncryptionSection({
   tenantCode,
@@ -94,8 +75,9 @@ export function TransportEncryptionSection({
   const [saving, setSaving] = useState(false);
   const [creating, setCreating] = useState(false);
   const [rotating, setRotating] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
-  const [keys, setKeys] = useState<TenantCryptoKey[]>([]);
+  const [cryptoKey, setCryptoKey] = useState<TenantCryptoKey | null>(null);
   const [licenseStatus, setLicenseStatus] =
     useState<TenantCryptoLicenseStatus | null>(null);
   const [cryptoActions, setCryptoActions] =
@@ -104,12 +86,11 @@ export function TransportEncryptionSection({
   const [encryptionMode, setEncryptionMode] =
     useState<TenantEncryptionMode>("none");
   const [requireSignature, setRequireSignature] = useState(false);
-  const [currentKeyVersion, setCurrentKeyVersion] = useState("");
   const [nonceTtlSeconds, setNonceTtlSeconds] = useState(300);
   const [clockSkewSeconds, setClockSkewSeconds] = useState(300);
 
   const [suiteForm, setSuiteForm] = useState<CryptoSuiteSelectValue>({
-    suite: "suite/tenant-default-2026-11",
+    suite: DEFAULT_CRYPTO_SUITE_ID,
     dataAlg: null,
     macAlg: null,
     allowInsecure: false,
@@ -117,8 +98,8 @@ export function TransportEncryptionSection({
 
   const [revealedKey, setRevealedKey] =
     useState<TenantCryptoKeyCreateResponse | null>(null);
-  const [deleteVersion, setDeleteVersion] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState(false);
+  const [rotateConfirmOpen, setRotateConfirmOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
 
@@ -130,7 +111,6 @@ export function TransportEncryptionSection({
     const mode = profile.encryption_mode;
     setEncryptionMode(mode);
     setRequireSignature(mode === "none" ? false : profile.require_signature);
-    setCurrentKeyVersion(profile.current_key_version ?? "");
     setNonceTtlSeconds(profile.nonce_ttl_seconds);
     setClockSkewSeconds(profile.clock_skew_seconds);
     const nextSuite: CryptoSuiteSelectValue = {
@@ -140,7 +120,7 @@ export function TransportEncryptionSection({
       allowInsecure: profile.allow_insecure === true,
     };
     if (mode !== "none" && !nextSuite.suite && !nextSuite.dataAlg) {
-      nextSuite.suite = "suite/tenant-default-2026-11";
+      nextSuite.suite = DEFAULT_CRYPTO_SUITE_ID;
     }
     setSuiteForm(nextSuite);
   }, []);
@@ -155,7 +135,7 @@ export function TransportEncryptionSection({
       const bundle = await fetchTenantCrypto(tenantCode, controller.signal);
       if (controller.signal.aborted) return;
       applyProfile(bundle.profile);
-      setKeys(bundle.keys ?? []);
+      setCryptoKey(bundle.key ?? null);
       setLicenseStatus(bundle.license_status);
       setCryptoActions(bundle.actions);
       setIsInitialized(true);
@@ -193,35 +173,10 @@ export function TransportEncryptionSection({
     } else if (!suiteForm.suite && !suiteForm.dataAlg) {
       setSuiteForm((prev) => ({
         ...prev,
-        suite: "suite/tenant-default-2026-11",
+        suite: DEFAULT_CRYPTO_SUITE_ID,
       }));
     }
   };
-
-  const activeKeyOptions = useMemo<SelectOptionItem[]>(
-    () => [
-      {
-        value: "",
-        label: EMPTY_PLACEHOLDER,
-        text: EMPTY_PLACEHOLDER,
-      },
-      ...keys
-        .filter((k) => k.status === "active")
-        .map((k) => ({
-          value: k.key_version,
-          label: k.key_version,
-          text: k.key_version,
-        })),
-    ],
-    [keys],
-  );
-
-  const effectiveAlgorithmSummary = useMemo(() => {
-    if (encryptionMode === "none") return EMPTY_PLACEHOLDER;
-    if (suiteForm.suite) return suiteForm.suite;
-    const parts = [suiteForm.dataAlg, suiteForm.macAlg].filter(Boolean);
-    return parts.length > 0 ? parts.join(" + ") : EMPTY_PLACEHOLDER;
-  }, [encryptionMode, suiteForm]);
 
   const modeCards = useMemo(
     () => [
@@ -247,8 +202,18 @@ export function TransportEncryptionSection({
     [t],
   );
 
+  const missingKeyForEncryption =
+    encryptionMode !== "none" && cryptoKey === null;
+
   const handleSaveProfile = async () => {
-    if (!tenantCryptoEnabled || !cryptoActions.update_profile || saving) return;
+    if (
+      !tenantCryptoEnabled ||
+      !cryptoActions.update_profile ||
+      saving ||
+      missingKeyForEncryption
+    ) {
+      return;
+    }
     if (suiteForm.allowInsecure && !cryptoActions.allow_insecure) return;
     setSaving(true);
     try {
@@ -259,10 +224,9 @@ export function TransportEncryptionSection({
         macAlg: encryptionMode === "none" ? null : suiteForm.macAlg,
         allowInsecure:
           encryptionMode === "none" ? false : suiteForm.allowInsecure,
-        requireSignature,
+        requireSignature: encryptionMode === "none" ? false : requireSignature,
         nonceTtlSeconds,
         clockSkewSeconds,
-        currentKeyVersion: currentKeyVersion || undefined,
       });
       await loadData();
       showSuccessToast(t("common.feedback.saveSuccess"));
@@ -291,11 +255,12 @@ export function TransportEncryptionSection({
     }
   };
 
-  const handleRotateKey = async () => {
+  const handleConfirmRotateKey = async () => {
     if (!tenantCryptoEnabled || !cryptoActions.rotate_key || rotating) return;
     setRotating(true);
     try {
       const res = await rotateTenantCryptoKey(tenantCode);
+      setRotateConfirmOpen(false);
       setRevealedKey(res);
       await loadData();
     } catch (error) {
@@ -307,41 +272,13 @@ export function TransportEncryptionSection({
     }
   };
 
-  const handleSetKeyStatus = async (
-    version: string,
-    action: "activate" | "disable",
-  ) => {
-    if (!tenantCryptoEnabled) return;
-    if (action === "activate" && !cryptoActions.activate_key) return;
-    if (action === "disable" && !cryptoActions.disable_key) return;
-    try {
-      if (action === "activate") {
-        await activateTenantCryptoKey(tenantCode, version);
-      } else {
-        await disableTenantCryptoKey(tenantCode, version);
-      }
-      await loadData();
-    } catch (error) {
-      if (!isMfaStepUpCancelled(error)) {
-        logger.error("Failed to update crypto key status:", error);
-      }
-    }
-  };
-
   const handleConfirmDeleteKey = async () => {
-    if (
-      !deleteVersion ||
-      !tenantCryptoEnabled ||
-      !cryptoActions.delete_key ||
-      deleting
-    ) {
-      return;
-    }
+    if (!tenantCryptoEnabled || !cryptoActions.delete_key || deleting) return;
     setDeleting(true);
     try {
-      await deleteTenantCryptoKey(tenantCode, deleteVersion);
+      await deleteTenantCryptoKey(tenantCode);
       showSuccessToast(t("common.feedback.deleteSuccess"));
-      setDeleteVersion(null);
+      setDeleteConfirmOpen(false);
       await loadData();
     } catch (error) {
       if (!isMfaStepUpCancelled(error)) {
@@ -352,16 +289,13 @@ export function TransportEncryptionSection({
     }
   };
 
-  const modeLabel =
-    encryptionMode === "full"
-      ? t("tenant.transportEncryption.modes.full")
-      : encryptionMode === "request"
-        ? t("tenant.transportEncryption.modes.request")
-        : t("tenant.transportEncryption.modes.none");
+  const digestPreview = cryptoKey?.secret_key_digest
+    ? `${cryptoKey.secret_key_digest.slice(0, 16)}…`
+    : "";
 
   return (
     <div
-      className="space-y-4 min-w-0"
+      className="space-y-3 min-w-0"
       data-testid="tenant-transport-encryption-section"
     >
       {isInitialized && licenseStatus !== null && !tenantCryptoEnabled && (
@@ -392,72 +326,178 @@ export function TransportEncryptionSection({
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2 items-start">
-        {/* Left: Strategy Card */}
-        <EntityDetailCard
-          title={t("tenant.transportEncryption.sections.strategy")}
-          icon={<Lock className="h-4 w-4" />}
-          actions={
-            cryptoActions.update_profile ? (
-              <Button
-                type="button"
-                variant="primary"
-                size="sm"
-                loading={saving}
-                disabled={!tenantCryptoEnabled}
-                onClick={() => void handleSaveProfile()}
-              >
-                <Save className="h-3.5 w-3.5" />
-                {t("common.actions.save")}
-              </Button>
-            ) : undefined
-          }
-        >
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <div className="text-xs font-medium text-foreground">
-                {t("tenant.transportEncryption.fields.encryptionMode")}
-              </div>
-              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
-                {modeCards.map((opt) => {
-                  const active = encryptionMode === opt.value;
-                  const disabled = !tenantCryptoEnabled || !canWrite;
-                  return (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      disabled={disabled}
-                      onClick={() => handleSelectMode(opt.value)}
-                      className={cn(
-                        "flex items-start gap-2.5 rounded-lg border p-3 text-left transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-55",
-                        active
-                          ? "border-primary bg-primary-soft/50 text-foreground"
-                          : "border-border bg-card text-foreground hover:border-border-hover hover:bg-hover-bg/60",
+      <EntityDetailCard
+        title={t("tenant.transportEncryption.sections.strategy")}
+        icon={<Lock className="h-4 w-4" />}
+        testId="tenant-transport-crypto-card"
+        actions={
+          cryptoActions.update_profile ? (
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              loading={saving}
+              disabled={!tenantCryptoEnabled || missingKeyForEncryption}
+              onClick={() => void handleSaveProfile()}
+              data-testid="tenant-crypto-save-btn"
+            >
+              <Save className="h-3.5 w-3.5" />
+              {t("common.actions.save")}
+            </Button>
+          ) : undefined
+        }
+      >
+        <div className="space-y-4">
+          {/* Unified Single-Key Status Strip */}
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-muted/25 px-3.5 py-2.5">
+            <div className="flex flex-wrap items-center gap-2.5 min-w-0">
+              <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-xblue-soft text-xblue shrink-0">
+                <KeyRound className="h-3.5 w-3.5" />
+              </span>
+              <div className="min-w-0 space-y-0.5">
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className="font-semibold text-foreground">
+                    {t("tenant.transportEncryption.sections.secretKey")}
+                  </span>
+                  {loading && !isInitialized ? (
+                    <span className="text-muted-foreground">
+                      {t("layout.loading")}
+                    </span>
+                  ) : cryptoKey ? (
+                    <StatusBadge
+                      status="ACTIVE"
+                      label={t("tenant.transportEncryption.keyStatus.ready")}
+                    />
+                  ) : (
+                    <StatusBadge
+                      status="DISABLED"
+                      label={t(
+                        "tenant.transportEncryption.keyStatus.unconfigured",
                       )}
-                    >
-                      <span
-                        className={cn(
-                          "mt-0.5 shrink-0",
-                          active ? "text-primary" : "text-muted-foreground",
-                        )}
-                      >
-                        {opt.icon}
-                      </span>
-                      <span className="min-w-0 space-y-0.5">
-                        <span className="block text-xs font-semibold">
-                          {opt.label}
-                        </span>
-                        <span className="block text-[11px] leading-snug text-muted-foreground">
-                          {opt.desc}
-                        </span>
-                      </span>
-                    </button>
-                  );
-                })}
+                    />
+                  )}
+                </div>
+                {cryptoKey ? (
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground font-mono-tech">
+                    <span>
+                      {t("tenant.transportEncryption.fields.digest")}:{" "}
+                      {digestPreview}
+                    </span>
+                    <span>
+                      {t("common.fields.updatedAt")}:{" "}
+                      {formatDateTime(cryptoKey.updated_at)}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="text-[11px] text-muted-foreground">
+                    {t("tenant.transportEncryption.hints.keyRequiredHint")}
+                  </div>
+                )}
               </div>
             </div>
 
-            <div className="space-y-2 border-t border-border-subtle pt-3">
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              {!cryptoKey && cryptoActions.create_key && (
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="sm"
+                  loading={creating}
+                  disabled={!tenantCryptoEnabled}
+                  onClick={() => void handleCreateKey()}
+                  data-testid="tenant-crypto-create-key-btn"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  {t("tenant.transportEncryption.actions.createKey")}
+                </Button>
+              )}
+              {cryptoKey && cryptoActions.rotate_key && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  loading={rotating}
+                  disabled={!tenantCryptoEnabled}
+                  onClick={() => setRotateConfirmOpen(true)}
+                  data-testid="tenant-crypto-rotate-key-btn"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  {t("tenant.transportEncryption.actions.rotateKey")}
+                </Button>
+              )}
+              {cryptoKey && cryptoActions.delete_key && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={!tenantCryptoEnabled}
+                  onClick={() => setDeleteConfirmOpen(true)}
+                  className="text-danger-fg hover:text-danger-fg"
+                  data-testid="tenant-crypto-delete-key-btn"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  {t("tenant.transportEncryption.actions.delete")}
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {missingKeyForEncryption && (
+            <div className="flex items-center gap-2 rounded-md border border-warning-border bg-warning-bg px-3 py-2 text-xs text-warning-fg">
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+              <span>
+                {t("tenant.transportEncryption.hints.mustCreateKeyBeforeEnable")}
+              </span>
+            </div>
+          )}
+
+          {/* Mode Selector */}
+          <div className="space-y-2">
+            <div className="text-xs font-medium text-foreground">
+              {t("tenant.transportEncryption.fields.encryptionMode")}
+            </div>
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+              {modeCards.map((opt) => {
+                const active = encryptionMode === opt.value;
+                const disabled = !tenantCryptoEnabled || !canWrite;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => handleSelectMode(opt.value)}
+                    className={cn(
+                      "flex items-start gap-2.5 rounded-lg border p-3 text-left transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-55",
+                      active
+                        ? "border-primary bg-primary-soft/50 text-foreground"
+                        : "border-border bg-card text-foreground hover:border-border-hover hover:bg-hover-bg/60",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "mt-0.5 shrink-0",
+                        active ? "text-primary" : "text-muted-foreground",
+                      )}
+                    >
+                      {opt.icon}
+                    </span>
+                    <span className="min-w-0 space-y-0.5">
+                      <span className="block text-xs font-semibold">
+                        {opt.label}
+                      </span>
+                      <span className="block text-[11px] leading-snug text-muted-foreground">
+                        {opt.desc}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Suite & Replay Protection Controls */}
+          <div className="grid grid-cols-1 gap-4 border-t border-border-subtle pt-3.5 xl:grid-cols-2 items-start">
+            <div className="space-y-2">
               <div className="text-xs font-medium text-foreground">
                 {t("tenant.transportEncryption.fields.suite")}
               </div>
@@ -465,35 +505,13 @@ export function TransportEncryptionSection({
                 value={suiteForm}
                 onChange={setSuiteForm}
                 disabled={
-                  !tenantCryptoEnabled ||
-                  !canWrite ||
-                  encryptionMode === "none"
+                  !tenantCryptoEnabled || !canWrite || encryptionMode === "none"
                 }
                 canToggleInsecure={isSuperAdmin}
               />
             </div>
 
-            <div className="space-y-3 border-t border-border-subtle pt-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="text-xs font-medium text-foreground">
-                  {t("tenant.transportEncryption.fields.currentKeyVersion")}
-                </span>
-                <Select
-                  value={currentKeyVersion}
-                  options={activeKeyOptions}
-                  disabled={
-                    encryptionMode === "none" ||
-                    !tenantCryptoEnabled ||
-                    !canWrite
-                  }
-                  placeholder={t(
-                    "tenant.transportEncryption.placeholders.selectActiveKey",
-                  )}
-                  onChange={(e) => setCurrentKeyVersion(e.target.value)}
-                  className="w-52"
-                />
-              </div>
-
+            <div className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-xs font-medium text-foreground">
                   {t("tenant.transportEncryption.fields.nonceTtlSeconds")}
@@ -505,7 +523,7 @@ export function TransportEncryptionSection({
                   step={60}
                   disabled={!tenantCryptoEnabled || !canWrite}
                   onChange={setNonceTtlSeconds}
-                  className="w-52"
+                  className="w-48"
                   aria-label={t(
                     "tenant.transportEncryption.fields.nonceTtlSeconds",
                   )}
@@ -523,14 +541,14 @@ export function TransportEncryptionSection({
                   step={60}
                   disabled={!tenantCryptoEnabled || !canWrite}
                   onChange={setClockSkewSeconds}
-                  className="w-52"
+                  className="w-48"
                   aria-label={t(
                     "tenant.transportEncryption.fields.clockSkewSeconds",
                   )}
                 />
               </div>
 
-              <div className="flex items-center justify-between gap-4 rounded-md border border-border-subtle px-3 py-2.5">
+              <div className="flex items-center justify-between gap-4 rounded-md border border-border-subtle px-3 py-2">
                 <span className="text-xs font-medium text-foreground">
                   {t("tenant.transportEncryption.fields.signatureCheck")}
                 </span>
@@ -549,246 +567,31 @@ export function TransportEncryptionSection({
               </div>
             </div>
           </div>
-        </EntityDetailCard>
-
-        {/* Right: Key Versions + Effective Contract */}
-        <div className="space-y-4 min-w-0">
-          <EntityDetailCard
-            title={t("tenant.transportEncryption.sections.keyVersions")}
-            icon={<KeyRound className="h-4 w-4" />}
-            bodyClassName="p-0"
-            actions={
-              <>
-                {cryptoActions.create_key && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    loading={creating}
-                    disabled={!tenantCryptoEnabled}
-                    onClick={() => void handleCreateKey()}
-                  >
-                    {t("tenant.transportEncryption.actions.createKey")}
-                  </Button>
-                )}
-                {cryptoActions.rotate_key && (
-                  <Button
-                    type="button"
-                    variant="primary"
-                    size="sm"
-                    loading={rotating}
-                    disabled={!tenantCryptoEnabled}
-                    onClick={() => void handleRotateKey()}
-                  >
-                    <RefreshCw className="h-3.5 w-3.5" />
-                    {t("tenant.transportEncryption.actions.rotateKey")}
-                  </Button>
-                )}
-              </>
-            }
-          >
-            {loading && keys.length === 0 ? (
-              <div className="py-8 text-center text-xs text-muted-foreground">
-                {t("layout.loading")}
-              </div>
-            ) : keys.length === 0 ? (
-              <div className="p-4">
-                <EmptyState title={t("common.feedback.noData")} />
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse text-xs text-foreground">
-                  <thead>
-                    <tr className="border-b border-border bg-muted/45 text-muted-foreground">
-                      <th className="h-9 px-3 text-left font-medium whitespace-nowrap">
-                        {t("tenant.transportEncryption.table.version")}
-                      </th>
-                      <th className="h-9 px-2.5 text-left font-medium whitespace-nowrap">
-                        {t("tenant.transportEncryption.table.status")}
-                      </th>
-                      <th className="h-9 px-2.5 text-left font-medium whitespace-nowrap">
-                        {t("tenant.transportEncryption.table.algorithmSuite")}
-                      </th>
-                      <th className="h-9 px-2.5 text-left font-medium whitespace-nowrap">
-                        {t("tenant.transportEncryption.table.createdAt")}
-                      </th>
-                      <th className="h-9 px-3 text-right font-medium whitespace-nowrap">
-                        {t("tenant.transportEncryption.table.operations")}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border-subtle">
-                    {keys.map((row) => {
-                      const dt = splitDateTime(row.created_at);
-                      return (
-                        <tr
-                          key={row.key_version}
-                          className="transition-colors hover:bg-hover-bg/75"
-                        >
-                          <td className="px-3 py-2 font-mono-tech font-medium">
-                            {row.key_version}
-                          </td>
-                          <td className="px-2.5 py-2">
-                            <StatusBadge
-                              status={row.status}
-                              label={getStatusLabel(row.status)}
-                            />
-                          </td>
-                          <td className="px-2.5 py-2">
-                            <div className="font-mono-tech text-foreground">
-                              {row.data_algorithm}
-                            </div>
-                            {row.signature_algorithm && (
-                              <div className="font-mono-tech text-[11px] text-muted-foreground">
-                                {row.signature_algorithm}
-                              </div>
-                            )}
-                          </td>
-                          <td className="px-2.5 py-2 font-mono-tech">
-                            <div>{dt.date}</div>
-                            {dt.time && (
-                              <div className="text-[11px] text-muted-foreground">
-                                {dt.time}
-                              </div>
-                            )}
-                          </td>
-                          <td className="px-3 py-2 text-right">
-                            <div className="inline-flex items-center justify-end gap-1">
-                              {cryptoActions.activate_key &&
-                                row.status !== "active" && (
-                                  <Button
-                                    type="button"
-                                    variant="link"
-                                    size="xs"
-                                    disabled={!tenantCryptoEnabled}
-                                    onClick={() =>
-                                      void handleSetKeyStatus(
-                                        row.key_version,
-                                        "activate",
-                                      )
-                                    }
-                                  >
-                                    {t(
-                                      "tenant.transportEncryption.actions.activate",
-                                    )}
-                                  </Button>
-                                )}
-                              {cryptoActions.disable_key &&
-                                row.status !== "disabled" && (
-                                  <Button
-                                    type="button"
-                                    variant="link"
-                                    size="xs"
-                                    className="text-warning-fg hover:text-warning-fg"
-                                    disabled={!tenantCryptoEnabled}
-                                    onClick={() =>
-                                      void handleSetKeyStatus(
-                                        row.key_version,
-                                        "disable",
-                                      )
-                                    }
-                                  >
-                                    {t(
-                                      "tenant.transportEncryption.actions.disable",
-                                    )}
-                                  </Button>
-                                )}
-                              {cryptoActions.delete_key && (
-                                <Button
-                                  type="button"
-                                  variant="link"
-                                  size="xs"
-                                  className="text-danger-fg hover:text-danger-fg"
-                                  disabled={!tenantCryptoEnabled}
-                                  onClick={() =>
-                                    setDeleteVersion(row.key_version)
-                                  }
-                                >
-                                  {t(
-                                    "tenant.transportEncryption.actions.delete",
-                                  )}
-                                </Button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </EntityDetailCard>
-
-          <EntityDetailCard
-            title={t("tenant.transportEncryption.sections.effectiveContract")}
-            icon={<ShieldCheck className="h-4 w-4" />}
-          >
-            <div className="divide-y divide-border-subtle rounded-md border border-border">
-              <div className="flex items-center justify-between gap-3 px-3 py-2 text-xs">
-                <span className="text-muted-foreground">
-                  {t("tenant.transportEncryption.fields.encryptionMode")}
-                </span>
-                <span className="font-medium text-foreground">{modeLabel}</span>
-              </div>
-              <div className="flex items-center justify-between gap-3 px-3 py-2 text-xs">
-                <span className="text-muted-foreground">
-                  {t("tenant.transportEncryption.fields.suite")}
-                </span>
-                <span className="font-mono-tech font-medium text-foreground">
-                  {effectiveAlgorithmSummary}
-                </span>
-              </div>
-              <div className="flex items-center justify-between gap-3 px-3 py-2 text-xs">
-                <span className="text-muted-foreground">
-                  {t("tenant.transportEncryption.fields.currentKeyVersion")}
-                </span>
-                <span className="font-mono-tech font-medium text-foreground">
-                  {currentKeyVersion || EMPTY_PLACEHOLDER}
-                </span>
-              </div>
-              <div className="flex items-center justify-between gap-3 px-3 py-2 text-xs">
-                <span className="text-muted-foreground">
-                  {t("tenant.transportEncryption.fields.signatureCheck")}
-                </span>
-                <StatusBadge
-                  status={requireSignature ? "ENABLED" : "DISABLED"}
-                  label={
-                    requireSignature
-                      ? t("common.status.enabled")
-                      : t("common.status.disabled")
-                  }
-                />
-              </div>
-              <div className="flex items-center justify-between gap-3 px-3 py-2 text-xs">
-                <span className="text-muted-foreground">
-                  {t("tenant.transportEncryption.fields.nonceTtlSeconds")}
-                </span>
-                <span className="font-mono-tech font-medium text-foreground">
-                  {nonceTtlSeconds}s / ±{clockSkewSeconds}s
-                </span>
-              </div>
-            </div>
-          </EntityDetailCard>
         </div>
-      </div>
+      </EntityDetailCard>
+
+      {/* Rotate Key Confirm */}
+      <ConfirmDialog
+        open={rotateConfirmOpen}
+        onClose={() => setRotateConfirmOpen(false)}
+        onConfirm={() => void handleConfirmRotateKey()}
+        loading={rotating}
+        danger={false}
+        title={t("common.tips")}
+        confirmLabel={t("tenant.transportEncryption.actions.rotateKey")}
+        description={t("tenant.transportEncryption.messages.rotateKeyConfirm")}
+      />
 
       {/* Delete Key Confirm */}
       <ConfirmDialog
-        open={Boolean(deleteVersion)}
-        onClose={() => setDeleteVersion(null)}
+        open={deleteConfirmOpen}
+        onClose={() => setDeleteConfirmOpen(false)}
         onConfirm={() => void handleConfirmDeleteKey()}
         loading={deleting}
         danger
         title={t("common.tips")}
         confirmLabel={t("common.confirm")}
-        description={
-          deleteVersion
-            ? t("tenant.transportEncryption.messages.deleteKeyConfirm", {
-                version: deleteVersion,
-              })
-            : ""
-        }
+        description={t("tenant.transportEncryption.messages.deleteKeyConfirm")}
       />
 
       {/* One-time Secret Key Modal */}
@@ -826,46 +629,12 @@ export function TransportEncryptionSection({
           <span>{t("tenant.transportEncryption.secretDialog.warning")}</span>
         </div>
         {revealedKey && (
-          <>
-            <div className="divide-y divide-border-subtle rounded-md border border-border">
-              <div className="flex items-center justify-between gap-3 px-3 py-2 text-xs">
-                <span className="text-muted-foreground">
-                  {t(
-                    "tenant.transportEncryption.secretDialog.fields.keyVersion",
-                  )}
-                </span>
-                <span className="font-mono-tech font-medium">
-                  {revealedKey.keyVersion}
-                </span>
-              </div>
-              <div className="flex items-center justify-between gap-3 px-3 py-2 text-xs">
-                <span className="text-muted-foreground">
-                  {t(
-                    "tenant.transportEncryption.secretDialog.fields.algorithm",
-                  )}
-                </span>
-                <span className="font-mono-tech font-medium">
-                  {revealedKey.algorithm}
-                </span>
-              </div>
-              <div className="flex items-center justify-between gap-3 px-3 py-2 text-xs">
-                <span className="text-muted-foreground">
-                  {t(
-                    "tenant.transportEncryption.secretDialog.fields.signatureAlgorithm",
-                  )}
-                </span>
-                <span className="font-mono-tech font-medium">
-                  {revealedKey.signatureAlgorithm}
-                </span>
-              </div>
-            </div>
-            <Textarea
-              rows={4}
-              readOnly
-              value={revealedKey.tenantSecretKey}
-              className="font-mono-tech"
-            />
-          </>
+          <Textarea
+            rows={4}
+            readOnly
+            value={revealedKey.tenantSecretKey}
+            className="font-mono-tech"
+          />
         )}
       </Modal>
     </div>

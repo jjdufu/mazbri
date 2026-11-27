@@ -42,23 +42,26 @@ export function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
       data-testid="app-sidebar"
       data-collapsed={collapsed ? "true" : "false"}
       className={cn(
-        "h-full bg-app-frame flex flex-col justify-between shrink-0 transition-all overflow-y-auto select-none",
+        "h-full bg-app-frame flex flex-col justify-between shrink-0 transition-all overflow-y-auto overflow-x-hidden select-none",
         collapsed ? "w-[60px] px-2 py-2.5" : "w-52 px-2.5 py-2.5",
       )}
     >
       <div className="space-y-3">
-        {/* Sidebar Brand & Minimal Collapse Toggle (Zero border-r, Zero crosshair) */}
+        {/* Sidebar Brand & Minimal Collapse Toggle */}
         <div
           className={cn(
             "flex items-center select-none",
             collapsed
-              ? "flex-col gap-1.5 pt-0.5"
+              ? "flex-col justify-center gap-1.5 pt-0.5"
               : "h-9 justify-between pl-1.5 pr-0.5",
           )}
         >
           <Link
             to={homePath}
-            className="flex items-center gap-2 min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-xblue/45 rounded-md"
+            className={cn(
+              "flex items-center gap-2 min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-xblue/45 rounded-md",
+              collapsed && "mx-auto justify-center",
+            )}
           >
             <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-primary text-primary-foreground text-xs font-bold tracking-tight shadow-2xs shrink-0">
               M
@@ -80,9 +83,9 @@ export function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
                 className="text-muted-foreground/85 hover:text-foreground"
               >
                 {collapsed ? (
-                  <ChevronsRight className="h-4 w-4" />
+                  <ChevronsRight className="h-4 w-4 shrink-0" />
                 ) : (
-                  <ChevronsLeft className="h-4 w-4" />
+                  <ChevronsLeft className="h-4 w-4 shrink-0" />
                 )}
               </IconButton>
             </Tooltip>
@@ -93,9 +96,16 @@ export function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
           {menuGroups.map((group, groupIndex) => (
             <div
               key={group.key}
-              className={cn(groupIndex > 0 && (collapsed ? "pt-2.5" : "pt-3"))}
+              className={cn(!collapsed && groupIndex > 0 && "pt-3")}
             >
-              {!collapsed && (
+              {collapsed ? (
+                groupIndex > 0 && (
+                  <div
+                    aria-hidden="true"
+                    className="mx-1.5 my-2 border-t border-border-subtle"
+                  />
+                )
+              ) : (
                 <div className="px-2.5 pb-1 text-[11px] font-medium text-sidebar-muted tracking-wide truncate">
                   {t(group.titleKey)}
                 </div>
@@ -112,18 +122,27 @@ export function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
                         content={label}
                         side="right"
                         disabled={!collapsed}
+                        className={
+                          collapsed ? "flex w-full justify-center" : undefined
+                        }
                       >
                         <Link
                           to={item.path}
                           data-testid={`nav-item-${item.key}`}
+                          aria-label={collapsed ? label : undefined}
                           aria-current={isActive ? "page" : undefined}
                           className={cn(
-                            "group relative w-full flex items-center rounded-md py-1.5 text-[13px] transition-all duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] cursor-pointer",
+                            "group relative flex items-center rounded-md text-[13px] transition-all duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] cursor-pointer",
                             collapsed
-                              ? "justify-center px-0"
-                              : "gap-2.5 px-2.5",
+                              ? "h-9 w-9 mx-auto justify-center p-0"
+                              : "w-full gap-2.5 px-2.5 py-1.5",
                             isActive
-                              ? "bg-background text-xblue font-semibold shadow-[0_1px_2px_rgba(15,23,42,0.07),0_0_0_1px_var(--border-subtle)] dark:bg-card before:absolute before:left-1 before:top-1.5 before:bottom-1.5 before:w-[2.5px] before:rounded-full before:bg-primary"
+                              ? cn(
+                                  "bg-background text-xblue font-semibold shadow-[0_1px_2px_rgba(15,23,42,0.07),0_0_0_1px_var(--border-subtle)] dark:bg-card before:absolute before:w-[2.5px] before:rounded-full before:bg-primary",
+                                  collapsed
+                                    ? "before:-left-1.5 before:top-2 before:bottom-2"
+                                    : "before:left-1 before:top-1.5 before:bottom-1.5",
+                                )
                               : "font-medium text-muted-foreground hover:text-foreground hover:bg-nav-hover-bg active:bg-active-bg active:scale-[0.98]",
                           )}
                         >

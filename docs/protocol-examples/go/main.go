@@ -1,34 +1,18 @@
 // mazbri 租户接入协议 v1 —— Go 参考示例（仅供测试 / 联调，纯标准库）。
-//
-// 读取 docs/protocol-vectors/tenant-integration-v1.json 并独立实现：
-//   - 传输信封：aes-*-gcm / chacha 之外的 AEAD 由标准库 AES-GCM 覆盖；aes-*-cbc + HMAC（PKCS#7 填充）
-//   - 请求绑定：hmac-v1（hmac-sha256）、rsa-v1（PKCS#1 v1.5，确定性）、ed25519-v1、ecdsa-v1（P1363 r||s，验签）
-//   - 回调签名：hex(HMAC-SHA256(secret, "{ts}.{compact json}"))
-//
-// 标准库没有 SM3 / SM4 / SM2 / ChaCha20，相关向量跳过（可用 github.com/tjfoc/gmsm、golang.org/x/crypto 补齐）。
-//
-// 用法：go run . [path/to/tenant-integration-v1.json]
 package main
 
 import (
 	"bytes"
-	"crypto"
 	"crypto/aes"
 	"crypto/cipher"
-	"crypto/ecdsa"
-	"crypto/ed25519"
 	"crypto/hmac"
-	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/sha512"
-	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
-	"encoding/pem"
 	"fmt"
 	"hash"
-	"math/big"
 	"os"
 	"strconv"
 	"strings"
@@ -37,14 +21,11 @@ import (
 type Doc struct {
 	TestOnly bool `json:"test_only"`
 	Common   struct {
-		HTTPPath   string `json:"http_path"`
-		TenantID   string `json:"tenant_id"`
-		KeyVersion string `json:"key_version"`
+		HTTPPath string `json:"http_path"`
+		TenantID string `json:"tenant_id"`
 	} `json:"common"`
 	Keys struct {
-		TenantSecretKeyB64 string                       `json:"tenant_secret_key_b64"`
-		HmacBindingKeyB64  string                       `json:"hmac_binding_key_b64"`
-		Asymmetric         map[string]map[string]string `json:"asymmetric"`
+		TenantSecretKeyB64 string `json:"tenant_secret_key_b64"`
 	} `json:"keys"`
 	Transport []struct {
 		Name       string  `json:"name"`
@@ -64,23 +45,6 @@ type Doc struct {
 			EnvelopeJSON  string  `json:"envelope_json"`
 		} `json:"expected"`
 	} `json:"transport"`
-	Binding []struct {
-		Name         string `json:"name"`
-		Version      string `json:"signature_version"`
-		Alg          string `json:"alg"`
-		Kid          string `json:"kid"`
-		Key          string `json:"key"`
-		Method       string `json:"method"`
-		PathAndQuery string `json:"path_and_query"`
-		Timestamp    int64  `json:"timestamp"`
-		Nonce        string `json:"nonce"`
-		Body         string `json:"body_utf8"`
-		Expected     struct {
-			Canonical    string            `json:"canonical_string"`
-			SignatureB64 string            `json:"signature_b64"`
-			Headers      map[string]string `json:"headers"`
-		} `json:"expected"`
-	} `json:"binding"`
 	Callback struct {
 		Payload   json.RawMessage `json:"payload"`
 		Secret    string          `json:"secret_utf8"`
@@ -92,7 +56,6 @@ type Doc struct {
 }
 
 type envelope struct {
-	KeyVersion string `json:"keyVersion"`
 	Timestamp  int64  `json:"timestamp"`
 	Nonce      string `json:"nonce"`
 	IV         string `json:"iv"`
@@ -149,7 +112,6 @@ func hkdfSha256(salt, ikm, info []byte, length int) []byte {
 	return out[:length]
 }
 
-// encrypt 返回 (ciphertext 不含 tag, tag)；ok=false 表示标准库不支持该算法。
 func encrypt(alg string, key, iv, aad, pt []byte) (ct, tag []byte, ok bool) {
 	block, err := aes.NewCipher(key)
 	if err != nil || !strings.HasPrefix(alg, "aes-") {
@@ -173,20 +135,6 @@ func encrypt(alg string, key, iv, aad, pt []byte) (ct, tag []byte, ok bool) {
 		return out, nil, true
 	}
 	return nil, nil, false
-}
-
-func parsePriv(p string) any {
-	blk, _ := pem.Decode([]byte(p))
-	k, err := x509.ParsePKCS8PrivateKey(blk.Bytes)
-	must(err)
-	return k
-}
-
-func parsePub(p string) any {
-	blk, _ := pem.Decode([]byte(p))
-	k, err := x509.ParsePKIXPublicKey(blk.Bytes)
-	must(err)
-	return k
 }
 
 func main() {
@@ -214,7 +162,7 @@ func main() {
 			dir = "c2g"
 		}
 		dataKey := unhex(t.DataKeyHex)
-		derivedEnc := hkdfSha256([]byte(d.Common.KeyVersion), masterKey,
+		derivedEnc := hkdfSha256([]byte(d.Common.TenantID), masterKey,
 			[]byte("mazbri-transport-v1|"+d.Common.TenantID+"|"+dir+"|enc"), len(dataKey))
 		check(bytes.Equal(dataKey, derivedEnc), t.Name+" hkdf enc")
 
@@ -225,7 +173,7 @@ func main() {
 			macAlgStr = *t.MacAlg
 		}
 		expectedAAD := strings.Join([]string{"v1", dir, d.Common.TenantID, d.Common.HTTPPath,
-			env.KeyVersion, t.DataAlg, macAlgStr, strconv.FormatInt(env.Timestamp, 10), env.Nonce, env.IV}, "\n")
+			t.DataAlg, macAlgStr, strconv.FormatInt(env.Timestamp, 10), env.Nonce, env.IV}, "\n")
 		aad := []byte{}
 		if t.AADUTF8 != nil {
 			check(*t.AADUTF8 == expectedAAD, t.Name+" aad")
@@ -244,7 +192,7 @@ func main() {
 		check(tagB64 == t.Expected.TagB64, t.Name+" tag")
 		sig := ""
 		if t.MacAlg != nil {
-			derivedMac := hkdfSha256([]byte(d.Common.KeyVersion), masterKey,
+			derivedMac := hkdfSha256([]byte(d.Common.TenantID), masterKey,
 				[]byte("mazbri-transport-v1|"+d.Common.TenantID+"|"+dir+"|mac"), 32)
 			check(bytes.Equal(unhex(*t.MacKeyHex), derivedMac), t.Name+" hkdf mac")
 			canon := strings.Join([]string{expectedAAD, env.Ciphertext, env.Tag}, "\n")
@@ -256,61 +204,6 @@ func main() {
 		nt++
 	}
 
-	nb := 0
-	for _, b := range d.Binding {
-		canon := strings.Join([]string{b.Method, b.PathAndQuery, strconv.FormatInt(b.Timestamp, 10), b.Nonce, b.Body}, "\n")
-		check(canon == b.Expected.Canonical, b.Name+" canonical")
-		msg := []byte(canon)
-		want, err := base64.StdEncoding.DecodeString(b.Expected.SignatureB64)
-		must(err)
-		keyName := strings.TrimPrefix(b.Key, "keys.asymmetric.")
-		switch {
-		case b.Version == "hmac-v1" && macHash(b.Alg) != nil:
-			key, err := base64.StdEncoding.DecodeString(d.Keys.HmacBindingKeyB64)
-			must(err)
-			check(bytes.Equal(hmacOf(b.Alg, key, msg), want), b.Name)
-		case b.Version == "rsa-v1": // PKCS#1 v1.5，不是 PSS
-			h := map[string]crypto.Hash{"sha256": crypto.SHA256, "sha384": crypto.SHA384, "sha512": crypto.SHA512}[b.Alg[strings.LastIndex(b.Alg, "-")+1:]]
-			hh := h.New()
-			hh.Write(msg)
-			got, err := rsa.SignPKCS1v15(nil, parsePriv(d.Keys.Asymmetric[keyName]["private_key_pem"]).(*rsa.PrivateKey), h, hh.Sum(nil))
-			must(err)
-			check(bytes.Equal(got, want), b.Name)
-		case b.Version == "ed25519-v1":
-			got := ed25519.Sign(parsePriv(d.Keys.Asymmetric[keyName]["private_key_pem"]).(ed25519.PrivateKey), msg)
-			check(bytes.Equal(got, want), b.Name)
-		case b.Version == "ecdsa-v1": // P1363 r||s，随机 k → 只验签
-			pub := parsePub(d.Keys.Asymmetric[keyName]["public_key_pem"]).(*ecdsa.PublicKey)
-			var digest []byte
-			if strings.HasSuffix(b.Alg, "sha256") {
-				s := sha256.Sum256(msg)
-				digest = s[:]
-			} else {
-				s := sha512.Sum384(msg)
-				digest = s[:]
-			}
-			half := len(want) / 2
-			r, s := new(big.Int).SetBytes(want[:half]), new(big.Int).SetBytes(want[half:])
-			check(ecdsa.Verify(pub, digest, r, s), b.Name)
-			check(!ecdsa.Verify(pub, digest, r, new(big.Int).Add(s, big.NewInt(1))), b.Name+" tamper")
-		default:
-			skipped = append(skipped, b.Name)
-			continue
-		}
-		hdr := map[string]string{
-			"x-mazbri-timestamp": strconv.FormatInt(b.Timestamp, 10), "x-mazbri-nonce": b.Nonce,
-			"x-mazbri-signature": b.Expected.SignatureB64, "x-mazbri-signature-input": b.Alg + "=v1",
-			"x-mazbri-key-id": b.Kid,
-		}
-		for k, v := range hdr {
-			check(b.Expected.Headers[k] == v, b.Name+" header "+k)
-		}
-		check(len(hdr) == len(b.Expected.Headers), b.Name+" header count")
-		fmt.Println("  ok binding", b.Name)
-		nb++
-	}
-
-	// 回调：payload 键按字典序紧凑序列化（Go map 编码天然按键排序）
 	var payload map[string]any
 	must(json.Unmarshal(d.Callback.Payload, &payload))
 	var buf bytes.Buffer
@@ -323,6 +216,6 @@ func main() {
 	check(cb == d.Callback.Expected.Headers["X-Mazbri-Signature"], "callback")
 	fmt.Println("  ok callback")
 
-	fmt.Printf("PASS transport=%d/%d binding=%d/%d callback=1 skipped(标准库不支持)=%v\n",
-		nt, len(d.Transport), nb, len(d.Binding), skipped)
+	fmt.Printf("PASS transport=%d/%d callback=1 skipped(标准库不支持)=%v\n",
+		nt, len(d.Transport), skipped)
 }

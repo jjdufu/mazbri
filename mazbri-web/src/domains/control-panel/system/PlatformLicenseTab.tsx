@@ -195,16 +195,7 @@ export function PlatformLicenseTab() {
         isStatus: true,
         statusCode: mapLicenseStatusBadge(summary.status),
       },
-      {
-        label: t("certificate.authorizationManagement.license.sequence"),
-        value: String(summary.sequence),
-        mono: true,
-      },
-      {
-        label: t("certificate.authorizationManagement.license.keyVersion"),
-        value: summary.keyVersion || EMPTY_PLACEHOLDER,
-        mono: true,
-      },
+
       {
         label: t("certificate.authorizationManagement.license.customerId"),
         value: summary.customerId || EMPTY_PLACEHOLDER,

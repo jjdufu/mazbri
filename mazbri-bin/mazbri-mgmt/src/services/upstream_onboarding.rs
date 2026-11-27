@@ -69,8 +69,8 @@ pub struct OnboardingRoute {
     pub priority: i32,
     #[serde(default = "default_weight")]
     pub weight: i32,
-    #[serde(default = "default_version_tag")]
-    pub version_tag: String,
+    #[serde(default)]
+    pub version_tag: Option<String>,
     #[serde(default)]
     pub switch_condition: Option<serde_json::Value>,
 }
@@ -80,9 +80,6 @@ fn default_priority() -> i32 {
 }
 fn default_weight() -> i32 {
     100
-}
-fn default_version_tag() -> String {
-    "v1.0".to_string()
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -163,7 +160,7 @@ struct PreparedOnboarding {
     tenant_id: Option<uuid::Uuid>,
     priority: i32,
     weight: i32,
-    version_tag: String,
+    version_tag: Option<String>,
     switch_condition: serde_json::Value,
     auth_tenant_ids: Vec<uuid::Uuid>,
     auth_enabled: bool,
@@ -447,7 +444,7 @@ async fn prepare(
         tenant_id: req.route.tenant_id,
         priority: req.route.priority,
         weight: req.route.weight,
-        version_tag: req.route.version_tag.clone(),
+        version_tag: req.route.version_tag.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string),
         switch_condition,
         auth_tenant_ids: req.authorization.tenant_ids.clone(),
         auth_enabled: req.authorization.enabled,

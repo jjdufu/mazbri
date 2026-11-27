@@ -10,7 +10,7 @@ export interface CryptoSuiteSelectValue {
 }
 
 export const DEFAULT_CRYPTO_SUITE_ID =
-  CRYPTO_SUITES[0]?.id ?? "suite/tenant-default-2026-11";
+  CRYPTO_SUITES[0]?.id ?? "suite/aes-256-gcm";
 
 /**
  * Determine initial selection mode from an external model value.

@@ -108,7 +108,7 @@ fn sha_and_blake3_digests() {
 #[test]
 fn suite_tenant_default_maps_aes256_gcm() {
     assert_eq!(
-        mazbri_crypto::suite_data_alg(mazbri_crypto::SUITE_TENANT_DEFAULT_2026_11).expect("suite"),
+        mazbri_crypto::suite_data_alg(mazbri_crypto::SUITE_AES_256_GCM).expect("suite"),
         AlgorithmId::Aes256Gcm
     );
     let err = mazbri_crypto::suite_data_alg("suite/unknown").expect_err("unknown");

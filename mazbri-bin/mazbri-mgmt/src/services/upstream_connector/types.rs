@@ -250,8 +250,8 @@ pub struct PublishRoute {
     pub priority: i32,
     #[serde(default = "default_weight")]
     pub weight: i32,
-    #[serde(default = "default_version_tag")]
-    pub version_tag: String,
+    #[serde(default)]
+    pub version_tag: Option<String>,
 }
 
 pub(super) fn default_priority() -> i32 {
@@ -259,9 +259,6 @@ pub(super) fn default_priority() -> i32 {
 }
 pub(super) fn default_weight() -> i32 {
     100
-}
-pub(super) fn default_version_tag() -> String {
-    "v1.0".into()
 }
 
 #[derive(Debug, Deserialize)]

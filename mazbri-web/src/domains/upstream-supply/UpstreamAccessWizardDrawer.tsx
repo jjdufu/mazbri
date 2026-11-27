@@ -162,7 +162,6 @@ export function UpstreamAccessWizardDrawer({
         tenant_id: null,
         priority: form.priority,
         weight: form.weight,
-        version_tag: "v1.0",
       },
       options: {
         dry_run: dryRun,

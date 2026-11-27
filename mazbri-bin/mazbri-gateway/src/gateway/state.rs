@@ -16,6 +16,9 @@ use std::sync::Arc;
 use std::time::Instant;
 use uuid::Uuid;
 
+#[derive(Clone, Debug)]
+pub struct GatewayHttpPath(pub String);
+
 #[derive(Debug, Clone)]
 pub struct GatewayRequestTiming {
     pub started_at: Instant,

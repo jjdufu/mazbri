@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import {
+  AutoThemeIcon,
   Button,
   Card,
   FormField,
@@ -35,7 +36,7 @@ import { LanguageEnum } from "@/enums/appEnum";
 import { useT } from "@/locales";
 import { useAuthStore } from "@/stores/auth";
 import { useMfaStepUpStore } from "@/stores/mfa-step-up";
-import { useThemeStore } from "@/stores/theme";
+import { formatThemeTooltip, useThemeStore } from "@/stores/theme";
 import { useWatermarkStore } from "@/stores/watermark";
 import type { LoginResponse, MfaSetupResponse } from "@/types/api";
 import { HttpError } from "@/utils/http/error";
@@ -90,7 +91,7 @@ export function LoginPage() {
   const setToken = useAuthStore((s) => s.setToken);
   const setLoginStatus = useAuthStore((s) => s.setLoginStatus);
   const setUserInfo = useAuthStore((s) => s.setUserInfo);
-  const isDark = useThemeStore((s) => s.isDark);
+  const theme = useThemeStore((s) => s.theme);
   const toggleTheme = useThemeStore((s) => s.toggleTheme);
 
   const [step, setStep] = useState<LoginStep>("login");
@@ -466,13 +467,7 @@ export function LoginPage() {
     }
   };
 
-  const themeTooltip = isDark
-    ? locale === LanguageEnum.ZH
-      ? "浅色模式"
-      : "Light mode"
-    : locale === LanguageEnum.ZH
-      ? "暗色模式"
-      : "Dark mode";
+  const themeTooltip = formatThemeTooltip(theme, locale === LanguageEnum.ZH);
 
   const localeTooltip =
     locale === LanguageEnum.ZH ? "Switch to English" : "切换为中文";
@@ -536,10 +531,12 @@ export function LoginPage() {
                 aria-label={themeTooltip}
                 data-testid="login-theme-btn"
               >
-                {isDark ? (
-                  <Sun className="h-4 w-4" />
+                {theme === "auto" ? (
+                  <AutoThemeIcon className="h-4 w-4 shrink-0" />
+                ) : theme === "dark" ? (
+                  <Moon className="h-4 w-4 shrink-0" />
                 ) : (
-                  <Moon className="h-4 w-4" />
+                  <Sun className="h-4 w-4 shrink-0" />
                 )}
               </IconButton>
             </Tooltip>

@@ -4,9 +4,8 @@ info:
   version: "1.0.0"
   description: |
     租户数据面：API Key 换短 JWT，然后 `POST /api/v1/gateway` 调用产品。
-    鉴权默认 `Authorization: Bearer`。可选 HTTP 请求绑定头（默认 `hmac-sha256`）。
+    鉴权使用 `Authorization: Bearer`。
     数据面加密信封见 `TransportEnvelope`（闭集 kebab-case 算法 id；按租户 Profile mode=none|request|full）。
-    HMAC 在 OAS 3.0 没有一等类型；生成器以 Bearer 为主，签名见文档与官方 SDK。
 servers:
   - url: https://gateway.example.com
 paths:
@@ -67,12 +66,6 @@ paths:
       operationId: invoke
       security:
         - bearerAuth: []
-      parameters:
-        - $ref: "#/components/parameters/MazbriTimestamp"
-        - $ref: "#/components/parameters/MazbriNonce"
-        - $ref: "#/components/parameters/MazbriSignature"
-        - $ref: "#/components/parameters/MazbriSignatureInput"
-        - $ref: "#/components/parameters/MazbriKeyId"
       requestBody:
         required: true
         content:
@@ -160,7 +153,7 @@ components:
           schema:
             $ref: "#/components/schemas/ErrorEnvelope"
     Unauthorized:
-      description: JWT 无效或请求绑定失败
+      description: JWT 无效
       headers:
         WWW-Authenticate:
           schema:
@@ -236,10 +229,9 @@ components:
         租户传输信封 v1（camelCase）。`dataAlg` / `macAlg` 为 mazbri-crypto 闭集 kebab-case id
        （如 `aes-256-gcm`、`hmac-sha256`）。行为由租户 Profile 的 mode 决定：`none` 明文；
         `request` 仅请求加密（方向 `c2g`）；`full` 请求（`c2g`）+ 响应（`g2c`）四向 HKDF 子密钥隔离。
-        AEAD AAD 与外挂 MAC 均绑定 `(v1, direction, tenant_id, http_path, keyVersion, dataAlg, macAlg, timestamp, nonce, iv)`。
+        AEAD AAD 与外挂 MAC 均绑定 `(v1, direction, tenant_id, http_path, dataAlg, macAlg, timestamp, nonce, iv)`。
       required:
         - encrypted
-        - keyVersion
         - dataAlg
         - timestamp
         - nonce
@@ -250,9 +242,6 @@ components:
       properties:
         encrypted:
           type: boolean
-        keyVersion:
-          type: string
-          example: v1
         dataAlg:
           type: string
           description: 数据算法 AlgorithmId（kebab-case）
@@ -335,6 +324,6 @@ components:
           type: string
         code:
           type: string
-          description: 机器错误码（如 40110–40114、E4221、IDEMPOTENCY_UNAVAILABLE）
+          description: 机器错误码（如 E4090、E4221、IDEMPOTENCY_UNAVAILABLE）
 security:
   - bearerAuth: []

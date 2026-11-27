@@ -16,10 +16,17 @@ function normalizeThemeMode(value: unknown): ThemeMode | null {
 }
 
 function getSystemPrefersDark(): boolean {
-  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
-    return false;
+  try {
+    if (
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function"
+    ) {
+      return window.matchMedia("(prefers-color-scheme: dark)").matches;
+    }
+  } catch {
+    // Ignore matchMedia errors in non-DOM test environments.
   }
-  return window.matchMedia("(prefers-color-scheme: dark)").matches;
+  return false;
 }
 
 function resolveIsDark(mode: ThemeMode): boolean {
@@ -49,9 +56,42 @@ function readInitialTheme(): ThemeMode {
   return "auto";
 }
 
-function syncThemeClass(isDark: boolean): void {
-  if (typeof document === "undefined") return;
-  document.documentElement.classList.toggle("dark", isDark);
+function syncThemeDom(isDark: boolean, freezeTransitions = true): void {
+  if (typeof document === "undefined" || !document.documentElement) return;
+  const docEl = document.documentElement;
+  const resolvedScheme = isDark ? "dark" : "light";
+
+  let styleEl: HTMLStyleElement | null = null;
+  if (freezeTransitions && document.head) {
+    styleEl = document.createElement("style");
+    styleEl.setAttribute("data-mazbri-theme-freeze", "1");
+    styleEl.textContent =
+      "*, *::before, *::after { transition: none !important; animation-duration: 0.001ms !important; }";
+    document.head.appendChild(styleEl);
+  }
+
+  docEl.classList.toggle("dark", isDark);
+  docEl.style.colorScheme = resolvedScheme;
+
+  if (freezeTransitions && document.body && typeof window !== "undefined") {
+    void window.getComputedStyle(document.body).backgroundColor;
+  }
+
+  if (styleEl) {
+    const cleanup = () => {
+      styleEl?.remove();
+    };
+    if (
+      typeof window !== "undefined" &&
+      typeof window.requestAnimationFrame === "function"
+    ) {
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(cleanup);
+      });
+    } else {
+      cleanup();
+    }
+  }
 }
 
 function persistTheme(theme: ThemeMode): void {
@@ -61,6 +101,16 @@ function persistTheme(theme: ThemeMode): void {
   } catch {
     // Ignore storage quota or privacy mode errors.
   }
+}
+
+export function formatThemeTooltip(theme: ThemeMode, isZh: boolean): string {
+  if (theme === "auto") {
+    return isZh ? "主题：跟随系统（点击切换）" : "Theme: Auto (click to switch)";
+  }
+  if (theme === "dark") {
+    return isZh ? "主题：暗色（点击切换）" : "Theme: Dark (click to switch)";
+  }
+  return isZh ? "主题：亮色（点击切换）" : "Theme: Light (click to switch)";
 }
 
 export interface ThemeState {
@@ -73,7 +123,7 @@ export interface ThemeState {
 
 const initialTheme = readInitialTheme();
 const initialIsDark = resolveIsDark(initialTheme);
-syncThemeClass(initialIsDark);
+syncThemeDom(initialIsDark, false);
 
 export const useThemeStore = create<ThemeState>((set, get) => ({
   theme: initialTheme,
@@ -82,19 +132,26 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     const normalized = normalizeThemeMode(theme);
     if (!normalized) return;
     const isDark = resolveIsDark(normalized);
-    syncThemeClass(isDark);
+    syncThemeDom(isDark, true);
     persistTheme(normalized);
     set({ theme: normalized, isDark });
   },
   toggleTheme: () => {
     const cur = get().theme;
-    const next: ThemeMode =
-      cur === "auto" ? "light" : cur === "light" ? "dark" : "auto";
+    const sysDark = getSystemPrefersDark();
+    let next: ThemeMode;
+    if (cur === "auto") {
+      next = sysDark ? "light" : "dark";
+    } else if (sysDark) {
+      next = cur === "light" ? "dark" : "auto";
+    } else {
+      next = cur === "dark" ? "light" : "auto";
+    }
     get().setTheme(next);
   },
   applyThemeToDom: () => {
     const isDark = resolveIsDark(get().theme);
-    syncThemeClass(isDark);
+    syncThemeDom(isDark, false);
     if (isDark !== get().isDark) {
       set({ isDark });
     }
@@ -102,16 +159,22 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
 }));
 
 if (typeof window !== "undefined" && typeof window.matchMedia === "function") {
-  const media = window.matchMedia("(prefers-color-scheme: dark)");
-  const handleSystemChange = () => {
-    const state = useThemeStore.getState();
-    if (state.theme === "auto") {
-      const nextDark = media.matches;
-      syncThemeClass(nextDark);
-      useThemeStore.setState({ isDark: nextDark });
+  try {
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const handleSystemChange = (ev: MediaQueryListEvent) => {
+      const state = useThemeStore.getState();
+      if (state.theme === "auto") {
+        const nextDark = ev.matches;
+        if (nextDark !== state.isDark) {
+          syncThemeDom(nextDark, true);
+          useThemeStore.setState({ isDark: nextDark });
+        }
+      }
+    };
+    if (typeof media.addEventListener === "function") {
+      media.addEventListener("change", handleSystemChange);
     }
-  };
-  if (typeof media.addEventListener === "function") {
-    media.addEventListener("change", handleSystemChange);
+  } catch {
+    // Ignore listener setup errors.
   }
 }

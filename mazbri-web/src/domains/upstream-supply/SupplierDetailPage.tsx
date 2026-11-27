@@ -486,63 +486,57 @@ export function SupplierDetailPage() {
                   </dd>
                 </div>
 
-                <div className="grid grid-cols-[152px_1fr] border-b border-border">
-                  <dt className="bg-card px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
-                    {t("supplier.fields.code")}
-                  </dt>
-                  <dd className="px-3 py-2 text-xs text-foreground min-w-0">
-                    {editing ? (
-                      <div className="space-y-1">
-                        <Input
-                          value={form.supplier_code}
-                          onChange={(e) =>
-                            setForm((p) => ({
-                              ...p,
-                              supplier_code: e.target.value,
-                            }))
-                          }
-                          placeholder={t("supplier.form.codePlaceholder")}
-                          className="font-mono-tech"
-                        />
-                        {errors.supplier_code && (
-                          <p className="text-[11px] text-danger-fg">
-                            {errors.supplier_code}
-                          </p>
-                        )}
-                      </div>
-                    ) : (
-                      <span className="font-mono-tech">
-                        {supplier?.supplier_code || EMPTY_PLACEHOLDER}
-                      </span>
-                    )}
-                  </dd>
-                </div>
+                {editing && (
+                  <>
+                    <div className="grid grid-cols-[152px_1fr] border-b border-border">
+                      <dt className="bg-card px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
+                        {t("supplier.fields.code")}
+                      </dt>
+                      <dd className="px-3 py-2 text-xs text-foreground min-w-0">
+                        <div className="space-y-1">
+                          <Input
+                            value={form.supplier_code}
+                            onChange={(e) =>
+                              setForm((p) => ({
+                                ...p,
+                                supplier_code: e.target.value,
+                              }))
+                            }
+                            placeholder={t("supplier.form.codePlaceholder")}
+                            className="font-mono-tech"
+                          />
+                          {errors.supplier_code && (
+                            <p className="text-[11px] text-danger-fg">
+                              {errors.supplier_code}
+                            </p>
+                          )}
+                        </div>
+                      </dd>
+                    </div>
 
-                <div className="grid grid-cols-[152px_1fr] border-b border-border md:border-l">
-                  <dt className="bg-card px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
-                    {t("supplier.fields.name")}
-                  </dt>
-                  <dd className="px-3 py-2 text-xs text-foreground min-w-0">
-                    {editing ? (
-                      <div className="space-y-1">
-                        <Input
-                          value={form.name}
-                          onChange={(e) =>
-                            setForm((p) => ({ ...p, name: e.target.value }))
-                          }
-                          placeholder={t("supplier.form.namePlaceholder")}
-                        />
-                        {errors.name && (
-                          <p className="text-[11px] text-danger-fg">
-                            {errors.name}
-                          </p>
-                        )}
-                      </div>
-                    ) : (
-                      supplier?.name || EMPTY_PLACEHOLDER
-                    )}
-                  </dd>
-                </div>
+                    <div className="grid grid-cols-[152px_1fr] border-b border-border md:border-l">
+                      <dt className="bg-card px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
+                        {t("supplier.fields.name")}
+                      </dt>
+                      <dd className="px-3 py-2 text-xs text-foreground min-w-0">
+                        <div className="space-y-1">
+                          <Input
+                            value={form.name}
+                            onChange={(e) =>
+                              setForm((p) => ({ ...p, name: e.target.value }))
+                            }
+                            placeholder={t("supplier.form.namePlaceholder")}
+                          />
+                          {errors.name && (
+                            <p className="text-[11px] text-danger-fg">
+                              {errors.name}
+                            </p>
+                          )}
+                        </div>
+                      </dd>
+                    </div>
+                  </>
+                )}
 
                 <div className="grid grid-cols-[152px_1fr] border-b border-border md:col-span-2">
                   <dt className="bg-card px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">

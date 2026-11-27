@@ -55,7 +55,6 @@ pub struct AppState {
     pub balance_check_fail_open: bool,
     pub service_health_cache: Option<crate::service_health_cache::ServiceHealthCache>,
     pub admin_state: Option<Arc<AdminState>>,
-    pub request_binding: crate::config::RequestBindingConfig,
     /// L1: synchronous Redpanda producer for usage events (None = outbox path).
     pub usage_event_producer: Option<Arc<mazbri_billing::UsageEventProducer>>,
 }
@@ -183,7 +182,6 @@ async fn build_app_state(init: RouterInit<'_>) -> anyhow::Result<AppState> {
         balance_check_fail_open: config.billing.balance_check.fail_open,
         service_health_cache,
         admin_state,
-        request_binding: config.request_binding.clone(),
         usage_event_producer,
     })
 }
@@ -714,11 +712,6 @@ fn build_cors_layer(config: &crate::config::CorsConfig) -> CorsLayer {
         header::HeaderName::from_static("x-span-id"),
         header::HeaderName::from_static("x-parent-span-id"),
         header::HeaderName::from_static("traceparent"),
-        header::HeaderName::from_static("x-mazbri-timestamp"),
-        header::HeaderName::from_static("x-mazbri-nonce"),
-        header::HeaderName::from_static("x-mazbri-signature"),
-        header::HeaderName::from_static("x-mazbri-signature-input"),
-        header::HeaderName::from_static("x-mazbri-key-id"),
     ];
     let exposed = [
         header::HeaderName::from_static("x-request-id"),

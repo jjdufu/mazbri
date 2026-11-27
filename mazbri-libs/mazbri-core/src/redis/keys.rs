@@ -17,18 +17,13 @@ pub fn sha256_hex(value: &str) -> String {
 }
 
 #[must_use]
-pub fn nonce_key(prefix: &str, tenant_id: Uuid, key_version: &str, nonce: &str) -> String {
+pub fn nonce_key(prefix: &str, tenant_id: Uuid, nonce: &str) -> String {
     let nonce_hash = sha256_hex(nonce);
     redis_key(
         prefix,
         "crypto:nonce",
-        &[&tenant_id.to_string(), key_version, &nonce_hash],
+        &[&tenant_id.to_string(), &nonce_hash],
     )
-}
-
-#[must_use]
-pub fn gateway_binding_nonce_key(prefix: &str, tenant_id: Uuid, nonce: &str) -> String {
-    format!("{}:{}:{}", prefix.trim_end_matches(':'), tenant_id, nonce)
 }
 
 #[must_use]

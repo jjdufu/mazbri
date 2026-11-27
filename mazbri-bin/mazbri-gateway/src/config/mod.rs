@@ -122,33 +122,12 @@ fn default_token_rate_limit_burst() -> u64 {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct RequestBindingConfig {
-    #[serde(default)]
-    pub require_request_binding: bool,
-    #[serde(default = "default_nonce_redis_prefix")]
-    pub nonce_redis_prefix: String,
-}
-fn default_nonce_redis_prefix() -> String {
-    "mazbri:gw:nonce".to_string()
-}
-impl Default for RequestBindingConfig {
-    fn default() -> Self {
-        Self {
-            require_request_binding: false,
-            nonce_redis_prefix: default_nonce_redis_prefix(),
-        }
-    }
-}
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct GatewayConfig {
     pub server: GatewayServerConfig,
     pub database: mazbri_core::DatabaseConfig,
     pub services: ServicesConfig,
     pub redis: RedisConfig,
     pub auth: AuthConfig,
-    #[serde(default)]
-    pub request_binding: RequestBindingConfig,
     #[serde(default)]
     pub cors: CorsConfig,
     pub billing_database: Option<mazbri_core::DatabaseConfig>,
@@ -248,9 +227,6 @@ impl ValidateConfig for GatewayConfig {
         }
         if self.auth.jwt_kid.trim().is_empty() {
             anyhow::bail!("auth.jwt_kid must not be empty");
-        }
-        if self.request_binding.nonce_redis_prefix.trim().is_empty() {
-            anyhow::bail!("request_binding.nonce_redis_prefix must not be empty");
         }
         Ok(())
     }

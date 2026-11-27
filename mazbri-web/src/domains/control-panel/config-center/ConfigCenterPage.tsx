@@ -263,7 +263,7 @@ export function ConfigCenterPage() {
         width: 96,
         mono: true,
         cell: (row) => (
-          <span className="tabular-nums">v{row.version ?? 1}</span>
+          <span className="tabular-nums">#{row.version ?? 1}</span>
         ),
       },
       {

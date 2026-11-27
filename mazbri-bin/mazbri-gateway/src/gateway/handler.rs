@@ -15,7 +15,7 @@ use super::post_response::{
     PostResponseTaskArgs, UsageChargeContext, content_length, spawn_post_response_tasks,
 };
 use super::rejection_log::{AccessLogged, RejectionSlot};
-use super::request_binding::GatewayHttpPath;
+use super::state::GatewayHttpPath;
 use super::response::ProxyError;
 use super::serializer::{SerializedProxyResponse, serialize_proxy_response};
 use super::stage_log::{StageCtx, stage_log};
@@ -23,7 +23,7 @@ use super::state::GatewayRequestTiming;
 use super::validation::{GatewayRequest, GatewayRequestPayload, sanitize_input};
 use crate::auth::ActualRequestBytes;
 use crate::auth::claims::MazbriClaims;
-use crate::crypto::{EnvelopeNoncePrechecked, TenantCryptoProfile, TenantCryptoTiming};
+use crate::crypto::{TenantCryptoProfile, TenantCryptoTiming};
 use crate::ratelimit::{LocalRateLimitDecision, LocalRateLimitInput, TransferRecord};
 use crate::router::AppState;
 use axum::{
@@ -62,7 +62,6 @@ type GatewayHandlerExtensions = (
     Option<Extension<RejectionSlot>>,
     Option<Extension<PrecheckedProductGate>>,
     Option<Extension<TenantProductDetail>>,
-    Option<Extension<EnvelopeNoncePrechecked>>,
 );
 
 /// 处理函数各阶段共享的只读上下文。
@@ -131,7 +130,6 @@ pub async fn unified_gateway_handler(
         rejection_slot,
         prechecked_gate,
         tenant_product_detail_ext,
-        envelope_nonce_prechecked,
     ): GatewayHandlerExtensions,
     ConnectInfo(peer_addr): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
@@ -156,7 +154,6 @@ pub async fn unified_gateway_handler(
             request_id: &request_id,
             body_payload,
             http_path: &http_path.0,
-            envelope_nonce_prechecked: envelope_nonce_prechecked.is_some(),
             rejection_slot: rejection_slot.as_ref().map(|Extension(slot)| slot),
             prechecked_gate,
             tenant_product_detail_ext,
@@ -290,7 +287,6 @@ struct PrepareStageArgs<'a> {
     request_id: &'a str,
     body_payload: GatewayRequestPayload,
     http_path: &'a str,
-    envelope_nonce_prechecked: bool,
     rejection_slot: Option<&'a RejectionSlot>,
     prechecked_gate: Option<Extension<PrecheckedProductGate>>,
     tenant_product_detail_ext: Option<Extension<TenantProductDetail>>,
@@ -333,7 +329,6 @@ async fn run_request_prepare_stage(
             tenant_uuid,
             body_payload: args.body_payload,
             http_path: args.http_path,
-            envelope_nonce_prechecked: args.envelope_nonce_prechecked,
             rejection_slot: args.rejection_slot,
         })
         .await?;
@@ -415,7 +410,6 @@ struct DecryptPayloadArgs<'a> {
     tenant_uuid: Uuid,
     body_payload: super::validation::GatewayRequestPayload,
     http_path: &'a str,
-    envelope_nonce_prechecked: bool,
     rejection_slot: Option<&'a RejectionSlot>,
 }
 
@@ -431,11 +425,10 @@ async fn decrypt_and_validate_payload(
         .state
         .proxy_state
         .crypto_state
-        .decrypt_request_value_with_precheck(
+        .decrypt_request_value(
             args.tenant_uuid,
             args.body_payload,
             args.http_path,
-            args.envelope_nonce_prechecked,
         )
         .instrument(transport_span.clone())
         .await;

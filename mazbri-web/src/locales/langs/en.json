@@ -139,7 +139,9 @@
       "refresh": "Refresh",
       "back": "Back",
       "retry": "Retry",
-      "edit": "Edit"
+      "edit": "Edit",
+      "enable": "Enable",
+      "disable": "Disable"
     },
     "searchPopover": {
       "tooltip": "Search and filters",
@@ -1433,9 +1435,6 @@
       "tenantCryptoProfileUpdate": "Update Tenant Crypto Config",
       "tenantCryptoKeyCreate": "Create Tenant Crypto Key",
       "tenantCryptoKeyRotate": "Rotate Tenant Crypto Key",
-      "tenantCryptoKeyActivate": "Activate Tenant Crypto Key",
-      "tenantCryptoKeyDeprecate": "Deprecate Tenant Crypto Key",
-      "tenantCryptoKeyDisable": "Disable Tenant Crypto Key",
       "tenantCryptoExport": "Export Tenant Crypto Data",
       "tenantCryptoVerify": "Verify Tenant Crypto Keys",
       "passwordFirstLoginChange": "Change Password on First Login",
@@ -1490,9 +1489,6 @@
       "userMfaStepUp": "MFA step-up",
       "userMfaStepUpEnd": "End MFA step-up",
       "userTokenRefresh": "Refresh Token",
-      "tenantRequestKeyCreate": "Create Request Signing Key",
-      "tenantRequestKeyRetire": "Retire Request Signing Key",
-      "tenantRequestKeyList": "View Request Signing Keys",
       "tenantCryptoKeyList": "View Tenant Transport Encryption",
       "tenantEnabledChange": "Enable/Disable Tenant",
       "apikeyList": "View API Keys",
@@ -1667,8 +1663,6 @@
       "requireSignature": "Require Signature",
       "nonceTtlSeconds": "Nonce TTL (s)",
       "clockSkewSeconds": "Clock Skew Tolerance (s)",
-      "currentKeyVersion": "Current Key Version",
-      "keyVersion": "Key Version",
       "mode": "Mode",
       "manifest": "Manifest",
       "checked": "Checked",
@@ -2969,9 +2963,11 @@
         "whitelist": "IP Whitelist",
         "accessStrategy": "Access Strategy",
         "transportEncryption": "Transport Encryption",
-        "account": "Account Balance",
+        "account": "Account & Ledger",
         "products": "Granted Products",
-        "overview360": "Overview 360"
+        "overview360": "Overview",
+        "credentialsAndSecurity": "Credentials & Security",
+        "rateLimitAndCache": "Rate Limit & Cache"
       },
       "basicInfo": {
         "title": "Basic Information",
@@ -2993,9 +2989,8 @@
         "currentStatus": "Current platform status: {status}"
       },
       "sections": {
-        "strategy": "Transport Encryption Policy",
-        "keyVersions": "Key Versions",
-        "effectiveContract": "Effective Access Contract"
+        "strategy": "Transport Encryption",
+        "secretKey": "Tenant Secret Key"
       },
       "fields": {
         "encryptionMode": "Encryption Mode",
@@ -3004,13 +2999,12 @@
         "macAlg": "MAC Algorithm",
         "allowInsecure": "Allow insecure (legacy) algorithms",
         "advancedAlgorithms": "Advanced: pick algorithms manually",
-        "currentKeyVersion": "Current Key Version",
         "signatureCheck": "Signature Verification",
         "nonceTtlSeconds": "Nonce TTL (seconds)",
-        "clockSkewSeconds": "Clock Skew (s)"
+        "clockSkewSeconds": "Clock Skew (s)",
+        "digest": "Key Digest"
       },
       "placeholders": {
-        "selectActiveKey": "Select an active key",
         "selectSuite": "Select a recommended suite",
         "selectDataAlg": "Select data algorithm (kebab-case)",
         "selectMacAlg": "Select MAC algorithm (kebab-case)"
@@ -3032,7 +3026,9 @@
         "macRequired": "Selected data algorithm is non-AEAD; MAC is required",
         "allowInsecure": "Enable only for legacy interoperability; unlocks Legacy algorithms",
         "allowInsecureAdminOnly": "Only super admins can enable insecure algorithms",
-        "legacyRisk": "Legacy weak algorithm selected ({algorithms}); use only during migration"
+        "legacyRisk": "Legacy weak algorithm selected ({algorithms}); use only during migration",
+        "keyRequiredHint": "Generate a tenant secret key before enabling request or full encryption",
+        "mustCreateKeyBeforeEnable": "No secret key exists yet. Click Generate Key above before saving an encrypted mode."
       },
       "modes": {
         "none": "Off",
@@ -3047,32 +3043,22 @@
         "full": "Encrypts both inbound requests and outbound responses"
       },
       "actions": {
-        "goRootPackage": "Go to authorization management",
-        "createKey": "Create Key",
+        "goRootPackage": "Go to License",
+        "createKey": "Generate Key",
         "rotateKey": "Rotate Key",
-        "activate": "Activate",
-        "deprecate": "Deprecate",
-        "disable": "Disable",
-        "delete": "Delete"
+        "delete": "Delete Key"
       },
       "messages": {
-        "deleteKeyConfirm": "Permanently delete key version {version}?"
-      },
-      "table": {
-        "version": "Version",
-        "status": "Status",
-        "algorithmSuite": "Algorithm Suite",
-        "createdAt": "Created At",
-        "operations": "Actions"
+        "rotateKeyConfirm": "Rotating immediately activates the new key and invalidates the previous key. Continue?",
+        "deleteKeyConfirm": "Deleting the secret key resets transport encryption to Disabled and cannot be undone. Continue?"
       },
       "secretDialog": {
         "title": "Tenant Key",
-        "warning": "The plaintext key is shown only once and cannot be viewed again after closing.",
-        "fields": {
-          "keyVersion": "Key Version",
-          "algorithm": "Algorithm",
-          "signatureAlgorithm": "Signature"
-        }
+        "warning": "The plaintext key is shown only once and cannot be viewed again after closing."
+      },
+      "keyStatus": {
+        "ready": "Configured",
+        "unconfigured": "Not Generated"
       }
     },
     "account": {

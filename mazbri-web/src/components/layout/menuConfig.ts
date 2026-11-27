@@ -39,16 +39,10 @@ export interface MenuGroup {
   readonly items: readonly MenuItem[];
 }
 
-export interface BreadcrumbItem {
-  readonly label: string;
-  readonly path?: string;
-}
-
 interface DetailRouteRule {
   readonly pattern: RegExp;
   readonly groupKey: string;
   readonly activePath: string;
-  readonly titleKey: string;
 }
 
 export const MENU_GROUPS: readonly MenuGroup[] = [
@@ -178,37 +172,31 @@ const DETAIL_ROUTE_RULES: readonly DetailRouteRule[] = [
     pattern: /^\/operations\/tenants\/[^/]+$/,
     groupKey: "operations",
     activePath: "/operations/tenants",
-    titleKey: "menus.mazbri.tenantDetail",
   },
   {
     pattern: /^\/operations\/products\/[^/]+$/,
     groupKey: "operations",
     activePath: "/operations/product-authorization",
-    titleKey: "menus.mazbri.productDetail",
   },
   {
     pattern: /^\/operations\/upstream-supply\/suppliers\/[^/]+$/,
     groupKey: "operations",
     activePath: "/operations/upstream-supply",
-    titleKey: "supplier.detail.pageTitle",
   },
   {
     pattern: /^\/operations\/upstream-supply\/workbench(?:\/.*)?$/,
     groupKey: "operations",
     activePath: "/operations/upstream-supply",
-    titleKey: "upstreamConnector.workbenchTitle",
   },
   {
     pattern: /^\/ops\/traces\/[^/]+$/,
     groupKey: "ops",
     activePath: "/ops/traffic",
-    titleKey: "menus.mazbri.opsTraceDetail",
   },
   {
     pattern: /^\/ops\/services\/[^/]+$/,
     groupKey: "ops",
     activePath: "/ops/runtime",
-    titleKey: "menus.mazbri.serviceDetail",
   },
 ];
 
@@ -247,39 +235,6 @@ export function resolveActiveMenuPath(pathname: string): string {
     }
   }
   return normalized;
-}
-
-export function resolveBreadcrumbs(
-  pathname: string,
-  t: (key: string) => string,
-): BreadcrumbItem[] {
-  const normalized = normalizePathname(pathname);
-
-  for (const rule of DETAIL_ROUTE_RULES) {
-    if (rule.pattern.test(normalized)) {
-      const group = MENU_GROUPS.find((g) => g.key === rule.groupKey);
-      const parentItem = group?.items.find((i) => i.path === rule.activePath);
-      const crumbs: BreadcrumbItem[] = [];
-      if (group) {
-        crumbs.push({ label: t(group.titleKey) });
-      }
-      if (parentItem) {
-        crumbs.push({ label: t(parentItem.titleKey), path: parentItem.path });
-      }
-      crumbs.push({ label: t(rule.titleKey) });
-      return crumbs;
-    }
-  }
-
-  for (const group of MENU_GROUPS) {
-    for (const item of group.items) {
-      if (normalized === item.path || normalized.startsWith(`${item.path}/`)) {
-        return [{ label: t(group.titleKey) }, { label: t(item.titleKey) }];
-      }
-    }
-  }
-
-  return [{ label: t("menus.mazbri.title") }];
 }
 
 export function resolveMenuPageHeader(pathname: string): MenuItem | null {

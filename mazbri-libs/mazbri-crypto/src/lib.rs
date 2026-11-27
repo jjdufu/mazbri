@@ -58,14 +58,13 @@ pub use sm::{
     SM4_BLOCK_LEN, SM4_KEY_LEN,
 };
 pub use profile::{
-    BindingSpec, CanonKeyAffix, CanonStyle, CipherScope, CryptSpec, CryptoOrder, HexCase, IvSource, KeySelection,
+    CanonKeyAffix, CanonStyle, CipherScope, CryptSpec, CryptoOrder, HexCase, IvSource,
     SignSpec, SlotLocation, SlotSpec, TenantTransportProfile, TransportMode, UpstreamCryptoProfile,
-    WireEncoding, WireEncodings, WrapSpec, DEFAULT_CLOCK_SKEW_SECS, DEFAULT_NONCE_TTL_SECS,
-    PROFILE_VERSION_V1,
+    WireEncoding, WireEncodings, WrapSpec, DEFAULT_CLOCK_SKEW_SECS, DEFAULT_NONCE_TTL_SECS, PROFILE_VERSION_V1,
 };
 pub use suite::{
-    known_suites, resolve_suite, suite_data_alg, suite_mac_alg, SuiteSpec, SUITE_GM_SM4_HMAC_SM3,
-    SUITE_TENANT_CHACHA20, SUITE_TENANT_DEFAULT_2026_11,
+    known_suites, resolve_suite, suite_data_alg, suite_mac_alg, SuiteSpec, SUITE_AES_256_GCM,
+    SUITE_GM_SM4_HMAC_SM3, SUITE_TENANT_CHACHA20,
 };
 pub use symmetric::{decrypt_cfb, encrypt_cfb, CfbParams, SymmetricAlgorithm};
 pub use traits::{AeadSeal, AsymBox, AsymSign, BlockCipher, CryptoError, Digest, Mac};

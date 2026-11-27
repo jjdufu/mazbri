@@ -71,7 +71,7 @@ pub fn routes() -> Router<AppState> {
         )
 }
 
-/// 租户传输 `Profile`（`suite` / `data_alg` / `mac_alg` / `allow_insecure`）、密钥与请求密钥。
+/// 租户传输 `Profile`（`suite` / `data_alg` / `mac_alg` / `allow_insecure`）与主密钥。
 fn crypto_routes() -> Router<AppState> {
     Router::new()
         .route(
@@ -80,31 +80,16 @@ fn crypto_routes() -> Router<AppState> {
         )
         .route(
             "/tenants/{code}/crypto-profile",
-            axum::routing::put(tenant_crypto_handlers::update_crypto_profile),
+            put(tenant_crypto_handlers::update_crypto_profile),
         )
         .route(
             "/tenants/{code}/crypto-keys",
-            post(tenant_crypto_handlers::create_crypto_key),
+            post(tenant_crypto_handlers::create_crypto_key)
+                .delete(tenant_crypto_handlers::delete_crypto_key),
         )
         .route(
             "/tenants/{code}/crypto-keys/rotate",
             post(tenant_crypto_handlers::rotate_crypto_key),
-        )
-        .route(
-            "/tenants/{code}/crypto-keys/{version}/activate",
-            post(tenant_crypto_handlers::activate_crypto_key),
-        )
-        .route(
-            "/tenants/{code}/crypto-keys/{version}/deprecate",
-            post(tenant_crypto_handlers::deprecate_crypto_key),
-        )
-        .route(
-            "/tenants/{code}/crypto-keys/{version}/disable",
-            post(tenant_crypto_handlers::disable_crypto_key),
-        )
-        .route(
-            "/tenants/{code}/crypto-keys/{version}",
-            delete(tenant_crypto_handlers::delete_crypto_key),
         )
         .route(
             "/tenant-crypto/export",
@@ -113,15 +98,6 @@ fn crypto_routes() -> Router<AppState> {
         .route(
             "/tenant-crypto/verify",
             post(tenant_crypto_handlers::verify_crypto_keys),
-        )
-        .route(
-            "/tenants/{code}/request-keys",
-            get(tenant_crypto_handlers::list_request_keys)
-                .post(tenant_crypto_handlers::create_request_key),
-        )
-        .route(
-            "/tenants/{code}/request-keys/{kid}/retire",
-            post(tenant_crypto_handlers::retire_request_key),
         )
 }
 

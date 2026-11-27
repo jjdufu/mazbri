@@ -498,83 +498,114 @@ export function WhitelistSection({ tenantCode }: WhitelistSectionProps) {
     [canWrite, getCidrLabel, t],
   );
 
+  const isCompactEmpty = !loading && entries.length === 0;
+
   return (
     <EntityDetailCard
       title={t("tenant.detail.tabs.whitelist")}
       icon={<Shield className="h-4 w-4" />}
-      bodyClassName="p-0"
+      bodyClassName={isCompactEmpty ? "px-4 py-3.5" : "p-0"}
       testId="tenant-whitelist-card"
-    >
-      <DataTablePage<WhitelistEntry>
-        className="[&>div]:border-0 [&>div]:rounded-none [&>div]:shadow-none"
-        columns={columns}
-        data={entries}
-        getRowId={entryKey}
-        loading={loading}
-        emptyText={
-          <div className="space-y-1">
-            <div>{t("tenant.whitelist.emptyHint1")}</div>
-            <div className="text-[11px] opacity-80">
-              {t("tenant.whitelist.emptyHint2")}
-            </div>
-          </div>
-        }
-        selectable={canWrite}
-        selectedKeys={selectedIds}
-        onSelectionChange={setSelectedIds}
-        batchActions={
-          canWrite
-            ? (ids) => (
-                <Button
-                  type="button"
-                  variant="danger"
-                  size="sm"
-                  onClick={() => setBatchDeleteKeys(ids)}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  {t("tenant.whitelist.batchDelete")}
-                </Button>
-              )
-            : undefined
-        }
-        actions={
+      actions={
+        isCompactEmpty && canWrite ? (
           <>
-            <ExportDropdown
-              items={exportItems}
-              label={t("tenant.whitelist.export")}
-              disabled={entries.length === 0}
-              onCommand={handleExport}
-            />
-            {canWrite && (
-              <>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="md"
-                  onClick={() => setImportOpen(true)}
-                >
-                  <Upload className="h-3.5 w-3.5" />
-                  {t("tenant.whitelist.import")}
-                </Button>
-                <Button
-                  type="button"
-                  variant="primary"
-                  size="md"
-                  onClick={() => {
-                    setIpText("");
-                    setDescText("");
-                    setAddErrors({});
-                    setAddOpen(true);
-                  }}
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  {t("tenant.whitelist.add")}
-                </Button>
-              </>
-            )}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setImportOpen(true)}
+            >
+              <Upload className="h-3.5 w-3.5" />
+              {t("tenant.whitelist.import")}
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              onClick={() => {
+                setIpText("");
+                setDescText("");
+                setAddErrors({});
+                setAddOpen(true);
+              }}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              {t("tenant.whitelist.add")}
+            </Button>
           </>
-        }
-      />
+        ) : undefined
+      }
+    >
+      {isCompactEmpty ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+          <span>
+            {t("tenant.whitelist.emptyHint1")} · {t("tenant.whitelist.emptyHint2")}
+          </span>
+        </div>
+      ) : (
+        <DataTablePage<WhitelistEntry>
+          className="[&>div]:border-0 [&>div]:rounded-none [&>div]:shadow-none"
+          columns={columns}
+          data={entries}
+          getRowId={entryKey}
+          loading={loading}
+          selectable={canWrite}
+          selectedKeys={selectedIds}
+          onSelectionChange={setSelectedIds}
+          batchActions={
+            canWrite
+              ? (ids) => (
+                  <Button
+                    type="button"
+                    variant="danger"
+                    size="sm"
+                    onClick={() => setBatchDeleteKeys(ids)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    {t("tenant.whitelist.batchDelete")}
+                  </Button>
+                )
+              : undefined
+          }
+          actions={
+            <>
+              <ExportDropdown
+                items={exportItems}
+                label={t("tenant.whitelist.export")}
+                disabled={entries.length === 0}
+                onCommand={handleExport}
+              />
+              {canWrite && (
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="md"
+                    onClick={() => setImportOpen(true)}
+                  >
+                    <Upload className="h-3.5 w-3.5" />
+                    {t("tenant.whitelist.import")}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="md"
+                    onClick={() => {
+                      setIpText("");
+                      setDescText("");
+                      setAddErrors({});
+                      setAddOpen(true);
+                    }}
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    {t("tenant.whitelist.add")}
+                  </Button>
+                </>
+              )}
+            </>
+          }
+        />
+      )}
 
       <FormModal
         open={addOpen}

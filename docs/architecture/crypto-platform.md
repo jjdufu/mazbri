@@ -49,7 +49,7 @@ Legacy 门闩统一走 `mazbri_crypto::legacy::assert_not_legacy_or_allowed`，�
 
 | 套件名称 | 数据加密算法 | MAC 算法 |
 |---|---|---|
-| `suite/tenant-default-2026-11` | `aes-256-gcm` | — |
+| `suite/aes-256-gcm` | `aes-256-gcm` | — |
 | `suite/gm-sm4-hmac-sm3` | `sm4-cbc-pkcs7` | `hmac-sm3` |
 | `suite/tenant-chacha20` | `chacha20-poly1305` | — |
 
@@ -61,11 +61,9 @@ Legacy 门闩统一走 `mazbri_crypto::legacy::assert_not_legacy_or_allowed`，�
 
 | 字段 | 说明 |
 |---|---|
-| `version` | Schema 版本（`≥ 1`） |
 | `mode` | `none` \| `request` \| `full` |
 | `suite` / `data_alg` / `mac_alg` | 冲突时校验失败；`mode ≠ none` 必须指定数据算法；非 AEAD 必须配 `mac_alg` |
-| `key` | `latest` \| `fixed`；加密模式必填 |
-| `require_signature` / `binding` | 请求绑定与外层签名开关（`mode = none` 时禁止携带套件或 `require_signature`） |
+| `require_signature` | 外层签名开关（`mode = none` 时禁止携带套件或 `require_signature`） |
 | `allow_insecure` | Legacy 算法放行开关 |
 | `nonce_ttl_secs` / `clock_skew_secs` | 防重放窗口与时钟偏差秒数（默认 `300`，须 `> 0`） |
 

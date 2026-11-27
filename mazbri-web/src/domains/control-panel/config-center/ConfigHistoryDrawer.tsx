@@ -260,7 +260,7 @@ export function ConfigHistoryDrawer({
                           )}
                         >
                           <td className="px-3 py-2 font-mono-tech font-medium tabular-nums">
-                            v{row.version_number}
+                            #{row.version_number}
                           </td>
                           <td className="px-3 py-2 text-foreground">
                             {row.updated_by || "—"}

@@ -2407,7 +2407,6 @@ export const useWorkbenchStore = create<WorkbenchStore>()((set, get) => {
                   product_ref: { product_id: pf.product_id },
                   priority: 100,
                   weight: 100,
-                  version_tag: "v1.0",
                 }
               : undefined,
           options: {

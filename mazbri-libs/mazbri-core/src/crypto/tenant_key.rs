@@ -1,4 +1,4 @@
-//! 租户传输密钥生成 / 包装 / 摘要：经 `mazbri-crypto` + Profile 默认套件。
+//! 租户传输主密钥生成 / 包装 / 摘要：单租户单密钥无版本模型。
 
 use super::envelope::{
     DEFAULT_WRAPPING_ALGORITHM, TenantKeyEnvelope, parse_envelope, serialize_envelope,
@@ -58,7 +58,7 @@ pub enum TenantKeyError {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RootProtectionMaterialBundle {
-    /// 密钥版本号（如 `v1`、`v2`）。
+    /// 根保护材料代际号。
     pub current_key_version: String,
     /// 包装密钥 id。
     pub wrapping_key_id: String,
@@ -72,7 +72,7 @@ pub struct RootProtectionMaterialBundle {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RootProtectionKeyring {
-    /// 当前可用于新加密/新包装的密钥版本（仅当 `issuance_allowed` 为 `true` 时非空）。
+    /// 当前可用于新加密/新包装的根密钥代际（仅当 `issuance_allowed` 为 `true` 时非空）。
     pub current_key_version: Option<String>,
     /// 当前许可证是否允许执行新签发与新密钥密封。
     pub issuance_allowed: bool,
@@ -106,17 +106,6 @@ pub fn generate_tenant_secret_key() -> [u8; TENANT_SECRET_KEY_BYTES] {
 pub fn generate_data_key_for(data_alg: AlgorithmId) -> Result<Vec<u8>, TenantKeyError> {
     let len = super::transport::data_key_len(data_alg)?;
     Ok((0..len).map(|_| rand::random::<u8>()).collect())
-}
-
-#[must_use]
-pub fn generate_key_version(existing_versions: &[String]) -> String {
-    let max = existing_versions
-        .iter()
-        .filter_map(|version| version.strip_prefix('v'))
-        .filter_map(|number| number.parse::<u32>().ok())
-        .max()
-        .unwrap_or(0);
-    format!("v{}", max.saturating_add(1))
 }
 
 /// # Errors
@@ -241,14 +230,13 @@ pub fn decode_configured_key(value: &str) -> Result<Vec<u8>, TenantKeyError> {
     Ok(decoded)
 }
 
-/// 生成并包装新的租户密钥（包装算法默认 `aes-256-gcm`）。
+/// 生成并包装新的租户主密钥（包装算法默认 `aes-256-gcm`）。
 ///
 /// # Errors
 ///
 /// 加密 / 信封 / 摘要失败时返回错误。
 pub fn wrap_new_tenant_key(
     tenant_id: &str,
-    key_version: &str,
     master_key: &[u8],
     integrity_key: &[u8],
     wrapping_key_id: &str,
@@ -256,7 +244,6 @@ pub fn wrap_new_tenant_key(
     wrap_new_tenant_key_with_registry(
         AlgorithmRegistry::global(),
         tenant_id,
-        key_version,
         master_key,
         integrity_key,
         wrapping_key_id,
@@ -272,14 +259,13 @@ pub fn wrap_new_tenant_key(
 pub fn wrap_new_tenant_key_with_registry(
     registry: &AlgorithmRegistry,
     tenant_id: &str,
-    key_version: &str,
     master_key: &[u8],
     integrity_key: &[u8],
     wrapping_key_id: &str,
     wrapping_alg: AlgorithmId,
 ) -> Result<WrappedTenantKey, TenantKeyError> {
     let tenant_key = Zeroizing::new(generate_tenant_secret_key());
-    let aad = envelope_aad(tenant_id, key_version);
+    let aad = envelope_aad(tenant_id);
     let parts = encrypt_with_alg(
         TransportCipher::strict(registry),
         wrapping_alg,
@@ -300,7 +286,6 @@ pub fn wrap_new_tenant_key_with_registry(
         registry,
         integrity_key,
         tenant_id,
-        key_version,
         tenant_key.as_slice(),
     )?;
     Ok(WrappedTenantKey {
@@ -311,7 +296,7 @@ pub fn wrap_new_tenant_key_with_registry(
     })
 }
 
-/// 打开包装后的租户密钥。
+/// 打开包装后的租户主密钥。
 ///
 /// # Errors
 ///
@@ -319,19 +304,17 @@ pub fn wrap_new_tenant_key_with_registry(
 pub fn unwrap_tenant_key(
     encrypted_secret_key: &str,
     tenant_id: &str,
-    key_version: &str,
     master_key: &[u8],
 ) -> Result<Vec<u8>, TenantKeyError> {
     unwrap_tenant_key_with_registry(
         AlgorithmRegistry::global(),
         encrypted_secret_key,
         tenant_id,
-        key_version,
         master_key,
     )
 }
 
-/// 使用多版本 `RootMaterialKeyring` 解包并验证租户密钥摘要（支持许可证 `Rekey` 后无损解密历史租户密钥）。
+/// 使用多版本 `RootMaterialKeyring` 解包并验证租户主密钥摘要（支持许可证 `Rekey` 后无损解密存量租户密钥）。
 ///
 /// # Errors
 ///
@@ -339,13 +322,12 @@ pub fn unwrap_tenant_key(
 pub fn unwrap_and_verify_tenant_key_with_keyring(
     encrypted_secret_key: &str,
     tenant_id: &str,
-    key_version: &str,
     expected_digest: &str,
     keyring: &RootMaterialKeyring,
 ) -> Result<Zeroizing<Vec<u8>>, TenantKeyError> {
     let registry = AlgorithmRegistry::global();
     let envelope = parse_envelope(encrypted_secret_key, registry)?;
-    let expected_aad = envelope_aad(tenant_id, key_version);
+    let expected_aad = envelope_aad(tenant_id);
     if envelope.aad != expected_aad {
         return Err(TenantKeyError::InvalidEncoding);
     }
@@ -396,7 +378,6 @@ pub fn unwrap_and_verify_tenant_key_with_keyring(
                     if verify_secret_key_digest(
                         integrity_key,
                         tenant_id,
-                        key_version,
                         &raw_key,
                         expected_digest,
                     )? {
@@ -424,11 +405,10 @@ pub fn unwrap_tenant_key_with_registry(
     registry: &AlgorithmRegistry,
     encrypted_secret_key: &str,
     tenant_id: &str,
-    key_version: &str,
     master_key: &[u8],
 ) -> Result<Vec<u8>, TenantKeyError> {
     let envelope = parse_envelope(encrypted_secret_key, registry)?;
-    let expected_aad = envelope_aad(tenant_id, key_version);
+    let expected_aad = envelope_aad(tenant_id);
     if envelope.aad != expected_aad {
         return Err(TenantKeyError::InvalidEncoding);
     }
@@ -455,7 +435,6 @@ pub fn unwrap_tenant_key_with_registry(
 pub fn verify_secret_key_digest(
     integrity_key: &[u8],
     tenant_id: &str,
-    key_version: &str,
     tenant_secret_key: &[u8],
     digest: &str,
 ) -> Result<bool, TenantKeyError> {
@@ -464,7 +443,6 @@ pub fn verify_secret_key_digest(
         AlgorithmRegistry::global(),
         integrity_key,
         tenant_id,
-        key_version,
         tenant_secret_key,
     )?;
     Ok(bool::from(computed.as_bytes().ct_eq(digest.as_bytes())))
@@ -477,13 +455,11 @@ pub fn secret_key_digest(
     registry: &AlgorithmRegistry,
     integrity_key: &[u8],
     tenant_id: &str,
-    key_version: &str,
     tenant_secret_key: &[u8],
 ) -> Result<String, TenantKeyError> {
     let payload = Zeroizing::new(format!(
-        "{}:{}:{}",
+        "{}:{}",
         tenant_id,
-        key_version,
         STANDARD.encode(tenant_secret_key)
     ));
     Ok(sign_payload(
@@ -495,8 +471,8 @@ pub fn secret_key_digest(
 }
 
 #[must_use]
-pub fn envelope_aad(tenant_id: &str, key_version: &str) -> String {
-    format!("{tenant_id}:{key_version}")
+pub fn envelope_aad(tenant_id: &str) -> String {
+    tenant_id.to_owned()
 }
 
 /// 默认密钥元数据（kebab-case，对齐 Profile / DB 列语义）。
@@ -523,10 +499,9 @@ mod tests {
         let master_v2 = [21u8; 32];
         let integrity_v2 = [23u8; 32];
 
-        let wrapped_v1 = wrap_new_tenant_key_with_registry(
+        let wrapped = wrap_new_tenant_key_with_registry(
             &registry,
             "t1",
-            "v1",
             &master_v1,
             &integrity_v1,
             "commercial-root-protection:key_password:v1",
@@ -555,16 +530,16 @@ mod tests {
         .unwrap();
 
         let opened = unwrap_and_verify_tenant_key_with_keyring(
-            &wrapped_v1.encrypted_secret_key,
+            &wrapped.encrypted_secret_key,
             "t1",
-            "v1",
-            &wrapped_v1.secret_key_digest,
+            &wrapped.secret_key_digest,
             &keyring,
         )
         .unwrap();
-        assert_eq!(STANDARD.encode(&*opened), wrapped_v1.tenant_secret_key_b64);
+        assert_eq!(STANDARD.encode(&*opened), wrapped.tenant_secret_key_b64);
 
         let meta = default_key_metadata();
+        assert_eq!(meta["suite"], "suite/aes-256-gcm");
         assert_eq!(meta["dataAlg"], "aes-256-gcm");
         assert_eq!(meta["wrappingAlgorithm"], "aes-256-gcm");
     }

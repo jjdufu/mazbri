@@ -90,12 +90,6 @@ export const ACTION_LABELS: Record<string, string> = {
     "auditLogs.explicitActions.tenantCryptoProfileUpdate",
   "tenant.crypto_key_create": "auditLogs.explicitActions.tenantCryptoKeyCreate",
   "tenant.crypto_key_rotate": "auditLogs.explicitActions.tenantCryptoKeyRotate",
-  "tenant.crypto_key_activate":
-    "auditLogs.explicitActions.tenantCryptoKeyActivate",
-  "tenant.crypto_key_deprecate":
-    "auditLogs.explicitActions.tenantCryptoKeyDeprecate",
-  "tenant.crypto_key_disable":
-    "auditLogs.explicitActions.tenantCryptoKeyDisable",
   "tenant.crypto_export": "auditLogs.explicitActions.tenantCryptoExport",
   "tenant.crypto_verify": "auditLogs.explicitActions.tenantCryptoVerify",
   "password.first_login_change":
@@ -162,11 +156,6 @@ export const ACTION_LABELS: Record<string, string> = {
   "user.mfa_step_up": "auditLogs.explicitActions.userMfaStepUp",
   "user.mfa_step_up_end": "auditLogs.explicitActions.userMfaStepUpEnd",
   "user.token_refresh": "auditLogs.explicitActions.userTokenRefresh",
-  "tenant.request_key_create":
-    "auditLogs.explicitActions.tenantRequestKeyCreate",
-  "tenant.request_key_retire":
-    "auditLogs.explicitActions.tenantRequestKeyRetire",
-  "tenant.request_key_list": "auditLogs.explicitActions.tenantRequestKeyList",
   "tenant.crypto_key_list": "auditLogs.explicitActions.tenantCryptoKeyList",
   "tenant.enabled_change": "auditLogs.explicitActions.tenantEnabledChange",
   "apikey.list": "auditLogs.explicitActions.apikeyList",
@@ -473,8 +462,6 @@ export const DETAIL_LABELS: Record<string, string> = {
   require_signature: "auditLogs.detailLabels.requireSignature",
   nonce_ttl_seconds: "auditLogs.detailLabels.nonceTtlSeconds",
   clock_skew_seconds: "auditLogs.detailLabels.clockSkewSeconds",
-  current_key_version: "auditLogs.detailLabels.currentKeyVersion",
-  key_version: "auditLogs.detailLabels.keyVersion",
   mode: "auditLogs.detailLabels.mode",
   manifest: "auditLogs.detailLabels.manifest",
   checked: "auditLogs.detailLabels.checked",

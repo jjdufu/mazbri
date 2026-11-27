@@ -1,10 +1,8 @@
 use super::claims::MazbriClaims;
 use super::jwt_keys::JwtHs256Keyring;
 use super::tenant_security::{ActualRequestBytes, TenantAccessError};
-use crate::gateway::GatewayRequestTiming;
-use crate::gateway::request_binding::{
-    GatewayHttpPath, RequestBindingInput, enforce_request_binding, record_jwt_kid,
-};
+use crate::gateway::{GatewayHttpPath, GatewayRequestTiming};
+use crate::gateway::metrics::GATEWAY_JWT_KID_TOTAL;
 use crate::gateway::stage_log::{StageCtx, stage_log};
 use crate::gateway::validation::{GatewayRequest, GatewayRequestPayload, MAX_BODY_SIZE};
 use crate::ratelimit::{BandwidthPrepaid, LocalRateLimitDecision, LocalRateLimitInput};
@@ -137,6 +135,12 @@ impl IntoResponse for MiddlewareRejection {
     }
 }
 
+fn record_jwt_kid(kid: &str, result: &'static str) {
+    GATEWAY_JWT_KID_TOTAL
+        .with_label_values(&[kid, result])
+        .inc();
+}
+
 fn reject_jwt(reason: AuthFailureReason) -> Response {
     record_auth_failure(reason);
     JwtAuthError::InvalidToken.into_response()
@@ -195,7 +199,7 @@ fn log_auth_stage(
     started_at: Instant,
     request_id: &impl std::fmt::Display,
     claims: &MazbriClaims,
-    binding_outcome: &crate::gateway::request_binding::RequestBindingOutcome,
+    kid: &str,
     encrypted_request: bool,
 ) {
     let auth_elapsed = started_at.elapsed();
@@ -210,12 +214,8 @@ fn log_auth_stage(
             &stage_ids,
             "auth",
             auth_stage_ms,
-            auth_mode = binding_outcome.auth_mode,
-            kid = binding_outcome.kid.as_deref().unwrap_or(""),
-            nonce = binding_outcome.nonce_trunc.as_deref().unwrap_or(""),
-            sig_ok = binding_outcome.sig_ok,
-            key_lookup_ms = binding_outcome.key_lookup_ms,
-            verify_ms = binding_outcome.verify_ms,
+            auth_mode = "bearer",
+            kid = kid,
             encrypted_request,
             message = "Gateway auth stage completed",
         );
@@ -264,15 +264,12 @@ async fn enforce_gateway_tenant_security(
     }
 }
 
-async fn bind_gateway_invoke_request(
-    state: &AppState,
+fn prepare_gateway_invoke_request(
     parts: &mut axum::http::request::Parts,
     claims: &MazbriClaims,
     tenant_context: TenantContext,
-    path_and_query: &str,
     body_bytes: &[u8],
-    default_kid: String,
-) -> Result<crate::gateway::request_binding::RequestBindingOutcome, MiddlewareRejection> {
+) -> Result<(), MiddlewareRejection> {
     if !claims.can_invoke() {
         record_caller_rejection_scope_with_bytes(
             &parts.extensions,
@@ -286,36 +283,7 @@ async fn bind_gateway_invoke_request(
         );
         return Err(JwtAuthError::InsufficientScope.into_response().into());
     }
-    let tenant_uuid = tenant_context.tenant_id;
-    prepare_gateway_invoke_extensions(parts, claims, tenant_context, body_bytes)?;
-    let envelope_nonce = match parts.extensions.get::<GatewayRequestPayload>() {
-        Some(GatewayRequestPayload::Encrypted(env)) => {
-            Some((env.key_version.as_str(), env.nonce.as_str()))
-        }
-        _ => None,
-    };
-    let mut binding_outcome = enforce_request_binding(RequestBindingInput {
-        crypto: &state.proxy_state.crypto_state,
-        tenant_id: tenant_uuid,
-        require: state.request_binding.require_request_binding,
-        nonce_prefix: &state.request_binding.nonce_redis_prefix,
-        method: "POST",
-        path_and_query,
-        headers: &parts.headers,
-        body: body_bytes,
-        envelope_nonce,
-    })
-    .await
-    .map_err(IntoResponse::into_response)?;
-    if binding_outcome.envelope_nonce_prechecked {
-        parts
-            .extensions
-            .insert(crate::crypto::EnvelopeNoncePrechecked);
-    }
-    if binding_outcome.kid.is_none() {
-        binding_outcome.kid = Some(default_kid);
-    }
-    Ok(binding_outcome)
+    prepare_gateway_invoke_extensions(parts, claims, tenant_context, body_bytes)
 }
 
 /// # Errors
@@ -386,29 +354,11 @@ async fn jwt_auth_stage(
     parts
         .extensions
         .insert(GatewayHttpPath(path_and_query.clone()));
-    let binding_outcome = if parts.uri.path() == "/api/v1/gateway" {
-        bind_gateway_invoke_request(
-            state,
-            &mut parts,
-            &claims,
-            tenant_context,
-            &path_and_query,
-            &body_bytes,
-            kid,
-        )
-        .await?
+    if parts.uri.path() == "/api/v1/gateway" {
+        prepare_gateway_invoke_request(&mut parts, &claims, tenant_context, &body_bytes)?;
     } else {
         parts.extensions.insert(tenant_context);
-        crate::gateway::request_binding::RequestBindingOutcome {
-            auth_mode: "bearer",
-            kid: Some(kid),
-            nonce_trunc: None,
-            sig_ok: None,
-            key_lookup_ms: None,
-            verify_ms: None,
-            envelope_nonce_prechecked: false,
-        }
-    };
+    }
     if let Some(timing) = parts.extensions.get_mut::<GatewayRequestTiming>() {
         timing.auth_ms = mazbri_core::num::millis_u64(started_at.elapsed());
     }
@@ -421,7 +371,7 @@ async fn jwt_auth_stage(
         started_at,
         &request_id,
         &claims,
-        &binding_outcome,
+        &kid,
         encrypted_request,
     );
     Ok(Request::from_parts(parts, Body::from(body_bytes)))

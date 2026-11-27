@@ -3,11 +3,7 @@
 
 读取 docs/protocol-vectors/tenant-integration-v1.json，用 `cryptography` 独立实现：
 - 传输信封：加密 + AAD + 外挂 MAC（canonical string）→ 与向量的 ciphertext / tag / signature 逐字节比对
-- 请求绑定：hmac-v1、rsa-v1（PKCS#1 v1.5，确定性）、ed25519-v1 → 签名比对；ecdsa-v1 → 验签（非确定性）
 - 回调签名：HMAC-SHA256("{ts}.{compact json}")
-
-依赖：pip install cryptography（>= 42）。
-sm2-v1 需要 SM2 签名实现（`cryptography` 不支持），本示例跳过；可用 gmssl 等国密库按同一 canonical string 验签。
 
 用法：python3 verify_vectors.py [path/to/tenant-integration-v1.json]
 """
@@ -20,28 +16,20 @@ import json
 import sys
 from pathlib import Path
 
-from cryptography.hazmat.primitives import hashes, padding as sympad, serialization
-from cryptography.hazmat.primitives.asymmetric import ec, ed25519, padding, rsa
-from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
+from cryptography.hazmat.primitives import hashes, padding as sympad
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM, ChaCha20Poly1305
 
-try:  # cryptography >= 43 把 DES/TripleDES 挪到 decrepit
+try:
     from cryptography.hazmat.decrepit.ciphers.algorithms import TripleDES
 except ImportError:  # pragma: no cover
     TripleDES = algorithms.TripleDES  # type: ignore[attr-defined]
 
 VECTORS = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).resolve().parents[2] / "protocol-vectors" / "tenant-integration-v1.json"
-b64 = lambda b: base64.b64encode(b).decode()  # noqa: E731  标准 base64（带 padding）
+b64 = lambda b: base64.b64encode(b).decode()  # noqa: E731
 
 
-def b64url_nopad(b: bytes) -> str:
-    return base64.urlsafe_b64encode(b).rstrip(b"=").decode()
-
-
-# ---------------------------------------------------------------- 传输信封
 def encrypt(alg: str, key: bytes, iv: bytes, aad: bytes, pt: bytes) -> tuple[bytes, bytes]:
-    """返回 (ciphertext 不含 tag, tag)；非 AEAD 的 tag 为空。"""
     if alg.endswith("-gcm"):
         out = AESGCM(key).encrypt(iv, pt, aad)
         return out[:-16], out[-16:]
@@ -51,7 +39,7 @@ def encrypt(alg: str, key: bytes, iv: bytes, aad: bytes, pt: bytes) -> tuple[byt
     if alg.startswith("sm4"):
         cipher_alg = algorithms.SM4(key)
     elif alg.startswith("des"):
-        cipher_alg = TripleDES(key)  # 8 字节密钥 = 单 DES
+        cipher_alg = TripleDES(key)
     else:
         cipher_alg = algorithms.AES(key)
     if "-cbc" in alg or "-ecb" in alg:
@@ -99,7 +87,7 @@ def check_transport(doc: dict) -> int:
         direction = t.get("direction", "c2g")
         key, iv = bytes.fromhex(t["data_key_hex"]), bytes.fromhex(t["iv_hex"])
         expected_enc = hkdf_sha256(
-            c["key_version"].encode(),
+            c["tenant_id"].encode(),
             master_key,
             f"mazbri-transport-v1|{c['tenant_id']}|{direction}|enc".encode(),
             len(key),
@@ -108,7 +96,7 @@ def check_transport(doc: dict) -> int:
         env = json.loads(e["envelope_json"])
         mac_alg_str = t["mac_alg"] or ""
         expected_aad = "\n".join([
-            "v1", direction, c["tenant_id"], c["http_path"], env["keyVersion"],
+            "v1", direction, c["tenant_id"], c["http_path"],
             t["data_alg"], mac_alg_str, str(env["timestamp"]), env["nonce"], e["iv_b64"],
         ])
         aead = t["data_alg"].endswith("-gcm") or t["data_alg"] == "chacha20-poly1305"
@@ -121,16 +109,14 @@ def check_transport(doc: dict) -> int:
         sig = ""
         if t["mac_alg"]:
             expected_mac = hkdf_sha256(
-                c["key_version"].encode(),
+                c["tenant_id"].encode(),
                 master_key,
                 f"mazbri-transport-v1|{c['tenant_id']}|{direction}|mac".encode(),
                 32,
             )
             assert bytes.fromhex(t["mac_key_hex"]) == expected_mac, (t["name"], "hkdf mac key")
             canon = "\n".join([
-                "v1", direction, c["tenant_id"], c["http_path"], env["keyVersion"],
-                t["data_alg"], mac_alg_str, str(env["timestamp"]), env["nonce"],
-                env["iv"], env["ciphertext"], env["tag"],
+                expected_aad, env["ciphertext"], env["tag"],
             ])
             assert canon == e["mac_canonical_string"], t["name"]
             sig = mac(t["mac_alg"], expected_mac, canon.encode()).hex()
@@ -138,74 +124,6 @@ def check_transport(doc: dict) -> int:
         n += 1
         print(f"  ok transport {t['name']}")
     return n
-
-
-# ---------------------------------------------------------------- 请求绑定
-def resolve_key(doc: dict, ref: str):
-    node = doc
-    for part in ref.split(".")[:2]:
-        node = node[part]
-    rest = ref.split(".", 2)[2:] if ref.count(".") >= 2 else []
-    return node[rest[0]] if rest else node
-
-
-def load_ed25519(pem: str) -> ed25519.Ed25519PrivateKey:
-    """mazbri 生成的 Ed25519 私钥是 PKCS#8 v2（RFC 5958，带 [1] publicKey）。
-
-    `cryptography` 只解析 v1 PrivateKeyInfo；失败时从 DER 取出 32 字节种子
-    （OCTET STRING 内层的 04 20 <seed>）。也可先 `openssl pkey -in k.pem -out k1.pem` 转成 v1。
-    """
-    try:
-        key = serialization.load_pem_private_key(pem.encode(), None)
-        assert isinstance(key, ed25519.Ed25519PrivateKey)
-        return key
-    except ValueError:
-        der = base64.b64decode("".join(l for l in pem.splitlines() if not l.startswith("-----")))
-        i = der.index(b"\x04\x22\x04\x20")
-        return ed25519.Ed25519PrivateKey.from_private_bytes(der[i + 4:i + 36])
-
-
-def check_binding(doc: dict) -> tuple[int, list[str]]:
-    n, skipped = 0, []
-    for b in doc["binding"]:
-        e = b["expected"]
-        canon = "\n".join([b["method"], b["path_and_query"], str(b["timestamp"]), b["nonce"], b["body_utf8"]])
-        assert canon == e["canonical_string"], b["name"]
-        msg = canon.encode()
-        sv, alg = b["signature_version"], b["alg"]
-        sig_expected = base64.b64decode(e["signature_b64"])
-        if sv == "hmac-v1":
-            key = base64.b64decode(resolve_key(doc, b["key"]))
-            assert mac(alg, key, msg) == sig_expected, b["name"]
-        elif sv == "rsa-v1":  # PKCS#1 v1.5（不是 PSS），确定性
-            priv = serialization.load_pem_private_key(resolve_key(doc, b["key"])["private_key_pem"].encode(), None)
-            assert isinstance(priv, rsa.RSAPrivateKey)
-            h = {"sha256": hashes.SHA256(), "sha384": hashes.SHA384(), "sha512": hashes.SHA512()}[alg.rsplit("-", 1)[1]]
-            assert priv.sign(msg, padding.PKCS1v15(), h) == sig_expected, b["name"]
-        elif sv == "ed25519-v1":
-            priv = load_ed25519(resolve_key(doc, b["key"])["private_key_pem"])
-            assert priv.sign(msg) == sig_expected, b["name"]
-            pub = serialization.load_pem_public_key(resolve_key(doc, b["key"])["public_key_pem"].encode())
-            assert isinstance(pub, ed25519.Ed25519PublicKey)
-            pub.verify(sig_expected, msg)
-        elif sv == "ecdsa-v1":  # P1363 r||s，非确定性 → 只验签
-            pub = serialization.load_pem_public_key(resolve_key(doc, b["key"])["public_key_pem"].encode())
-            assert isinstance(pub, ec.EllipticCurvePublicKey)
-            half = len(sig_expected) // 2
-            der = encode_dss_signature(int.from_bytes(sig_expected[:half], "big"), int.from_bytes(sig_expected[half:], "big"))
-            h = hashes.SHA256() if alg.endswith("sha256") else hashes.SHA384()
-            pub.verify(der, msg, ec.ECDSA(h))
-        else:
-            skipped.append(b["name"])
-            print(f"  skip binding {b['name']}（cryptography 无 SM2 签名）")
-            continue
-        expect_headers = {"x-mazbri-timestamp": str(b["timestamp"]), "x-mazbri-nonce": b["nonce"],
-                          "x-mazbri-signature": e["signature_b64"], "x-mazbri-signature-input": f"{alg}=v1",
-                          "x-mazbri-key-id": b["kid"]}
-        assert expect_headers == e["headers"], b["name"]
-        n += 1
-        print(f"  ok binding {b['name']}")
-    return n, skipped
 
 
 def check_callback(doc: dict) -> None:
@@ -222,9 +140,8 @@ def main() -> int:
     doc = json.loads(VECTORS.read_text())
     assert doc["test_only"] is True
     t = check_transport(doc)
-    b, skipped = check_binding(doc)
     check_callback(doc)
-    print(f"PASS transport={t}/{len(doc['transport'])} binding={b}/{len(doc['binding'])} callback=1 skipped={skipped}")
+    print(f"PASS transport={t}/{len(doc['transport'])} callback=1")
     return 0
 
 

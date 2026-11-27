@@ -139,7 +139,9 @@
       "refresh": "刷新",
       "back": "返回",
       "retry": "重试",
-      "edit": "编辑"
+      "edit": "编辑",
+      "enable": "启用",
+      "disable": "停用"
     },
     "searchPopover": {
       "tooltip": "搜索与筛选",
@@ -1433,9 +1435,6 @@
       "tenantCryptoProfileUpdate": "更新租户加密配置",
       "tenantCryptoKeyCreate": "创建租户加密密钥",
       "tenantCryptoKeyRotate": "轮换租户加密密钥",
-      "tenantCryptoKeyActivate": "激活租户加密密钥",
-      "tenantCryptoKeyDeprecate": "废弃租户加密密钥",
-      "tenantCryptoKeyDisable": "禁用租户加密密钥",
       "tenantCryptoExport": "导出租户加密数据",
       "tenantCryptoVerify": "校验租户加密密钥",
       "passwordFirstLoginChange": "首次登录修改密码",
@@ -1490,9 +1489,6 @@
       "userMfaStepUp": "MFA 提权",
       "userMfaStepUpEnd": "结束 MFA 提权",
       "userTokenRefresh": "刷新令牌",
-      "tenantRequestKeyCreate": "创建请求签名密钥",
-      "tenantRequestKeyRetire": "退役请求签名密钥",
-      "tenantRequestKeyList": "查看请求签名密钥",
       "tenantCryptoKeyList": "查看租户传输加密配置",
       "tenantEnabledChange": "启停租户",
       "apikeyList": "查看 API 密钥",
@@ -1667,8 +1663,6 @@
       "requireSignature": "需要签名",
       "nonceTtlSeconds": "Nonce 有效期（秒）",
       "clockSkewSeconds": "时钟偏差容忍（秒）",
-      "currentKeyVersion": "当前密钥版本",
-      "keyVersion": "密钥版本",
       "mode": "模式",
       "manifest": "清单",
       "checked": "检查数",
@@ -2969,9 +2963,11 @@
         "whitelist": "IP 白名单",
         "accessStrategy": "接入策略",
         "transportEncryption": "传输加密",
-        "account": "账户余额",
+        "account": "账户与流水",
         "products": "已开通产品",
-        "overview360": "概览 360"
+        "overview360": "概览",
+        "credentialsAndSecurity": "凭据与安全",
+        "rateLimitAndCache": "限流与缓存"
       },
       "basicInfo": {
         "title": "基本信息",
@@ -2993,9 +2989,8 @@
         "currentStatus": "当前平台状态：{status}"
       },
       "sections": {
-        "strategy": "传输加密策略",
-        "keyVersions": "密钥版本",
-        "effectiveContract": "生效接入契约摘要"
+        "strategy": "报文传输加密",
+        "secretKey": "租户传输密钥"
       },
       "fields": {
         "encryptionMode": "加密模式",
@@ -3004,13 +2999,12 @@
         "macAlg": "MAC 算法",
         "allowInsecure": "允许兼容旧版算法",
         "advancedAlgorithms": "高级：单独指定算法",
-        "currentKeyVersion": "当前密钥版本",
         "signatureCheck": "签名校验",
         "nonceTtlSeconds": "Nonce 有效期（秒）",
-        "clockSkewSeconds": "时间戳容忍窗口（秒）"
+        "clockSkewSeconds": "时间戳容忍窗口（秒）",
+        "digest": "密钥摘要"
       },
       "placeholders": {
-        "selectActiveKey": "选择有效密钥",
         "selectSuite": "选择推荐套件",
         "selectDataAlg": "请选择数据加密算法",
         "selectMacAlg": "请选择 MAC 算法"
@@ -3032,7 +3026,9 @@
         "macRequired": "当前数据算法为非 AEAD，必须配置 MAC",
         "allowInsecure": "仅在兼容旧系统时勾选；启用后才可选 Legacy 算法",
         "allowInsecureAdminOnly": "仅超级管理员可开启「允许不安全算法」",
-        "legacyRisk": "已选兼容弱算法（{algorithms}），仅建议在存量系统过渡期使用"
+        "legacyRisk": "已选兼容弱算法（{algorithms}），仅建议在存量系统过渡期使用",
+        "keyRequiredHint": "启用请求加密或双向加密前需先生成租户传输密钥",
+        "mustCreateKeyBeforeEnable": "当前尚未生成传输密钥，请先点击上方「生成密钥」后再保存加密策略"
       },
       "modes": {
         "none": "关闭",
@@ -3048,31 +3044,21 @@
       },
       "actions": {
         "goRootPackage": "前往授权管理",
-        "createKey": "新建",
-        "rotateKey": "轮换",
-        "activate": "激活",
-        "deprecate": "废弃",
-        "disable": "禁用",
-        "delete": "删除"
+        "createKey": "生成密钥",
+        "rotateKey": "轮换密钥",
+        "delete": "删除密钥"
       },
       "messages": {
-        "deleteKeyConfirm": "确定永久删除密钥版本 {version} 吗？"
-      },
-      "table": {
-        "version": "版本",
-        "status": "状态",
-        "algorithmSuite": "算法套件",
-        "createdAt": "创建时间",
-        "operations": "操作"
+        "rotateKeyConfirm": "轮换后新密钥将立即生效，旧密钥同步失效。确定立即轮换租户传输密钥吗？",
+        "deleteKeyConfirm": "删除传输密钥将同时关闭报文加密策略，且不可恢复。确定删除吗？"
       },
       "secretDialog": {
         "title": "租户密钥",
-        "warning": "明文密钥只显示一次，关闭后无法再次查看。",
-        "fields": {
-          "keyVersion": "密钥版本",
-          "algorithm": "加密算法",
-          "signatureAlgorithm": "签名算法"
-        }
+        "warning": "明文密钥只显示一次，关闭后无法再次查看。"
+      },
+      "keyStatus": {
+        "ready": "已配置",
+        "unconfigured": "未生成"
       }
     },
     "account": {

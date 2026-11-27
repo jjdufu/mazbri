@@ -1,4 +1,5 @@
 export { AppShell } from "./AppShell";
+export { GlobalCommandPalette } from "./GlobalCommandPalette";
 export { LockScreen } from "./LockScreen";
 export { MfaStepUpHost } from "./MfaStepUpHost";
 export { PersonalSecurityDrawer } from "./PersonalSecurityDrawer";

@@ -34,7 +34,6 @@ import type {
   UpdateTenantCryptoProfileRequest,
   TenantCryptoBundle,
   TenantCryptoKeyCreateResponse,
-  TenantCryptoKey,
 } from "@/types/api/tenant";
 import type {
   ApiKeyListResponse,
@@ -246,46 +245,9 @@ export function rotateTenantCryptoKey(code: string, signal?: AbortSignal) {
     signal,
   });
 }
-export function activateTenantCryptoKey(
-  code: string,
-  version: string,
-  signal?: AbortSignal,
-) {
-  return request.post<TenantCryptoKey>({
-    url: tenantPath(code, "crypto-keys", version, "activate"),
-    showSuccessMessage: true,
-    signal,
-  });
-}
-export function deprecateTenantCryptoKey(
-  code: string,
-  version: string,
-  signal?: AbortSignal,
-) {
-  return request.post<TenantCryptoKey>({
-    url: tenantPath(code, "crypto-keys", version, "deprecate"),
-    showSuccessMessage: true,
-    signal,
-  });
-}
-export function disableTenantCryptoKey(
-  code: string,
-  version: string,
-  signal?: AbortSignal,
-) {
-  return request.post<TenantCryptoKey>({
-    url: tenantPath(code, "crypto-keys", version, "disable"),
-    showSuccessMessage: true,
-    signal,
-  });
-}
-export function deleteTenantCryptoKey(
-  code: string,
-  version: string,
-  signal?: AbortSignal,
-) {
-  return request.del<TenantCryptoKey>({
-    url: tenantPath(code, "crypto-keys", version),
+export function deleteTenantCryptoKey(code: string, signal?: AbortSignal) {
+  return request.del<void>({
+    url: tenantPath(code, "crypto-keys"),
     showSuccessMessage: true,
     signal,
   });

@@ -286,28 +286,9 @@ pub const RULES: &[RouteRule] = &[
     rule("GET", "/tenants/{code}/config/ratelimit", AnyRole),
     rule("PUT", "/tenants/{code}/config/ratelimit", Roles(BIZ)),
     rule("GET", "/tenants/{code}/crypto", AnyRole),
+    rule("DELETE", "/tenants/{code}/crypto-keys", Roles(BIZ)),
     rule("POST", "/tenants/{code}/crypto-keys", Roles(BIZ)),
     rule("POST", "/tenants/{code}/crypto-keys/rotate", Roles(BIZ)),
-    rule(
-        "DELETE",
-        "/tenants/{code}/crypto-keys/{version}",
-        Roles(BIZ),
-    ),
-    rule(
-        "POST",
-        "/tenants/{code}/crypto-keys/{version}/activate",
-        Roles(BIZ),
-    ),
-    rule(
-        "POST",
-        "/tenants/{code}/crypto-keys/{version}/deprecate",
-        Roles(BIZ),
-    ),
-    rule(
-        "POST",
-        "/tenants/{code}/crypto-keys/{version}/disable",
-        Roles(BIZ),
-    ),
     rule("PUT", "/tenants/{code}/crypto-profile", Roles(BIZ)),
     rule("PUT", "/tenants/{code}/enabled", Roles(BIZ)),
     rule("GET", "/tenants/{code}/products", AnyRole),
@@ -326,13 +307,6 @@ pub const RULES: &[RouteRule] = &[
     rule(
         "POST",
         "/tenants/{code}/ratelimit/commands/{id}/cancel",
-        Roles(BIZ),
-    ),
-    rule("GET", "/tenants/{code}/request-keys", AnyRole),
-    rule("POST", "/tenants/{code}/request-keys", Roles(BIZ)),
-    rule(
-        "POST",
-        "/tenants/{code}/request-keys/{kid}/retire",
         Roles(BIZ),
     ),
     rule("GET", "/tenants/{code}/spend", Roles(BIZ)),

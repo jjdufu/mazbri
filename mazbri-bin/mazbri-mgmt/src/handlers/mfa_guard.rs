@@ -605,12 +605,7 @@ mod tests {
                 (crypto, "update_crypto_profile"),
                 (crypto, "create_crypto_key"),
                 (crypto, "rotate_crypto_key"),
-                (crypto, "activate_crypto_key"),
-                (crypto, "deprecate_crypto_key"),
-                (crypto, "disable_crypto_key"),
                 (crypto, "delete_crypto_key"),
-                (crypto, "create_request_key"),
-                (crypto, "retire_request_key"),
             ],
             "Category::Key",
         );

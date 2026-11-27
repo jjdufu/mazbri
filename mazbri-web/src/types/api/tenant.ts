@@ -293,70 +293,49 @@ export interface RemoveFromWhitelistResponse {
   ip_address: string;
 }
 export type TenantEncryptionMode = "none" | "request" | "full";
-export type TenantCryptoKeyStatus =
-  | "pending"
-  | "active"
-  | "deprecated"
-  | "disabled"
-  | "compromised";
+
 export interface TenantCryptoProfile {
   tenant_id: string;
   encryption_mode: TenantEncryptionMode;
-  profile_version: number;
   suite?: string | null;
   data_alg?: string | null;
   mac_alg?: string | null;
   require_signature: boolean;
   allow_insecure: boolean;
-  require_request_binding: boolean;
-  signature_version: string;
-  current_key_version?: string | null;
   nonce_ttl_seconds: number;
   clock_skew_seconds: number;
   config: Record<string, unknown>;
   created_at: ISODateString;
   updated_at: ISODateString;
 }
+
 export interface UpdateTenantCryptoProfileRequest {
   encryptionMode: TenantEncryptionMode;
   suite?: string | null;
   dataAlg?: string | null;
   macAlg?: string | null;
   allowInsecure?: boolean;
-  requireSignature: boolean;
-  requireRequestBinding?: boolean;
-  signatureVersion?: string;
+  requireSignature?: boolean;
   nonceTtlSeconds: number;
   clockSkewSeconds: number;
-  currentKeyVersion?: string;
 }
+
 export interface TenantCryptoKey {
   id: string;
   tenant_id: string;
-  key_version: string;
   secret_key_digest: string;
   wrapping_key_id: string;
   wrapping_algorithm: string;
-  data_algorithm: string;
-  signature_algorithm: string;
-  status: TenantCryptoKeyStatus;
-  not_before?: ISODateString;
-  expires_at?: ISODateString;
-  activated_at?: ISODateString;
-  deprecated_at?: ISODateString;
-  disabled_at?: ISODateString;
-  last_used_at?: ISODateString;
+  last_used_at?: ISODateString | null;
   created_at: ISODateString;
   updated_at: ISODateString;
   metadata: Record<string, unknown>;
 }
+
 export interface TenantCryptoActions {
   update_profile: boolean;
   create_key: boolean;
   rotate_key: boolean;
-  activate_key: boolean;
-  deprecate_key: boolean;
-  disable_key: boolean;
   delete_key: boolean;
   allow_insecure: boolean;
   manage_root_package: boolean;
@@ -379,18 +358,18 @@ export interface TenantCryptoLicenseStatus {
   secondsToGraceEnd: number | null;
 }
 
-/** GET /tenants/{code}/crypto 统一契约。 */
+/** GET /tenants/{code}/crypto 统一无版本单密钥契约。 */
 export interface TenantCryptoBundle {
   profile: TenantCryptoProfile;
-  keys: TenantCryptoKey[];
+  key: TenantCryptoKey | null;
   license_status: TenantCryptoLicenseStatus;
   actions: TenantCryptoActions;
 }
+
 export interface TenantCryptoKeyCreateResponse {
-  keyVersion: string;
+  id: string;
   tenantSecretKey: string;
-  algorithm: string;
-  signatureAlgorithm: string;
   shownOnce: boolean;
-  status: TenantCryptoKeyStatus;
+  createdAt: ISODateString;
+  updatedAt: ISODateString;
 }

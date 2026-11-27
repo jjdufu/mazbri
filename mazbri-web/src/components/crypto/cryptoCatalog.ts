@@ -36,7 +36,7 @@ export interface CryptoAlgorithmMeta {
 /** 命名套件（优先选择） */
 export const CRYPTO_SUITES: readonly CryptoSuiteMeta[] = [
   {
-    id: "suite/tenant-default-2026-11",
+    id: "suite/aes-256-gcm",
     labelKey: "tenant.transportEncryption.suites.tenantDefault",
     dataAlg: "aes-256-gcm",
     macAlg: null,
