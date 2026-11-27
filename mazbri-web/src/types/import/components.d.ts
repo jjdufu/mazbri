@@ -105,6 +105,7 @@ declare module 'vue' {
     ElTooltip: typeof import('element-plus/es')['ElTooltip']
     ElTree: typeof import('element-plus/es')['ElTree']
     EmptyState: typeof import('./../../components/common/empty-state/index.vue')['default']
+    EntityIdentityBar: typeof import('./../../components/common/entity-identity-bar/index.vue')['default']
     FilePicker: typeof import('./../../components/common/file-picker/index.vue')['default']
     HoppAutocomplete: typeof import('./../../components/common/hopp-autocomplete/index.vue')['default']
     HoppAutoComplete: typeof import('./../../components/common/hopp-autocomplete/index.vue')['default']

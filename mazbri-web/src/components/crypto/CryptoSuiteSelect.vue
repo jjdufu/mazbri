@@ -1,6 +1,14 @@
 <template>
   <div class="crypto-suite-select" :class="{ disabled }">
-    <div class="field-block">
+    <ElSegmented
+      :model-value="selectionMode"
+      :options="modeOptions"
+      :disabled="disabled"
+      class="mode-segmented"
+      @change="onModeChange"
+    />
+
+    <div v-if="selectionMode === 'suite'" class="field-block">
       <ElSelect
         :model-value="modelValue.suite ?? undefined"
         clearable
@@ -26,6 +34,85 @@
       <div v-if="selectedSuiteHint" class="field-hint">{{ selectedSuiteHint }}</div>
     </div>
 
+    <template v-else>
+      <div class="advanced-grid">
+        <div class="field-block">
+          <div class="field-label">
+            {{ $t("tenant.transportEncryption.fields.dataAlg") }}
+          </div>
+          <ElSelect
+            :model-value="modelValue.dataAlg ?? undefined"
+            clearable
+            filterable
+            :disabled="disabled"
+            :placeholder="
+              $t('tenant.transportEncryption.placeholders.selectDataAlg')
+            "
+            @update:model-value="onDataAlgChange"
+          >
+            <ElOption
+              v-for="alg in dataOptions"
+              :key="alg.id"
+              :label="algOptionLabel(alg)"
+              :value="alg.id"
+            >
+              <div class="option-row">
+                <span>{{ alg.label }}</span>
+                <ElTag size="small" :type="securityTagType(alg.security)">
+                  {{ $t(securityClassLabelKey(alg.security)) }}
+                </ElTag>
+              </div>
+            </ElOption>
+          </ElSelect>
+        </div>
+        <div class="field-block">
+          <div class="field-label">
+            {{ $t("tenant.transportEncryption.fields.macAlg") }}
+            <span v-if="macRequired" class="required-mark">*</span>
+          </div>
+          <ElSelect
+            :model-value="modelValue.macAlg ?? undefined"
+            clearable
+            filterable
+            :disabled="disabled"
+            :placeholder="
+              $t('tenant.transportEncryption.placeholders.selectMacAlg')
+            "
+            @update:model-value="onMacAlgChange"
+          >
+            <ElOption
+              v-for="alg in macOptions"
+              :key="alg.id"
+              :label="algOptionLabel(alg)"
+              :value="alg.id"
+            >
+              <div class="option-row">
+                <span>{{ alg.label }}</span>
+                <ElTag size="small" :type="securityTagType(alg.security)">
+                  {{ $t(securityClassLabelKey(alg.security)) }}
+                </ElTag>
+              </div>
+            </ElOption>
+          </ElSelect>
+          <div v-if="macRequired" class="field-hint">
+            {{ $t("tenant.transportEncryption.hints.macRequired") }}
+          </div>
+        </div>
+      </div>
+
+      <ElAlert
+        v-if="legacyAlgorithms.length > 0"
+        type="warning"
+        show-icon
+        :closable="false"
+        :title="
+          $t('tenant.transportEncryption.hints.legacyRisk', {
+            algorithms: legacyAlgorithms.map((item) => item.label).join(', '),
+          })
+        "
+      />
+    </template>
+
     <div class="field-block">
       <CommonSwitchRow>
         <ElSwitch
@@ -45,78 +132,6 @@
         }}
       </div>
     </div>
-
-    <ElCollapse v-model="advancedOpen" class="advanced-collapse">
-      <ElCollapseItem
-        name="advanced"
-        :title="$t('tenant.transportEncryption.fields.advancedAlgorithms')"
-      >
-        <div class="advanced-grid">
-          <div class="field-block">
-            <div class="field-label">
-              {{ $t("tenant.transportEncryption.fields.dataAlg") }}
-            </div>
-            <ElSelect
-              :model-value="modelValue.dataAlg ?? undefined"
-              clearable
-              filterable
-              :disabled="disabled"
-              :placeholder="
-                $t('tenant.transportEncryption.placeholders.selectDataAlg')
-              "
-              @update:model-value="onDataAlgChange"
-            >
-              <ElOption
-                v-for="alg in dataOptions"
-                :key="alg.id"
-                :label="algOptionLabel(alg)"
-                :value="alg.id"
-              >
-                <div class="option-row">
-                  <span>{{ alg.label }}</span>
-                  <ElTag size="small" :type="securityTagType(alg.security)">
-                    {{ $t(securityClassLabelKey(alg.security)) }}
-                  </ElTag>
-                </div>
-              </ElOption>
-            </ElSelect>
-          </div>
-          <div class="field-block">
-            <div class="field-label">
-              {{ $t("tenant.transportEncryption.fields.macAlg") }}
-              <span v-if="macRequired" class="required-mark">*</span>
-            </div>
-            <ElSelect
-              :model-value="modelValue.macAlg ?? undefined"
-              clearable
-              filterable
-              :disabled="disabled"
-              :placeholder="
-                $t('tenant.transportEncryption.placeholders.selectMacAlg')
-              "
-              @update:model-value="onMacAlgChange"
-            >
-              <ElOption
-                v-for="alg in macOptions"
-                :key="alg.id"
-                :label="algOptionLabel(alg)"
-                :value="alg.id"
-              >
-                <div class="option-row">
-                  <span>{{ alg.label }}</span>
-                  <ElTag size="small" :type="securityTagType(alg.security)">
-                    {{ $t(securityClassLabelKey(alg.security)) }}
-                  </ElTag>
-                </div>
-              </ElOption>
-            </ElSelect>
-            <div v-if="macRequired" class="field-hint">
-              {{ $t("tenant.transportEncryption.hints.macRequired") }}
-            </div>
-          </div>
-        </div>
-      </ElCollapseItem>
-    </ElCollapse>
   </div>
 </template>
 
@@ -135,12 +150,15 @@ import {
   type SecurityClass,
 } from "./cryptoCatalog";
 
-export interface CryptoSuiteSelectValue {
-  suite: string | null;
-  dataAlg: string | null;
-  macAlg: string | null;
-  allowInsecure: boolean;
-}
+import {
+  applySelectionModeChange,
+  detectLegacyAlgorithms,
+  resolveInitialSelectionMode,
+  type CryptoSelectionMode,
+  type CryptoSuiteSelectValue,
+} from "./cryptoSuiteState";
+
+export type { CryptoSuiteSelectValue };
 
 const props = withDefaults(
   defineProps<{
@@ -159,7 +177,24 @@ const emit = defineEmits<{
   "update:modelValue": [CryptoSuiteSelectValue];
 }>();
 
-const advancedOpen = ref<string[]>([]);
+const selectionMode = ref<CryptoSelectionMode>(
+  resolveInitialSelectionMode(props.modelValue),
+);
+
+const modeOptions = computed(() => [
+  {
+    label: $t("tenant.transportEncryption.modes.suite"),
+    value: "suite" as const,
+  },
+  {
+    label: $t("tenant.transportEncryption.modes.custom"),
+    value: "custom" as const,
+  },
+]);
+
+const legacyAlgorithms = computed(() =>
+  detectLegacyAlgorithms(props.modelValue),
+);
 
 const dataOptions = computed(() =>
   dataAlgorithmOptions(props.modelValue.allowInsecure),
@@ -189,16 +224,21 @@ const macRequired = computed(() => {
 });
 
 watch(
-  () => [props.modelValue.dataAlg, props.modelValue.macAlg],
-  ([dataAlg, macAlg]) => {
-    if (dataAlg || macAlg) {
-      if (!advancedOpen.value.includes("advanced")) {
-        advancedOpen.value = ["advanced"];
-      }
+  () => [props.modelValue.suite, props.modelValue.dataAlg, props.modelValue.macAlg] as const,
+  ([suite, dataAlg, macAlg]) => {
+    if (suite) {
+      selectionMode.value = "suite";
+    } else if (dataAlg || macAlg) {
+      selectionMode.value = "custom";
     }
   },
-  { immediate: true },
 );
+
+const onModeChange = (value: string | number) => {
+  const next: CryptoSelectionMode = value === "custom" ? "custom" : "suite";
+  selectionMode.value = next;
+  emit("update:modelValue", applySelectionModeChange(props.modelValue, next));
+};
 
 const patch = (partial: Partial<CryptoSuiteSelectValue>) => {
   emit("update:modelValue", { ...props.modelValue, ...partial });

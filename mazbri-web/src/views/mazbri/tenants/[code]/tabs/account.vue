@@ -18,74 +18,83 @@
       </template>
 
       <div class="account-overview-grid">
-        <div class="balance-content">
-          <div class="balance-label">
-            {{ $t("tenant.account.balanceLabel") }}
+        <div class="account-metrics-row">
+          <div class="account-metric">
+            <div class="balance-label">
+              {{ $t("tenant.account.balanceLabel") }}
+            </div>
+            <div class="balance-amount">
+              <span class="currency">{{ account?.currency || "CNY" }}</span>
+              <span class="amount">{{
+                formatBalance(account?.balance || "0")
+              }}</span>
+            </div>
           </div>
-          <div class="balance-amount">
-            <span class="currency">{{ account?.currency || "CNY" }}</span>
-            <span class="amount">{{
-              formatBalance(account?.balance || "0")
-            }}</span>
+
+          <div class="account-metric">
+            <div class="balance-label">
+              {{ $t("tenant.account.creditAndAvailable") }}
+            </div>
+            <div class="account-metric__value">
+              {{ formatBalance(account?.credit_limit || "0") }} /
+              {{ formatBalance(account?.available_balance || "0") }}
+            </div>
           </div>
-          <div class="balance-meta">
-            {{
-              $t("tenant.account.creditLimitMeta", {
-                amount: formatBalance(account?.credit_limit || "0"),
-              })
-            }}
-            ·
-            {{
-              $t("tenant.account.availableBalanceMeta", {
-                amount: formatBalance(account?.available_balance || "0"),
-              })
-            }}
+
+          <div class="account-metric">
+            <div class="balance-label">
+              {{ $t("tenant.account.statusLabel") }}
+            </div>
+            <div class="account-metric__value">
+              <StatusIndicator
+                :type="account?.status === 'active' ? 'success' : 'danger'"
+              >
+                {{
+                  account?.status === "active"
+                    ? $t("tenant.account.status.active")
+                    : $t("tenant.account.status.frozen")
+                }}
+              </StatusIndicator>
+            </div>
           </div>
-          <div class="balance-meta">
-            {{
-              account?.status === "active"
-                ? $t("tenant.account.status.active")
-                : $t("tenant.account.status.frozen")
-            }}
-          </div>
-          <div v-if="spend" class="balance-meta spend-meta">
-            {{ $t("tenant.account.windowSpend") }}
-            ·
-            {{ spend.window.label }}
-            ·
-            {{ formatBalance(spend.tenant_spend) }}
+
+          <div class="account-metric">
+            <div class="balance-label">
+              {{ $t("tenant.account.windowSpend") }}
+            </div>
+            <div class="account-metric__value">
+              {{ spend ? formatBalance(spend.tenant_spend) : "—" }}
+            </div>
+            <div v-if="spend?.window?.label" class="account-metric__hint">
+              {{ spend.window.label }}
+            </div>
           </div>
         </div>
 
-        <CommonActionPanel
+        <div
           v-if="accountActions.recharge || accountActions.refund"
-          surface
-          align="start"
-          :title="$t('tenant.account.quickActionsTitle')"
+          class="account-overview-actions"
         >
-          <template #actions>
-            <ElButton
-              v-if="accountActions.recharge"
-              v-roles="ROLES_BIZ"
-              type="primary"
-              @click="handleRecharge"
-            >
-              <template #icon
-                ><ArtSvgIcon icon="ri:add-circle-line"
-              /></template>
-              {{ $t("tenant.account.recharge") }}
-            </ElButton>
-            <ElButton
-              v-if="accountActions.refund"
-              v-roles="ROLES_BIZ"
-              type="warning"
-              @click="handleRefund"
-            >
-              <template #icon><ArtSvgIcon icon="ri:refund-2-line" /></template>
-              {{ $t("tenant.account.refund") }}
-            </ElButton>
-          </template>
-        </CommonActionPanel>
+          <ElButton
+            v-if="accountActions.recharge"
+            v-roles="ROLES_BIZ"
+            type="primary"
+            @click="handleRecharge"
+          >
+            <template #icon><ArtSvgIcon icon="ri:add-circle-line" /></template>
+            {{ $t("tenant.account.recharge") }}
+          </ElButton>
+          <ElButton
+            v-if="accountActions.refund"
+            v-roles="ROLES_BIZ"
+            type="warning"
+            plain
+            @click="handleRefund"
+          >
+            <template #icon><ArtSvgIcon icon="ri:refund-2-line" /></template>
+            {{ $t("tenant.account.refund") }}
+          </ElButton>
+        </div>
       </div>
     </ElCard>
 
@@ -165,7 +174,7 @@
       <template #balance_change="{ row }">
         <span class="balance-change">
           {{ formatBalance(row.balance_before) }}
-          <span class="balance-change-separator">/</span>
+          <span class="balance-change-separator">→</span>
           {{ formatBalance(row.balance_after) }}
         </span>
       </template>
@@ -383,10 +392,10 @@ import {
   type TenantSpend,
 } from "@/api/tenant";
 import EditDialog from "@/components/common/EditDialog.vue";
-import CommonActionPanel from "@/components/common/action-panel/index.vue";
 import CommonInlineHint from "@/components/common/inline-hint/index.vue";
 import MfaRequiredHint from "@/components/common/mfa-required-hint/index.vue";
 import ResourceTableShell from "@/components/common/resource-table-shell/index.vue";
+import StatusIndicator from "@/components/common/StatusIndicator.vue";
 import SurfaceCardHeader from "@/components/common/surface-card-header/index.vue";
 import { useLatestRequest } from "@/composables/useLatestRequest";
 import { logger } from "@/utils/sys";
@@ -431,12 +440,16 @@ const transactionColumns = ref<ColumnOption<Transaction>[]>([
     prop: "amount",
     label: $t("tenant.account.columns.amount"),
     width: 120,
+    align: "right",
+    numeric: true,
     useSlot: true,
   },
   {
     prop: "balance_change",
     label: $t("tenant.account.columns.balanceChange"),
-    minWidth: 120,
+    minWidth: 168,
+    align: "right",
+    numeric: true,
     useSlot: true,
   },
   {
@@ -510,7 +523,7 @@ const rechargeRules: FormRules = {
     },
     {
       type: "number",
-      min: 1,
+      min: 0.01,
       message: $t("tenant.account.validation.rechargeAmountPositive"),
       trigger: "blur",
     },
@@ -796,16 +809,50 @@ onMounted(() => {
 }
 
 .account-overview-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 24px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
   align-items: center;
+  justify-content: space-between;
+}
+
+.account-metrics-row {
+  display: grid;
+  flex: 1 1 640px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.account-metric {
+  min-width: 0;
+}
+
+.account-metric__value {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+}
+
+.account-metric__hint {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.account-overview-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .balance-label {
-  font-size: 14px;
+  font-size: 13px;
   color: var(--text-color-secondary);
-  margin-bottom: var(--ops-space-xs, 8px);
+  margin-bottom: 6px;
 }
 
 .balance-amount {
@@ -815,15 +862,22 @@ onMounted(() => {
   gap: 6px;
 
   .currency {
-    font-size: 16px;
+    font-size: 13px;
     color: var(--text-color-secondary);
   }
 
   .amount {
-    font-size: 40px;
+    font-size: 26px;
     font-weight: 600;
     color: var(--el-color-primary);
-    line-height: 1;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@media (max-width: 960px) {
+  .account-metrics-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

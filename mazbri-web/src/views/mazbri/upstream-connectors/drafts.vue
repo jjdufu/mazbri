@@ -21,18 +21,18 @@
         <ResourceTableActionBar
           v-model="searchParams.q"
           :search-placeholder="$t('supplier.list.searchPlaceholder')"
-          :show-primary="true"
+          :show-primary="canWrite"
           :primary-label="$t('upstreamConnector.codeFreeAccess')"
           primary-icon="ri:add-line"
           :primary-roles="[...ROLES_BIZ]"
-          :show-import="true"
+          :show-import="canWrite"
           :import-label="$t('common.actions.import')"
           :import-roles="[...ROLES_BIZ]"
-          :show-export="true"
+          :show-export="canWrite"
           :export-items="exportItems"
           :export-disabled="tableData.length === 0"
           :export-roles="[...ROLES_BIZ]"
-          :show-delete="true"
+          :show-delete="canWrite"
           :delete-total-count="tableData.length"
           :delete-selected-count="selectedRows.length"
           :delete-roles="[...ROLES_BIZ]"
@@ -66,6 +66,7 @@
             }}
           </ElButton>
           <ElButton
+            v-if="canWrite"
             v-roles="ROLES_BIZ"
             link
             type="danger"
@@ -92,7 +93,7 @@
 
 <script setup lang="ts">
 import { ElMessage, ElMessageBox } from "element-plus";
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { saveAs } from "file-saver";
 import {
@@ -138,40 +139,53 @@ const importMode = ref("replace");
 const importCurlText = ref("");
 const importJsonText = ref("");
 
-const columns = ref<ColumnOption<ConnectorDraft>[]>([
-  { type: "selection", width: 55 },
-  { prop: "name", label: $t("common.fields.name"), minWidth: 160 },
-  {
-    prop: "upstream_url",
-    label: $t("supplier.fields.accessAddress"),
-    minWidth: 220,
-  },
-  {
-    prop: "endpoint_count",
-    label: $t("upstreamConnector.endpointCount"),
-    minWidth: 88,
-    useSlot: true,
-  },
-  {
-    prop: "status",
-    label: $t("common.fields.status"),
-    minWidth: 100,
-    useSlot: true,
-  },
-  {
-    prop: "updated_at",
-    label: $t("common.fields.updatedAt"),
-    minWidth: 180,
-    useSlot: true,
-  },
-  {
-    prop: "operations",
-    label: $t("common.fields.operations"),
-    width: 180,
-    fixed: "right",
-    useSlot: true,
-  },
-]);
+const buildDraftColumns = (): ColumnOption<ConnectorDraft>[] => {
+  const base: ColumnOption<ConnectorDraft>[] = [];
+  if (canWrite.value) {
+    base.push({ type: "selection", width: 48 });
+  }
+  base.push(
+    { prop: "name", label: $t("common.fields.name"), minWidth: 160 },
+    {
+      prop: "upstream_url",
+      label: $t("supplier.fields.accessAddress"),
+      minWidth: 220,
+    },
+    {
+      prop: "endpoint_count",
+      label: $t("upstreamConnector.endpointCount"),
+      minWidth: 88,
+      align: "right",
+      numeric: true,
+      useSlot: true,
+    },
+    {
+      prop: "status",
+      label: $t("common.fields.status"),
+      minWidth: 100,
+      useSlot: true,
+    },
+    {
+      prop: "updated_at",
+      label: $t("common.fields.updatedAt"),
+      minWidth: 180,
+      useSlot: true,
+    },
+    {
+      prop: "operations",
+      label: $t("common.fields.operations"),
+      width: canWrite.value ? 180 : 110,
+      fixed: "right",
+      useSlot: true,
+    },
+  );
+  return base;
+};
+
+const columns = ref<ColumnOption<ConnectorDraft>[]>(buildDraftColumns());
+watch(canWrite, () => {
+  columns.value = buildDraftColumns();
+});
 
 const artPagination = computed<PaginationConfig>(() => ({
   current: pagination.current,

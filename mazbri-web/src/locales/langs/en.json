@@ -510,11 +510,20 @@
   "setting": {
     "menuType": {
       "title": "Menu Layout",
-      "list": ["Vertical", "Horizontal", "Mixed", "Dual"]
+      "list": [
+        "Vertical",
+        "Horizontal",
+        "Mixed",
+        "Dual"
+      ]
     },
     "theme": {
       "title": "Theme Style",
-      "list": ["Light", "Dark", "System (Follow System)"]
+      "list": [
+        "Light",
+        "Dark",
+        "System (Follow System)"
+      ]
     },
     "menu": {
       "title": "Menu Style"
@@ -524,7 +533,10 @@
     },
     "box": {
       "title": "Box Style",
-      "list": ["Border", "Shadow"]
+      "list": [
+        "Border",
+        "Shadow"
+      ]
     },
     "basics": {
       "title": "Basic Config",
@@ -567,8 +579,14 @@
   "notice": {
     "title": "Notice",
     "btnRead": "Mark as read",
-    "bar": ["Notice", "Message", "Todo"],
-    "text": ["No"],
+    "bar": [
+      "Notice",
+      "Message",
+      "Todo"
+    ],
+    "text": [
+      "No"
+    ],
     "viewAll": "View all"
   },
   "chat": {
@@ -2940,7 +2958,8 @@
       },
       "sections": {
         "strategy": "Transport Encryption Policy",
-        "keyVersions": "Key Versions"
+        "keyVersions": "Key Versions",
+        "effectiveContract": "Effective Access Contract"
       },
       "fields": {
         "encryptionMode": "Encryption Mode",
@@ -2976,12 +2995,15 @@
         "noMac": "none (AEAD provides integrity)",
         "macRequired": "Selected data algorithm is non-AEAD; MAC is required",
         "allowInsecure": "Enable only for legacy interoperability; unlocks Legacy algorithms",
-        "allowInsecureAdminOnly": "Only super admins can enable insecure algorithms"
+        "allowInsecureAdminOnly": "Only super admins can enable insecure algorithms",
+        "legacyRisk": "Legacy weak algorithm selected ({algorithms}); use only during migration"
       },
       "modes": {
         "none": "Off",
         "request": "Request Encryption",
-        "full": "Bidirectional Encryption"
+        "full": "Bidirectional Encryption",
+        "suite": "Recommended Suite",
+        "custom": "Custom Algorithm"
       },
       "modesDesc": {
         "none": "No payload encryption; messages are transmitted in plaintext",
@@ -3098,7 +3120,9 @@
         "refundAmountPositive": "Refund amount must be greater than 0",
         "refundReasonRequired": "Please enter a refund reason"
       },
-      "windowSpend": "Window spend (finance SSOT)"
+      "windowSpend": "Window spend (finance SSOT)",
+      "statusLabel": "Account Status",
+      "creditAndAvailable": "Credit / Available"
     },
     "createDialog": {
       "title": "Add Tenant",
@@ -3328,7 +3352,8 @@
       "errorCode": "Error code",
       "count": "Count",
       "loadFailed": "Failed to load tenant 360",
-      "tenantSpend": "Window spend"
+      "tenantSpend": "Window spend",
+      "noErrors24h": "No errors in the last 24h"
     }
   },
   "rateLimit": {
@@ -3566,7 +3591,6 @@
     "detail": {
       "pageTitle": "Product Detail",
       "basicInfoTitle": "Basic Information",
-      "advancedInfoTitle": "Rate Limit & Circuit Breaker",
       "editTitle": "Edit Product Configuration",
       "quickActionsTitle": "Quick Actions",
       "authorizationHint": "",
@@ -3580,7 +3604,7 @@
       "lockedHint": "Locked after create",
       "lockedAlert": "Product code cannot be changed after creation.",
       "tabs": {
-        "info": "Product Info & Rate Limit",
+        "info": "Overview",
         "routes": "Routing Rules",
         "tenants": "Authorized Tenants"
       },
@@ -4256,7 +4280,8 @@
       "probe": "Probe",
       "probe_connectivity": "Probe",
       "probe_contract": "Contract probe"
-    }
+    },
+    "workbench": "Workbench"
   },
   "listQueryBar": {
     "tooltip": "Search & filters",
@@ -5237,6 +5262,9 @@
         "recent_restart": "Restarted recently",
         "container_metrics_absent": "No container metrics"
       }
+    },
+    "common": {
+      "share": "Share"
     }
   },
   "layout": {

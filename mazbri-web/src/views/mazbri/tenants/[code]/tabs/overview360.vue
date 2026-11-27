@@ -4,6 +4,8 @@
       <StatCard
         :label="t('tenant.overview360.calls')"
         :value="overview?.calls ?? null"
+        icon="ri:exchange-box-line"
+        :hint="t('ops.timeRange.presets.24h')"
         :loading="loading"
         :digits="0"
       />
@@ -11,6 +13,10 @@
         :label="t('tenant.overview360.successRate')"
         :value="overview?.success_rate ?? null"
         unit="%"
+        icon="ri:checkbox-circle-line"
+        icon-color="#67c23a"
+        icon-background="rgba(103, 194, 58, 0.12)"
+        :hint="t('ops.timeRange.presets.24h')"
         :loading="loading"
         :digits="1"
       />
@@ -18,37 +24,53 @@
         :label="t('tenant.overview360.p95')"
         :value="overview?.p95_ms ?? null"
         unit="ms"
+        icon="ri:timer-flash-line"
+        icon-color="#e6a23c"
+        icon-background="rgba(230, 162, 60, 0.12)"
+        :hint="t('ops.timeRange.presets.24h')"
         :loading="loading"
         :digits="0"
       />
       <StatCard
         v-if="isBiz"
         :label="t('tenant.overview360.tenantSpend')"
-        :value="spendNum"
-        :hint="spend?.window?.label"
+        :value="spendDisplay"
+        :unit="t('common.currencies.cny')"
+        icon="ri:money-cny-circle-line"
+        :hint="spend?.window?.label || t('ops.timeRange.presets.30d')"
         :loading="loading"
-        :digits="4"
       />
       <StatCard
         :label="t('tenant.overview360.health')"
         :value="healthScore"
+        icon="ri:heart-pulse-line"
+        :hint="t('ops.timeRange.presets.24h')"
         :loading="loading"
         :digits="0"
       />
     </div>
 
     <OpsCard :title="t('tenant.overview360.errors')">
-      <ArtTable
-        v-if="errors.length || loading"
-        :data="errors"
-        :loading="loading"
-        :columns="errorColumns"
-        stripe
-      />
+      <div v-if="errors.length || loading" class="tenant-errors-grid">
+        <CategoryBarChart
+          :categories="errorChartCategories"
+          :series="errorChartSeries"
+          :loading="loading"
+          horizontal
+          unit-type="count"
+          height="240px"
+        />
+        <ArtTable
+          :data="errorTableRows"
+          :loading="loading"
+          :columns="errorColumns"
+          stripe
+        />
+      </div>
       <EmptyState
         v-else
         compact
-        :description="t('common.feedback.noData')"
+        :description="t('tenant.overview360.noErrors24h')"
       />
     </OpsCard>
   </TenantTabShell>
@@ -60,8 +82,10 @@ import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
 import StatCard from "@/components/ops/StatCard.vue";
 import OpsCard from "@/components/ops/OpsCard.vue";
+import CategoryBarChart from "@/components/ops/CategoryBarChart.vue";
 import TenantTabShell from "@/components/common/tenant-tab-shell/index.vue";
 import EmptyState from "@/components/common/empty-state/index.vue";
+import { formatMoney } from "@/utils/format";
 import { postOlapQuery } from "@/api/olap";
 import { presetWindow } from "@/composables/ops/useOlapRange";
 import { useOpsRole } from "@/composables/ops/useOpsRole";
@@ -79,11 +103,11 @@ const overview = ref<TenantOverviewRow | null>(null);
 const spend = ref<TenantSpend | null>(null);
 const errors = ref<TenantErrorRow[]>([]);
 
-const spendNum = computed(() => {
+const spendDisplay = computed(() => {
   const raw = spend.value?.tenant_spend;
   if (raw == null || raw === "") return null;
-  const n = Number(raw);
-  return Number.isFinite(n) ? n : null;
+  const formatted = formatMoney(raw);
+  return formatted === "—" ? null : formatted;
 });
 
 /** 成功率 50% + 时延 30% + 活跃度 20%；时延以 1000ms 为满分门槛。 */
@@ -95,9 +119,51 @@ const healthScore = computed(() => {
   return Math.round((success * 0.5 + latency * 0.3 + activity * 0.2) * 100);
 });
 
-const errorColumns = computed<ColumnOption<TenantErrorRow>[]>(() => [
-  { prop: "error_code", label: t("tenant.overview360.errorCode") },
-  { prop: "count", label: t("tenant.overview360.count") },
+interface TenantErrorTableRow extends TenantErrorRow {
+  share: string;
+}
+
+const totalErrorCount = computed(() =>
+  errors.value.reduce((acc, row) => acc + (Number(row.count) || 0), 0),
+);
+
+const errorTableRows = computed<TenantErrorTableRow[]>(() =>
+  errors.value.map((row) => ({
+    ...row,
+    share:
+      totalErrorCount.value > 0
+        ? `${((Number(row.count) / totalErrorCount.value) * 100).toFixed(1)}%`
+        : "0.0%",
+  })),
+);
+
+const errorChartCategories = computed(() =>
+  errors.value.slice(0, 10).map((row) => row.error_code),
+);
+
+const errorChartSeries = computed(() => [
+  {
+    name: t("tenant.overview360.count"),
+    data: errors.value.slice(0, 10).map((row) => Number(row.count) || 0),
+  },
+]);
+
+const errorColumns = computed<ColumnOption<TenantErrorTableRow>[]>(() => [
+  { prop: "error_code", label: t("tenant.overview360.errorCode"), minWidth: 160 },
+  {
+    prop: "count",
+    label: t("tenant.overview360.count"),
+    width: 110,
+    align: "right",
+    numeric: true,
+  },
+  {
+    prop: "share",
+    label: t("ops.common.share"),
+    width: 96,
+    align: "right",
+    numeric: true,
+  },
 ]);
 
 function last30DayRange() {
@@ -172,7 +238,7 @@ onMounted(() => void reload());
   }
 }
 
-@media (max-width: 1100px) {
+@media (max-width: 1360px) {
   .tenant-kpi-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -181,6 +247,19 @@ onMounted(() => void reload());
 @media (max-width: 768px) {
   .tenant-kpi-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.tenant-errors-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 960px) {
+  .tenant-errors-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

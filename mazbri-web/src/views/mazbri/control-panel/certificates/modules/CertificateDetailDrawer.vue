@@ -94,13 +94,9 @@
               />
             </ElDescriptionsItem>
             <ElDescriptionsItem :label="$t('certificate.detail.fields.status')">
-              <ElTag
-                :type="getStatusType(cert.status)"
-                effect="light"
-                size="small"
-              >
+              <StatusIndicator :type="getStatusType(cert.status)">
                 {{ getStatusLabel(cert.status) }}
-              </ElTag>
+              </StatusIndicator>
             </ElDescriptionsItem>
             <ElDescriptionsItem :label="$t('certificate.detail.fields.subject')">
               <CopyableText
@@ -401,6 +397,7 @@ import AdaptiveDrawer from "@/components/common/AdaptiveDrawer.vue";
 import CommonDrawerHeader from "@/components/common/drawer-header/index.vue";
 import CommonInlineHint from "@/components/common/inline-hint/index.vue";
 import CopyableText from "@/components/common/copyable-text/index.vue";
+import StatusIndicator from "@/components/common/StatusIndicator.vue";
 import { runWithLoading } from "@/composables/useAsyncState";
 import { useLatestRequest } from "@/composables/useLatestRequest";
 import { getStatusLabel, getStatusType } from "@/utils/display-labels";

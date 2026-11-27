@@ -63,11 +63,11 @@
           {{ row.equal_labels?.join(", ") || "—" }}
         </template>
         <template #enabled="{ row }">
-          <ElTag size="small" :type="row.enabled ? 'success' : 'info'">{{
+          <StatusIndicator :type="row.enabled ? 'success' : 'info'">{{
             row.enabled
               ? t("common.status.enabled")
               : t("common.status.disabled")
-          }}</ElTag>
+          }}</StatusIndicator>
         </template>
         <template #operations="{ row }">
           <ElButton link type="danger" @click="removeInhibit(row.id)">{{
@@ -155,6 +155,7 @@ import { isMfaStepUpCancelled } from "@/utils/http/mfa-dialog-service";
 import { formatDateTime, parseDisplayWallClockMs } from "@/utils/format";
 import { ElMessage, ElMessageBox } from "element-plus";
 import ArtTable from "@/components/core/tables/art-table/index.vue";
+import StatusIndicator from "@/components/common/StatusIndicator.vue";
 import EditDialog from "@/components/common/EditDialog.vue";
 import OpsCard from "@/components/ops/OpsCard.vue";
 import OpsPanelToolbar from "@/components/ops/OpsPanelToolbar.vue";

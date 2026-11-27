@@ -1,5 +1,69 @@
 <template>
   <div class="supplier-detail-page">
+    <div class="supplier-detail-identity">
+      <EntityIdentityBar
+        :name="supplier?.name || supplier?.supplier_code"
+        :code="supplier?.supplier_code"
+        :code-label="$t('supplier.fields.code')"
+        :status-type="statusValue === 'active' ? 'success' : statusValue === 'suspended' ? 'warning' : 'info'"
+        :status-text="statusLabel"
+      >
+        <template #tags>
+          <ElTag
+            v-if="editing"
+            size="small"
+            type="warning"
+            effect="plain"
+          >
+            {{ $t("supplier.detail.editingBadge") }}
+          </ElTag>
+        </template>
+        <template #actions>
+          <template v-if="editing">
+            <ElButton @click="cancelEdit">{{
+              $t("common.actions.cancel")
+            }}</ElButton>
+            <ElButton
+              type="primary"
+              :loading="submitting"
+              @click="submitForm"
+            >
+              {{ $t("common.actions.save") }}
+            </ElButton>
+          </template>
+          <template v-else>
+            <ElButton
+              v-if="upstreamType === 'transparent'"
+              v-roles="ROLES_BIZ"
+              :loading="openingWorkbench"
+              @click="openWorkbenchEdit"
+            >
+              {{ $t("upstreamConnector.workbench") }}
+            </ElButton>
+            <ElButton
+              v-roles="ROLES_BIZ"
+              type="primary"
+              @click="enterEdit"
+            >
+              <template #icon><ArtSvgIcon icon="ri:edit-line" /></template>
+              {{ $t("common.actions.edit") }}
+            </ElButton>
+            <ElButton
+              v-roles="ROLES_BIZ"
+              type="danger"
+              plain
+              @click="handleDelete"
+            >
+              <template #icon>
+                <ArtSvgIcon icon="ri:delete-bin-line" />
+              </template>
+              {{ $t("common.actions.delete") }}
+            </ElButton>
+          </template>
+        </template>
+      </EntityIdentityBar>
+    </div>
+
     <ElForm
       ref="formRef"
       v-loading="loading"
@@ -13,62 +77,7 @@
           <SurfaceCardHeader
             :title="$t('supplier.detail.basicInfoTitle')"
             stack-on-mobile
-          >
-            <template #actions>
-              <div class="header-extra">
-                <ElTag
-                  v-if="editing"
-                  size="small"
-                  type="warning"
-                  effect="plain"
-                >
-                  {{ $t("supplier.detail.editingBadge") }}
-                </ElTag>
-                <template v-if="editing">
-                  <ElButton @click="cancelEdit">{{
-                    $t("supplier.form.cancelBack")
-                  }}</ElButton>
-                  <ElButton
-                    type="primary"
-                    :loading="submitting"
-                    @click="submitForm"
-                  >
-                    {{ $t("supplier.form.saveAndBack") }}
-                  </ElButton>
-                </template>
-                <template v-else>
-                  <ElTag :type="statusValue === 'active' ? 'success' : 'info'">
-                    {{ statusLabel }}
-                  </ElTag>
-                  <ElButton
-                    v-if="upstreamType === 'transparent'"
-                    v-roles="ROLES_BIZ"
-                    :loading="openingWorkbench"
-                    @click="openWorkbenchEdit"
-                  >
-                    {{ $t("upstreamConnector.editInWorkbench") }}
-                  </ElButton>
-                  <ElButton
-                    v-roles="ROLES_BIZ"
-                    type="primary"
-                    @click="enterEdit"
-                  >
-                    {{ $t("common.actions.modify") }}
-                  </ElButton>
-                  <ElButton
-                    v-roles="ROLES_BIZ"
-                    type="danger"
-                    @click="handleDelete"
-                  >
-                    <template #icon>
-                      <ArtSvgIcon icon="ri:delete-bin-line" />
-                    </template>
-                    {{ $t("common.actions.delete") }}
-                  </ElButton>
-                </template>
-              </div>
-            </template>
-          </SurfaceCardHeader>
+          />
         </template>
 
         <ElAlert
@@ -80,7 +89,7 @@
           :title="$t('supplier.form.typeLockedHint')"
         />
 
-        <ElDescriptions class="detail-descriptions" :column="2" border>
+        <ElDescriptions class="detail-descriptions" :column="2" :label-width="168" border>
           <ElDescriptionsItem :label="$t('supplier.fields.id')">
             {{ supplier?.id || "—" }}
           </ElDescriptionsItem>
@@ -167,8 +176,8 @@
             <span v-else>{{ contractId || "—" }}</span>
           </ElDescriptionsItem>
 
-          <ElDescriptionsItem :label="$t('supplier.fields.status')">
-            <ElFormItem v-if="editing" class="inline-form-item">
+          <ElDescriptionsItem v-if="editing" :label="$t('supplier.fields.status')">
+            <ElFormItem class="inline-form-item">
               <ElSelect v-model="form.status" class="status-select">
                 <ElOption
                   :label="$t('common.status.active')"
@@ -184,13 +193,6 @@
                 />
               </ElSelect>
             </ElFormItem>
-            <ElTag
-              v-else
-              size="small"
-              :type="statusValue === 'active' ? 'success' : 'info'"
-            >
-              {{ statusLabel }}
-            </ElTag>
           </ElDescriptionsItem>
 
           <ElDescriptionsItem :label="$t('common.fields.createdAt')">
@@ -501,6 +503,7 @@
 
 <script setup lang="ts">
 import CopyableText from "@/components/common/copyable-text/index.vue";
+import EntityIdentityBar from "@/components/common/entity-identity-bar/index.vue";
 import {
   ElMessage,
   ElMessageBox,
@@ -1081,6 +1084,15 @@ onMounted(async () => {
 
 .mr-1 {
   margin-right: 4px;
+}
+
+.supplier-detail-identity {
+  margin-bottom: 16px;
+}
+
+:deep(.detail-descriptions .el-descriptions__label) {
+  word-break: keep-all;
+  white-space: nowrap;
 }
 
 .mb-1 {

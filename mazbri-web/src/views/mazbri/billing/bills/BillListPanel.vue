@@ -74,9 +74,9 @@
             </span>
           </template>
           <template #status="{ row }">
-            <ElTag :type="statusTagType(row.status)" size="small">
+            <StatusIndicator :type="statusTagType(row.status)">
               {{ getStatusLabel(row.status) }}
-            </ElTag>
+            </StatusIndicator>
           </template>
           <template #operations="{ row }">
             <TableActionRow>
@@ -521,6 +521,7 @@ import SurfaceCardHeader from "@/components/common/surface-card-header/index.vue
 import CommonDrawerHeader from "@/components/common/drawer-header/index.vue";
 import EditDialog from "@/components/common/EditDialog.vue";
 import AdaptiveDrawer from "@/components/common/AdaptiveDrawer.vue";
+import StatusIndicator from "@/components/common/StatusIndicator.vue";
 import { runWithLoading } from "@/composables/useAsyncState";
 import { useAdaptiveTableColumns } from "@/composables/useAdaptiveTableColumns";
 import { getHttpErrorRawMessage } from "@/utils/http/error";

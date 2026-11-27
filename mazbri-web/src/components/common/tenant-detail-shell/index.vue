@@ -50,8 +50,7 @@ defineOptions({ name: "TenantDetailShell" });
   gap: 10px;
   align-items: center;
   min-width: 0;
-  min-height: 24px;
-  max-height: 28px;
+  min-height: 32px;
 }
 
 .tenant-detail-shell__bar {

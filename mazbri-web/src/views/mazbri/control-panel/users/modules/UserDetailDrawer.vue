@@ -64,17 +64,13 @@
             <ElDescriptionsItem
               :label="$t('userManagement.detail.labels.status')"
             >
-              <ElTag
-                :type="user.is_active ? 'success' : 'danger'"
-                effect="light"
-                size="small"
-              >
+              <StatusIndicator :type="user.is_active ? 'success' : 'danger'">
                 {{
                   user.is_active
                     ? $t("userManagement.status.active")
                     : $t("userManagement.status.inactive")
                 }}
-              </ElTag>
+              </StatusIndicator>
             </ElDescriptionsItem>
             <ElDescriptionsItem
               :label="$t('userManagement.detail.labels.mfaStatus')"
@@ -280,6 +276,7 @@ import {
 import AdaptiveDrawer from "@/components/common/AdaptiveDrawer.vue";
 import CommonDrawerHeader from "@/components/common/drawer-header/index.vue";
 import CopyableText from "@/components/common/copyable-text/index.vue";
+import StatusIndicator from "@/components/common/StatusIndicator.vue";
 import { runWithLoading } from "@/composables/useAsyncState";
 import { useUserStore } from "@/store/modules/user";
 import { getRoleLabel, getRoleType } from "@/utils/display-labels";

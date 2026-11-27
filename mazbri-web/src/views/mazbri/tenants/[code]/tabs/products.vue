@@ -57,7 +57,7 @@
         {{ row.config.unit_price }} {{ $t("common.currencies.cny") }}
       </template>
       <template #cb_pro_fallback="{ row }">
-        <ElTag
+        <StatusIndicator
           v-if="row.cb_pro_enabled"
           :type="row.config.cb_pro_fallback ? 'warning' : 'info'"
         >
@@ -66,7 +66,7 @@
               ? $t("common.status.enabled")
               : $t("common.status.disabled")
           }}
-        </ElTag>
+        </StatusIndicator>
         <span v-else>—</span>
       </template>
       <template #operations="{ row }">
@@ -167,6 +167,7 @@ import EditDialog from "@/components/common/EditDialog.vue";
 import ChannelConfigDrawer from "@/components/common/channel-config-dialog/index.vue";
 import ListQueryBar from "@/components/common/list-query-bar/index.vue";
 import ResourceTableShell from "@/components/common/resource-table-shell/index.vue";
+import StatusIndicator from "@/components/common/StatusIndicator.vue";
 import { useTable } from "@/hooks/core/useTable";
 import { useUserStore } from "@/store/modules/user";
 import { logger } from "@/utils/sys";

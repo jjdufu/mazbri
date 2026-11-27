@@ -86,9 +86,9 @@
         </ElTag>
       </template>
       <template #status="{ row }">
-        <ElTag :type="supplierStatusTagType(row.status)" effect="light">
+        <StatusIndicator :type="supplierStatusTagType(row.status)">
           {{ supplierStatusLabel(row.status) }}
-        </ElTag>
+        </StatusIndicator>
       </template>
       <template #operations="{ row }">
         <TableActionRow>
@@ -138,6 +138,7 @@ import {
   type Supplier,
 } from "@/api/supplier";
 import CopyableText from "@/components/common/copyable-text/index.vue";
+import StatusIndicator from "@/components/common/StatusIndicator.vue";
 import ImportDialog from "@/components/common/ImportDialog.vue";
 import ResourceTableActionBar from "@/components/common/resource-table-action-bar/index.vue";
 import ResourceTableShell from "@/components/common/resource-table-shell/index.vue";

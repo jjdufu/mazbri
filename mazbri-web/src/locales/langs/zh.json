@@ -510,11 +510,20 @@
   "setting": {
     "menuType": {
       "title": "菜单布局",
-      "list": ["垂直", "水平", "混合", "双列"]
+      "list": [
+        "垂直",
+        "水平",
+        "混合",
+        "双列"
+      ]
     },
     "theme": {
       "title": "主题风格",
-      "list": ["浅色", "深色", "系统"]
+      "list": [
+        "浅色",
+        "深色",
+        "系统"
+      ]
     },
     "menu": {
       "title": "菜单风格"
@@ -524,7 +533,10 @@
     },
     "box": {
       "title": "盒子样式",
-      "list": ["边框", "阴影"]
+      "list": [
+        "边框",
+        "阴影"
+      ]
     },
     "basics": {
       "title": "基础配置",
@@ -567,8 +579,14 @@
   "notice": {
     "title": "通知",
     "btnRead": "标为已读",
-    "bar": ["通知", "消息", "代办"],
-    "text": ["暂无"],
+    "bar": [
+      "通知",
+      "消息",
+      "代办"
+    ],
+    "text": [
+      "暂无"
+    ],
     "viewAll": "查看全部"
   },
   "chat": {
@@ -2940,7 +2958,8 @@
       },
       "sections": {
         "strategy": "传输加密策略",
-        "keyVersions": "密钥版本"
+        "keyVersions": "密钥版本",
+        "effectiveContract": "生效接入契约摘要"
       },
       "fields": {
         "encryptionMode": "加密模式",
@@ -2976,12 +2995,15 @@
         "noMac": "无（AEAD 内置完整性）",
         "macRequired": "当前数据算法为非 AEAD，必须配置 MAC",
         "allowInsecure": "仅在兼容旧系统时勾选；启用后才可选 Legacy 算法",
-        "allowInsecureAdminOnly": "仅超级管理员可开启「允许不安全算法」"
+        "allowInsecureAdminOnly": "仅超级管理员可开启「允许不安全算法」",
+        "legacyRisk": "已选兼容弱算法（{algorithms}），仅建议在存量系统过渡期使用"
       },
       "modes": {
         "none": "关闭",
         "request": "请求加密",
-        "full": "双向加密"
+        "full": "双向加密",
+        "suite": "推荐套件",
+        "custom": "自定义算法"
       },
       "modesDesc": {
         "none": "不进行数据加密，报文以明文传输",
@@ -3098,7 +3120,9 @@
         "refundAmountPositive": "退款金额必须大于 0",
         "refundReasonRequired": "请输入退款原因"
       },
-      "windowSpend": "近期消费"
+      "windowSpend": "近期消费",
+      "statusLabel": "账户状态",
+      "creditAndAvailable": "授信 / 可用额度"
     },
     "createDialog": {
       "title": "新增租户",
@@ -3328,7 +3352,8 @@
       "errorCode": "错误码",
       "count": "次数",
       "loadFailed": "租户 360 加载失败",
-      "tenantSpend": "时段内消费"
+      "tenantSpend": "时段内消费",
+      "noErrors24h": "近 24 小时无错误记录"
     }
   },
   "rateLimit": {
@@ -3566,7 +3591,6 @@
     "detail": {
       "pageTitle": "产品详情",
       "basicInfoTitle": "基本信息",
-      "advancedInfoTitle": "限流与熔断设置",
       "editTitle": "编辑产品配置",
       "quickActionsTitle": "快捷操作",
       "authorizationHint": "",
@@ -3580,7 +3604,7 @@
       "lockedHint": "创建后不可改",
       "lockedAlert": "产品编码创建后不可修改。",
       "tabs": {
-        "info": "产品信息与限流",
+        "info": "基本信息",
         "routes": "路由规则",
         "tenants": "已授权租户"
       },
@@ -4256,7 +4280,8 @@
       "probe": "连通探测",
       "probe_connectivity": "连通探测",
       "probe_contract": "契约探测"
-    }
+    },
+    "workbench": "工作台"
   },
   "listQueryBar": {
     "tooltip": "搜索与筛选",
@@ -5237,6 +5262,9 @@
         "recent_restart": "近期重启",
         "container_metrics_absent": "无容器指标"
       }
+    },
+    "common": {
+      "share": "占比"
     }
   },
   "layout": {

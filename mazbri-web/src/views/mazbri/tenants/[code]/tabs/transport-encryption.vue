@@ -238,6 +238,46 @@
             </template>
           </ArtTable>
         </SettingsCard>
+
+        <SettingsCard
+          class="mt-4"
+          icon="ri:file-shield-2-line"
+          :title="$t('tenant.transportEncryption.sections.effectiveContract')"
+        >
+          <ElDescriptions :column="1" border size="small">
+            <ElDescriptionsItem
+              :label="$t('tenant.transportEncryption.fields.encryptionMode')"
+            >
+              {{ $t(`tenant.transportEncryption.modes.${form.encryptionMode}`) }}
+            </ElDescriptionsItem>
+            <ElDescriptionsItem
+              :label="$t('tenant.transportEncryption.fields.suite')"
+            >
+              {{ effectiveAlgorithmSummary }}
+            </ElDescriptionsItem>
+            <ElDescriptionsItem
+              :label="$t('tenant.transportEncryption.fields.currentKeyVersion')"
+            >
+              {{ form.currentKeyVersion || "—" }}
+            </ElDescriptionsItem>
+            <ElDescriptionsItem
+              :label="$t('tenant.transportEncryption.fields.signatureCheck')"
+            >
+              <StatusIndicator :type="form.requireSignature ? 'success' : 'info'">
+                {{
+                  form.requireSignature
+                    ? $t("common.status.enabled")
+                    : $t("common.status.disabled")
+                }}
+              </StatusIndicator>
+            </ElDescriptionsItem>
+            <ElDescriptionsItem
+              :label="$t('tenant.transportEncryption.fields.nonceTtlSeconds')"
+            >
+              {{ form.nonceTtlSeconds }}s / ±{{ form.clockSkewSeconds }}s
+            </ElDescriptionsItem>
+          </ElDescriptions>
+        </SettingsCard>
       </template>
     </SettingsCardGrid>
 
@@ -394,6 +434,12 @@ const cardOptions = computed(() => [
 const activeKeys = computed(() =>
   keys.value.filter((key) => key.status === "active"),
 );
+const effectiveAlgorithmSummary = computed(() => {
+  if (form.encryptionMode === "none") return "—";
+  if (suiteForm.suite) return suiteForm.suite;
+  const parts = [suiteForm.dataAlg, suiteForm.macAlg].filter(Boolean);
+  return parts.length > 0 ? parts.join(" + ") : "—";
+});
 const tenantCryptoEnabled = computed(
   () => licenseStatus.value?.issuanceAllowed === true,
 );

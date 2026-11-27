@@ -58,6 +58,18 @@
           }}
         </StatusIndicator>
       </template>
+      <template #timeout_secs="{ row }">
+        {{ row.timeout_secs != null ? `${row.timeout_secs}s` : EMPTY_PLACEHOLDER }}
+      </template>
+      <template #cb_pro_enabled="{ row }">
+        <StatusIndicator :type="row.cb_pro_enabled ? 'warning' : 'info'">
+          {{
+            row.cb_pro_enabled
+              ? t("common.status.enabled")
+              : t("common.status.disabled")
+          }}
+        </StatusIndicator>
+      </template>
       <template #created_at="{ row }">
         {{ formatDate(row.created_at) }}
       </template>
@@ -166,41 +178,61 @@ const activeReservation = ref<ProductIdReservation | null>(null);
 const reservationConsumed = ref(false);
 const columns = ref<ColumnOption<Product>[]>([]);
 
-const productColumns = computed<ColumnOption<Product>[]>(() => [
-  { type: "selection", width: 55 },
-  {
-    prop: "product_id",
-    label: t("product.columns.productId"),
-    width: 180,
-    useSlot: true,
-  },
-  {
-    prop: "name",
-    label: t("product.columns.name"),
-    minWidth: 220,
-    maxWidth: 320,
-    showOverflowTooltip: true,
-  },
-  {
-    prop: "enabled",
-    label: t("product.columns.enabled"),
-    width: 100,
-    useSlot: true,
-  },
-  {
-    prop: "created_at",
-    label: t("common.fields.createdAt"),
-    width: 180,
-    useSlot: true,
-  },
-  {
-    prop: "operations",
-    label: t("common.fields.operations"),
-    width: userStore.canWriteBusiness ? 180 : 100,
-    fixed: "right",
-    useSlot: true,
-  },
-]);
+const productColumns = computed<ColumnOption<Product>[]>(() => {
+  const cols: ColumnOption<Product>[] = [];
+  if (userStore.canWriteBusiness) {
+    cols.push({ type: "selection", width: 48 });
+  }
+  cols.push(
+    {
+      prop: "product_id",
+      label: t("product.columns.productId"),
+      width: 180,
+      useSlot: true,
+    },
+    {
+      prop: "name",
+      label: t("product.columns.name"),
+      minWidth: 200,
+      maxWidth: 320,
+      showOverflowTooltip: true,
+    },
+    {
+      prop: "timeout_secs",
+      label: t("product.fields.timeout"),
+      width: 108,
+      align: "right",
+      numeric: true,
+      useSlot: true,
+    },
+    {
+      prop: "cb_pro_enabled",
+      label: t("product.fields.cbProEnabled"),
+      width: 112,
+      useSlot: true,
+    },
+    {
+      prop: "enabled",
+      label: t("product.columns.enabled"),
+      width: 108,
+      useSlot: true,
+    },
+    {
+      prop: "created_at",
+      label: t("common.fields.createdAt"),
+      width: 180,
+      useSlot: true,
+    },
+    {
+      prop: "operations",
+      label: t("common.fields.operations"),
+      width: userStore.canWriteBusiness ? 180 : 100,
+      fixed: "right",
+      useSlot: true,
+    },
+  );
+  return cols;
+});
 
 const searchForm = reactive<ProductListQuery>({
   q: "",
@@ -228,6 +260,12 @@ const getProductCellText = (columnKey: string, row: Product) => {
   switch (columnKey) {
     case "product_id":
       return row.product_id || EMPTY_PLACEHOLDER;
+    case "timeout_secs":
+      return row.timeout_secs != null ? `${row.timeout_secs}s` : EMPTY_PLACEHOLDER;
+    case "cb_pro_enabled":
+      return row.cb_pro_enabled
+        ? t("common.status.enabled")
+        : t("common.status.disabled");
     case "enabled":
       return row.enabled
         ? t("common.status.enabled")

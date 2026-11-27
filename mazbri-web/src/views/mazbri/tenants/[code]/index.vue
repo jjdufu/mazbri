@@ -1,22 +1,13 @@
 <template>
   <TenantDetailShell>
     <template #identity>
-      <span class="tenant-identity__name" :title="tenant?.name || tenantCode">
-        {{ tenant?.name || tenantCode || "—" }}
-      </span>
-      <span v-if="tenantCode" class="tenant-identity__code">
-        <CopyableText
-          :value="tenantCode"
-          :label="$t('tenant.fields.code')"
-        />
-      </span>
-      <ElTag
-        :type="getStatusType(tenantStatusKey)"
-        size="small"
-        class="tenant-identity__status"
-      >
-        {{ getStatusLabel(tenantStatusKey) }}
-      </ElTag>
+      <EntityIdentityBar
+        :name="tenant?.name || tenantCode"
+        :code="tenantCode"
+        :code-label="$t('tenant.fields.code')"
+        :status-type="getStatusType(tenantStatusKey)"
+        :status-text="getStatusLabel(tenantStatusKey)"
+      />
     </template>
     <template #tabs>
       <ElTabs
@@ -93,7 +84,7 @@ import { useLatestRequest } from "@/composables/useLatestRequest";
 import type { Tenant } from "@/types/api/tenant";
 import { fetchTenantById } from "@/api/tenant";
 import TenantDetailShell from "@/components/common/tenant-detail-shell/index.vue";
-import CopyableText from "@/components/common/copyable-text/index.vue";
+import EntityIdentityBar from "@/components/common/entity-identity-bar/index.vue";
 import BasicInfoTab from "./tabs/basic-info.vue";
 import ApiKeysTab from "./tabs/api-keys.vue";
 import WhitelistTab from "./tabs/whitelist.vue";

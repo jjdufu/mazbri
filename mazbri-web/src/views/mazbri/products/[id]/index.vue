@@ -2,36 +2,24 @@
   <div class="product-detail-shell">
     <div class="product-detail-shell__header">
       <div class="product-detail-shell__identity">
-        <span
-          class="product-identity__name"
-          :title="product?.name || productCode"
+        <EntityIdentityBar
+          :name="product?.name || productCode"
+          :code="product?.product_id || productCode"
+          :code-label="t('product.fields.productId')"
+          :status-type="getStatusType(productStatusKey)"
+          :status-text="getStatusLabel(productStatusKey)"
         >
-          {{ product?.name || productCode || EMPTY_PLACEHOLDER }}
-        </span>
-        <span
-          v-if="product?.product_id || productCode"
-          class="product-identity__code"
-        >
-          <CopyableText
-            :value="product?.product_id || productCode"
-            :label="t('product.fields.productId')"
-          />
-        </span>
-        <ElTag
-          :type="getStatusType(productStatusKey)"
-          size="small"
-          class="product-identity__tag"
-        >
-          {{ getStatusLabel(productStatusKey) }}
-        </ElTag>
-        <ElTag
-          type="info"
-          effect="plain"
-          size="small"
-          class="product-identity__tag"
-        >
-          {{ t("product.detail.billingModePayPerCall") }}
-        </ElTag>
+          <template #tags>
+            <ElTag
+              type="info"
+              effect="plain"
+              size="small"
+              class="product-identity__tag"
+            >
+              {{ t("product.detail.billingModePayPerCall") }}
+            </ElTag>
+          </template>
+        </EntityIdentityBar>
       </div>
 
       <div class="product-detail-shell__bar">
@@ -61,6 +49,9 @@
               type="primary"
               @click="handleEdit"
             >
+              <template #icon>
+                <ArtSvgIcon icon="ri:edit-line" />
+              </template>
               {{ t("common.actions.modify") }}
             </ElButton>
             <ElButton
@@ -78,15 +69,12 @@
 
           <ElDescriptions class="product-descriptions" :column="2" border>
             <ElDescriptionsItem :label="t('product.fields.internalId')">
-              {{ product?.id || EMPTY_PLACEHOLDER }}
-            </ElDescriptionsItem>
-            <ElDescriptionsItem :label="t('product.fields.productId')">
-              <div class="product-code-value">
-                <span>{{ product?.product_id || EMPTY_PLACEHOLDER }}</span>
-                <ElTag size="small" effect="plain" type="info">
-                  {{ t("product.detail.lockedHint") }}
-                </ElTag>
-              </div>
+              <CopyableText
+                v-if="product?.id"
+                :value="product.id"
+                :label="t('product.fields.internalId')"
+              />
+              <span v-else>{{ EMPTY_PLACEHOLDER }}</span>
             </ElDescriptionsItem>
             <ElDescriptionsItem :label="t('product.fields.name')">
               {{ product?.name || EMPTY_PLACEHOLDER }}
@@ -99,9 +87,6 @@
                 @change="handleStatusChange"
               />
             </ElDescriptionsItem>
-            <ElDescriptionsItem :label="t('product.fields.description')" :span="2">
-              {{ product?.description?.trim() || EMPTY_PLACEHOLDER }}
-            </ElDescriptionsItem>
             <ElDescriptionsItem :label="t('product.fields.timeout')">
               {{
                 product?.timeout_secs != null
@@ -109,14 +94,17 @@
                   : EMPTY_PLACEHOLDER
               }}
             </ElDescriptionsItem>
+            <ElDescriptionsItem :label="t('product.fields.description')" :span="2">
+              {{ product?.description?.trim() || EMPTY_PLACEHOLDER }}
+            </ElDescriptionsItem>
             <ElDescriptionsItem :label="t('product.fields.cbProEnabled')">
-              <ElTag :type="product?.cb_pro_enabled ? 'warning' : 'info'">
+              <StatusIndicator :type="product?.cb_pro_enabled ? 'warning' : 'info'">
                 {{
                   product?.cb_pro_enabled
                     ? t("common.status.enabled")
                     : t("common.status.disabled")
                 }}
-              </ElTag>
+              </StatusIndicator>
             </ElDescriptionsItem>
             <ElDescriptionsItem
               v-if="product?.cb_pro_enabled"
@@ -370,6 +358,7 @@
 
 <script setup lang="ts">
 import CopyableText from "@/components/common/copyable-text/index.vue";
+import EntityIdentityBar from "@/components/common/entity-identity-bar/index.vue";
 import type { FormInstance, FormRules } from "element-plus";
 import { ElMessageBox, ElMessage } from "element-plus";
 import { useI18n } from "vue-i18n";

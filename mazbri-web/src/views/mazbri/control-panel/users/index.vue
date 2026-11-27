@@ -45,17 +45,13 @@
         </ElTag>
       </template>
       <template #status="{ row }">
-        <ElTag
-          :type="row.is_active !== false ? 'success' : 'danger'"
-          effect="light"
-          size="small"
-        >
+        <StatusIndicator :type="row.is_active !== false ? 'success' : 'danger'">
           {{
             row.is_active !== false
               ? $t("userManagement.status.active")
               : $t("userManagement.status.inactive")
           }}
-        </ElTag>
+        </StatusIndicator>
       </template>
       <template #mfa_enabled="{ row }">
         <ElTag
@@ -141,6 +137,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
+import StatusIndicator from "@/components/common/StatusIndicator.vue";
 import { useI18n } from "vue-i18n";
 import { isMfaStepUpCancelled } from "@/utils/http/mfa-dialog-service";
 import { ElMessage, ElMessageBox } from "element-plus";

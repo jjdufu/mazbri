@@ -29,59 +29,51 @@
     />
 
     <OpsKpiRow>
-      <ElCol :xs="12" :sm="12" :md="8" :lg="6">
-        <StatCard
-          :label="t('ops.finance.revenue')"
-          :value="
-            overview?.revenue_total != null
-              ? formatMoney(overview.revenue_total)
-              : null
-          "
-          :unit="t('common.currencies.cny')"
-          icon="ri:money-cny-circle-line"
-          :hint="windowHint"
-          :loading="loading"
-        />
-      </ElCol>
-      <ElCol :xs="12" :sm="12" :md="8" :lg="6">
-        <StatCard
-          :label="t('ops.finance.cost')"
-          :value="
-            costUnavailable || overview?.cost_total == null
-              ? null
-              : formatMoney(overview.cost_total)
-          "
-          :unit="t('common.currencies.cny')"
-          icon="ri:shopping-bag-3-line"
-          :hint="costHint"
-          :loading="loading"
-        />
-      </ElCol>
-      <ElCol :xs="12" :sm="12" :md="8" :lg="6">
-        <StatCard
-          :label="t('ops.finance.margin')"
-          :value="
-            costUnavailable || overview?.margin_total == null
-              ? null
-              : formatMoney(overview.margin_total)
-          "
-          :unit="t('common.currencies.cny')"
-          icon="ri:funds-box-line"
-          :hint="costHint"
-          :loading="loading"
-        />
-      </ElCol>
-      <ElCol :xs="12" :sm="12" :md="8" :lg="6">
-        <StatCard
-          :label="t('ops.finance.marginRate')"
-          :value="costUnavailable ? null : (overview?.margin_rate ?? null)"
-          unit="%"
-          icon="ri:percent-line"
-          :hint="costHint"
-          :loading="loading"
-          :digits="1"
-        />
-      </ElCol>
+      <StatCard
+        :label="t('ops.finance.revenue')"
+        :value="
+          overview?.revenue_total != null
+            ? formatMoney(overview.revenue_total)
+            : null
+        "
+        :unit="t('common.currencies.cny')"
+        icon="ri:money-cny-circle-line"
+        :hint="windowHint"
+        :loading="loading"
+      />
+      <StatCard
+        :label="t('ops.finance.cost')"
+        :value="
+          costUnavailable || overview?.cost_total == null
+            ? null
+            : formatMoney(overview.cost_total)
+        "
+        :unit="t('common.currencies.cny')"
+        icon="ri:shopping-bag-3-line"
+        :hint="costHint"
+        :loading="loading"
+      />
+      <StatCard
+        :label="t('ops.finance.margin')"
+        :value="
+          costUnavailable || overview?.margin_total == null
+            ? null
+            : formatMoney(overview.margin_total)
+        "
+        :unit="t('common.currencies.cny')"
+        icon="ri:funds-box-line"
+        :hint="costHint"
+        :loading="loading"
+      />
+      <StatCard
+        :label="t('ops.finance.marginRate')"
+        :value="costUnavailable ? null : (overview?.margin_rate ?? null)"
+        unit="%"
+        icon="ri:percent-line"
+        :hint="costHint"
+        :loading="loading"
+        :digits="1"
+      />
     </OpsKpiRow>
 
     <OpsCard v-if="(overview?.inverted_days?.length ?? 0) > 0">
@@ -161,6 +153,11 @@
             </ElTooltip>
           </span>
         </template>
+        <template #status="{ row }">
+          <StatusIndicator :type="getStatusType(row.status)">
+            {{ getStatusLabel(row.status) }}
+          </StatusIndicator>
+        </template>
       </ArtTable>
     </OpsCard>
   </div>
@@ -175,6 +172,7 @@ import CategoryBarChart from "@/components/ops/CategoryBarChart.vue";
 import StatCard from "@/components/ops/StatCard.vue";
 import OpsKpiRow from "@/components/ops/OpsKpiRow.vue";
 import OpsCard from "@/components/ops/OpsCard.vue";
+import StatusIndicator from "@/components/common/StatusIndicator.vue";
 import {
   fetchFinanceBalances,
   fetchFinanceOverview,
@@ -186,7 +184,7 @@ import {
 } from "@/api/billing-ops";
 import type { ColumnOption } from "@/types/component";
 import { useLatestRequest } from "@/composables/useLatestRequest";
-import { getStatusLabel } from "@/utils/display-labels";
+import { getStatusLabel, getStatusType } from "@/utils/display-labels";
 import { formatDays, formatMoney } from "@/utils/format";
 
 defineOptions({ name: "FinanceOverviewPanel" });
@@ -395,7 +393,7 @@ const balanceColumns = computed<ColumnOption<BalanceRow>[]>(() => [
     prop: "status",
     label: t("ops.finance.status"),
     width: 96,
-    formatter: (row) => getStatusLabel(row.status),
+    useSlot: true,
   },
 ]);
 
