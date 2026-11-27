@@ -162,10 +162,11 @@
       </template>
 
       <template #right>
-        <SettingsCard
-          icon="ri:key-2-line"
-          :title="$t('tenant.transportEncryption.sections.keyVersions')"
-        >
+        <div class="transport-right-stack">
+          <SettingsCard
+            icon="ri:key-2-line"
+            :title="$t('tenant.transportEncryption.sections.keyVersions')"
+          >
           <template #actions>
             <ElButton
               v-if="cryptoActions.create_key"
@@ -202,11 +203,28 @@
                 getStatusLabel(row.status)
               }}</StatusIndicator>
             </template>
+            <template #algorithmSuite="{ row }">
+              <div class="key-stacked-cell">
+                <span class="key-stacked-primary">{{ row.data_algorithm }}</span>
+                <span v-if="row.signature_algorithm" class="key-stacked-sub">
+                  {{ row.signature_algorithm }}
+                </span>
+              </div>
+            </template>
+            <template #created_at="{ row }">
+              <div class="key-stacked-cell">
+                <span>{{ splitDateTime(row.created_at).date }}</span>
+                <span v-if="splitDateTime(row.created_at).time" class="key-stacked-sub">
+                  {{ splitDateTime(row.created_at).time }}
+                </span>
+              </div>
+            </template>
             <template #operations="{ row }">
-              <CommonInlineRow gap="8px">
+              <TableActionRow gap="4px">
                 <ElButton
                   v-if="cryptoActions.activate_key && row.status !== 'active'"
                   v-roles="ROLES_BIZ"
+                  class="compact-action-btn"
                   link
                   type="primary"
                   :disabled="!tenantCryptoEnabled"
@@ -217,6 +235,7 @@
                 <ElButton
                   v-if="cryptoActions.disable_key && row.status !== 'disabled'"
                   v-roles="ROLES_BIZ"
+                  class="compact-action-btn"
                   link
                   type="warning"
                   :disabled="!tenantCryptoEnabled"
@@ -227,6 +246,7 @@
                 <ElButton
                   v-if="cryptoActions.delete_key"
                   v-roles="ROLES_BIZ"
+                  class="compact-action-btn"
                   link
                   type="danger"
                   :disabled="!tenantCryptoEnabled"
@@ -234,16 +254,15 @@
                 >
                   {{ $t("tenant.transportEncryption.actions.delete") }}
                 </ElButton>
-              </CommonInlineRow>
+              </TableActionRow>
             </template>
           </ArtTable>
         </SettingsCard>
 
-        <SettingsCard
-          class="mt-4"
-          icon="ri:file-shield-2-line"
-          :title="$t('tenant.transportEncryption.sections.effectiveContract')"
-        >
+          <SettingsCard
+            icon="ri:shield-check-line"
+            :title="$t('tenant.transportEncryption.sections.effectiveContract')"
+          >
           <ElDescriptions :column="1" border size="small">
             <ElDescriptionsItem
               :label="$t('tenant.transportEncryption.fields.encryptionMode')"
@@ -277,7 +296,8 @@
               {{ form.nonceTtlSeconds }}s / ±{{ form.clockSkewSeconds }}s
             </ElDescriptionsItem>
           </ElDescriptions>
-        </SettingsCard>
+          </SettingsCard>
+        </div>
       </template>
     </SettingsCardGrid>
 
@@ -342,6 +362,7 @@ import {
   rotateTenantCryptoKey,
   updateTenantCryptoProfile,
 } from "@/api/tenant";
+import { useI18n } from "vue-i18n";
 import { $t } from "@/locales";
 import type {
   TenantCryptoActions,
@@ -357,7 +378,7 @@ import type { ColumnOption } from "@/types/component";
 import SettingsCardGrid from "@/components/common/settings-card-grid/index.vue";
 import SettingsCard from "@/components/common/settings-card/index.vue";
 import CommonSettingRow from "@/components/common/setting-row/index.vue";
-import CommonInlineRow from "@/components/common/inline-row/index.vue";
+import TableActionRow from "@/components/common/table-action-row/index.vue";
 import StatusIndicator from "@/components/common/StatusIndicator.vue";
 import CenteredDialog from "@/components/common/CenteredDialog.vue";
 import CryptoSuiteSelect, {
@@ -366,10 +387,13 @@ import CryptoSuiteSelect, {
 import { ROLES_ADMIN, ROLES_BIZ } from "@/utils/ops/roles";
 import { useLatestRequest } from "@/composables/useLatestRequest";
 
+defineOptions({ name: "TenantTransportEncryptionTab" });
+
 const props = defineProps<{
   tenantCode: string;
 }>();
 
+const { t, locale } = useI18n();
 const router = useRouter();
 const isInitialized = ref(false);
 const saving = ref(false);
@@ -444,42 +468,50 @@ const tenantCryptoEnabled = computed(
   () => licenseStatus.value?.issuanceAllowed === true,
 );
 
-const keyColumns = ref<ColumnOption[]>([
-  {
-    prop: "key_version",
-    label: $t("tenant.transportEncryption.table.version"),
-    width: 90,
-  },
-  {
-    prop: "status",
-    label: $t("tenant.transportEncryption.table.status"),
-    width: 120,
-    useSlot: true,
-  },
-  {
-    prop: "data_algorithm",
-    label: $t("tenant.transportEncryption.table.encryptionAlgorithm"),
-    minWidth: 96,
-  },
-  {
-    prop: "signature_algorithm",
-    label: $t("tenant.transportEncryption.table.signatureAlgorithm"),
-    minWidth: 100,
-  },
-  {
-    prop: "created_at",
-    label: $t("tenant.transportEncryption.table.createdAt"),
-    minWidth: 172,
-    formatter: (row: TenantCryptoKey) => formatDateTime(row.created_at),
-  },
-  {
-    prop: "operations",
-    label: $t("tenant.transportEncryption.table.operations"),
-    width: 230,
-    fixed: "right",
-    useSlot: true,
-  },
-]);
+const splitDateTime = (value: string | undefined): { date: string; time: string } => {
+  const formatted = formatDateTime(value);
+  const spaceIdx = formatted.indexOf(" ");
+  if (spaceIdx === -1) return { date: formatted, time: "" };
+  return {
+    date: formatted.slice(0, spaceIdx),
+    time: formatted.slice(spaceIdx + 1),
+  };
+};
+
+const keyColumns = computed<ColumnOption[]>(() => {
+  const isEn = String(locale.value).startsWith("en");
+  return [
+    {
+      prop: "key_version",
+      label: t("tenant.transportEncryption.table.version"),
+      width: isEn ? 60 : 52,
+    },
+    {
+      prop: "status",
+      label: t("tenant.transportEncryption.table.status"),
+      width: isEn ? 80 : 68,
+      useSlot: true,
+    },
+    {
+      prop: "algorithmSuite",
+      label: t("tenant.transportEncryption.table.algorithmSuite"),
+      minWidth: 98,
+      useSlot: true,
+    },
+    {
+      prop: "created_at",
+      label: t("tenant.transportEncryption.table.createdAt"),
+      width: 92,
+      useSlot: true,
+    },
+    {
+      prop: "operations",
+      label: t("tenant.transportEncryption.table.operations"),
+      width: isEn ? 124 : 94,
+      useSlot: true,
+    },
+  ];
+});
 
 watch(
   () => form.encryptionMode,
@@ -669,6 +701,10 @@ const saveProfile = async () => {
     });
     await loadData();
     ElMessage.success($t("common.feedback.saveSuccess"));
+  } catch (error) {
+    if (!isMfaStepUpCancelled(error)) {
+      logger.error("Failed to update transport crypto profile", error);
+    }
   } finally {
     saving.value = false;
   }
@@ -687,16 +723,48 @@ onMounted(() => void loadData());
 
 <style scoped lang="scss">
 .transport-control {
-  width: 180px;
+  width: min(100%, 220px);
+}
+
+.transport-right-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
 }
 
 .keys-table {
   width: 100%;
 
-  :deep(.el-input__wrapper) {
-    box-shadow: none !important;
-    background: transparent;
+  :deep(.el-table__cell > .cell) {
+    padding-left: 6px;
+    padding-right: 6px;
   }
+
+  :deep(.el-button.is-link.compact-action-btn) {
+    padding: 2px 3px !important;
+    margin: 0 !important;
+    height: 24px !important;
+    min-width: 0;
+  }
+}
+
+.key-stacked-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.3;
+  font-size: 12px;
+}
+
+.key-stacked-primary {
+  font-family: var(--el-font-family-mono, monospace);
+  color: var(--el-text-color-primary);
+}
+
+.key-stacked-sub {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 
 .alert-content {
@@ -714,7 +782,7 @@ onMounted(() => void loadData());
   gap: 12px;
   width: 100%;
 
-  @media (max-width: 1200px) {
+  @media (max-width: 1360px) {
     grid-template-columns: 1fr;
   }
 }

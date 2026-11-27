@@ -9,7 +9,6 @@
       v-model:filters="listFilters"
       v-model:columns="columns"
       :filter-catalog="tenantsCatalog"
-      :title="$t('tenant.list.title')"
       :data="tableData"
       :loading="loading"
       :empty-text="emptyDescription"
@@ -192,19 +191,20 @@ const tenantColumns = computed<ColumnOption<Tenant>[]>(() => {
     {
       prop: "tenant_id",
       label: t("tenant.fields.accountId"),
-      width: 150,
+      minWidth: 168,
+      width: 176,
       useSlot: true,
     },
     { prop: "name", label: t("common.fields.name"), minWidth: 100 },
     {
       prop: "contact_person",
       label: t("tenant.fields.contactPerson"),
-      width: 120,
+      width: 112,
     },
     {
       prop: "contact_phone",
       label: t("tenant.fields.contactPhone"),
-      width: 130,
+      width: 124,
     },
     {
       prop: "contact_email",
@@ -214,56 +214,59 @@ const tenantColumns = computed<ColumnOption<Tenant>[]>(() => {
     {
       prop: "status",
       label: t("common.fields.status"),
-      width: 100,
+      width: isEn ? 100 : 84,
+      minWidth: isEn ? 98 : 80,
       useSlot: true,
     },
     {
       prop: "created_at",
       label: t("common.fields.createdAt"),
-      width: 180,
-      minWidth: 180,
-      maxWidth: 188,
+      width: 172,
+      minWidth: 172,
+      maxWidth: 184,
       useSlot: true,
     },
     {
       prop: "operations",
       label: t("common.fields.operations"),
-      width: isEn ? 256 : 212,
+      width: isEn ? 204 : 164,
       fixed: "right",
       useSlot: true,
     },
   ];
 });
-const tenantImportColumns: ColumnConfig[] = [
-  { key: "tenant_code", label: $t("tenant.fields.code"), required: true },
-  { key: "tenant_id", label: $t("tenant.fields.accountId"), required: true },
-  { key: "name", label: $t("common.fields.name"), required: true },
+const tenantImportColumns = computed<ColumnConfig[]>(() => [
+  { key: "tenant_code", label: t("tenant.fields.code"), required: true },
+  { key: "tenant_id", label: t("tenant.fields.accountId"), required: true },
+  { key: "name", label: t("common.fields.name"), required: true },
   {
     key: "contact_person",
-    label: $t("tenant.fields.contactPerson"),
+    label: t("tenant.fields.contactPerson"),
     required: true,
   },
   {
     key: "contact_phone",
-    label: $t("tenant.fields.contactPhone"),
+    label: t("tenant.fields.contactPhone"),
     required: true,
   },
   {
     key: "contact_email",
-    label: $t("tenant.fields.contactEmail"),
+    label: t("tenant.fields.contactEmail"),
     required: true,
   },
-];
-const tenantExportColumns: { key: keyof TenantExportRow; label: string }[] = [
-  { key: "tenant_code", label: $t("tenant.fields.code") },
-  { key: "tenant_id", label: $t("tenant.fields.accountId") },
-  { key: "name", label: $t("common.fields.name") },
-  { key: "contact_person", label: $t("tenant.fields.contactPerson") },
-  { key: "contact_phone", label: $t("tenant.fields.contactPhone") },
-  { key: "contact_email", label: $t("tenant.fields.contactEmail") },
-  { key: "status", label: $t("common.fields.status") },
-  { key: "created_at", label: $t("common.fields.createdAt") },
-];
+]);
+const tenantExportColumns = computed<
+  { key: keyof TenantExportRow; label: string }[]
+>(() => [
+  { key: "tenant_code", label: t("tenant.fields.code") },
+  { key: "tenant_id", label: t("tenant.fields.accountId") },
+  { key: "name", label: t("common.fields.name") },
+  { key: "contact_person", label: t("tenant.fields.contactPerson") },
+  { key: "contact_phone", label: t("tenant.fields.contactPhone") },
+  { key: "contact_email", label: t("tenant.fields.contactEmail") },
+  { key: "status", label: t("common.fields.status") },
+  { key: "created_at", label: t("common.fields.createdAt") },
+]);
 const table = useTable({
   core: {
     apiFn: fetchTenantList,
@@ -321,9 +324,9 @@ const emptyDescription = computed(() =>
 const getTenantCellText = (columnKey: string, row: Tenant) => {
   switch (columnKey) {
     case "tenant_code":
-      return row.tenant_code || EMPTY_PLACEHOLDER;
+      return `${row.tenant_code || EMPTY_PLACEHOLDER}    `;
     case "tenant_id":
-      return row.tenant_id || EMPTY_PLACEHOLDER;
+      return `${row.tenant_id || EMPTY_PLACEHOLDER}    `;
     case "name":
       return row.name || EMPTY_PLACEHOLDER;
     case "contact_person":
@@ -333,7 +336,7 @@ const getTenantCellText = (columnKey: string, row: Tenant) => {
     case "contact_email":
       return row.contact_email || EMPTY_PLACEHOLDER;
     case "status":
-      return getStatusLabel(tenantStatusKey(row));
+      return `● ${getStatusLabel(tenantStatusKey(row))} `;
     case "created_at":
       return formatDate(row.created_at);
     case "operations":
@@ -357,7 +360,7 @@ const getTenantColumnWeight = (columnKey: string) => {
     case "contact_email":
       return 1.8;
     case "status":
-      return 0.9;
+      return 0.01;
     case "created_at":
       return 1;
     default:
@@ -377,9 +380,9 @@ useAdaptiveTableColumns({
 });
 const tenantImportFormatHint = computed(() =>
   [
-    $t("feedback.import.csvFormatHint"),
-    $t("feedback.import.requiredColumns", {
-      columns: tenantImportColumns
+    t("feedback.import.csvFormatHint"),
+    t("feedback.import.requiredColumns", {
+      columns: tenantImportColumns.value
         .filter((column) => column.required)
         .map((column) => column.key)
         .join(", "),
@@ -496,7 +499,7 @@ const handleExportCommand = (command: string) => {
   }));
   exportResourceCsv(
     exportRows,
-    tenantExportColumns,
+    tenantExportColumns.value,
     `tenants-${exportCommand}-${Date.now().toString(36)}.csv`,
   );
 };
@@ -525,10 +528,6 @@ const handleTenantImport = async (items: Record<string, unknown>[]) => {
       },
     },
   );
-};
-const handleReset = () => {
-  resetSearchParams();
-  handleSearch();
 };
 const handleCreate = () => {
   createVisible.value = true;

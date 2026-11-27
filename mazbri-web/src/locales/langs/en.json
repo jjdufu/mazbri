@@ -2953,6 +2953,9 @@
     }
   },
   "tenant": {
+    "validation": {
+      "tenantCodeRequired": "Tenant code is required"
+    },
     "list": {
       "title": "Tenant List",
       "searchPlaceholder": "Name / tenant account / code / email"
@@ -3057,8 +3060,7 @@
       "table": {
         "version": "Version",
         "status": "Status",
-        "encryptionAlgorithm": "Encryption Algorithm",
-        "signatureAlgorithm": "Signature Algorithm",
+        "algorithmSuite": "Algorithm Suite",
         "createdAt": "Created At",
         "operations": "Actions"
       },
@@ -3074,20 +3076,14 @@
     },
     "account": {
       "overviewTitle": "Account Overview",
-      "overviewSubtitle": "Balance, status, and quick actions",
       "balanceLabel": "Cash Balance",
-      "creditLimitMeta": "Credit Limit {amount}",
-      "availableBalanceMeta": "Available {amount}",
       "status": {
         "active": "Active",
         "frozen": "Frozen"
       },
-      "quickActionsTitle": "Quick Actions",
-      "quickActionsHint": "",
       "recharge": "Recharge",
       "refund": "Refund",
-      "transactionsTitle": "Transaction Records (Recharge / Refund)",
-      "transactionsSubtitle": "Recharge / Refund",
+      "transactionsTitle": "Transaction History",
       "filterPlaceholder": "All Types",
       "filters": {
         "all": "All",
@@ -3152,7 +3148,7 @@
         "refundAmountPositive": "Refund amount must be greater than 0",
         "refundReasonRequired": "Please enter a refund reason"
       },
-      "windowSpend": "Window spend (finance SSOT)",
+      "windowSpend": "Recent Spend",
       "statusLabel": "Account Status",
       "creditAndAvailable": "Credit / Available"
     },
@@ -3242,9 +3238,7 @@
         "productPlaceholder": "Please select or search a product to grant",
         "unitPrice": "Unit Price",
         "unitPricePlaceholder": "e.g. 0.001",
-        "cbProFallback": "CBPRO",
-        "cbProEnabledHint": "",
-        "cbProDisabledHint": "CBPRO not enabled on product"
+        "cbProFallback": "CBPRO"
       }
     },
     "whitelist": {
@@ -3356,24 +3350,8 @@
         "isolated": "Tenant isolation",
         "apiPath": "API Path",
         "overrideTtl": "Custom TTL",
-        "warmupKeys": "Warmup Key Name",
-        "warmupEnabled": "Auto Warmup"
-      },
-      "tips": {
-        "enabled": "",
-        "isolated": "",
-        "warmup": "",
-        "override": ""
+        "warmupKeys": "Warmup Key Name"
       }
-    },
-    "accessStrategy": {
-      "capabilityMapTitle": "",
-      "capabilityMapLead": "",
-      "cacheName": "Response cache",
-      "cacheSummary": "",
-      "cbproName": "CBPRO",
-      "cbproSummary": "",
-      "openProductsTab": "Granted products"
     },
     "overview360": {
       "calls": "Calls",

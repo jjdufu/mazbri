@@ -2,7 +2,6 @@
   <TenantTabShell>
     <ResourceTableShell
       v-model:columns="apiKeyColumns"
-      :title="$t('tenant.tabs.apiKeys')"
       :loading="loading"
       :data="apiKeys"
       :show-toolbar="false"
@@ -87,16 +86,22 @@
         :rules="createRules"
         label-width="100px"
       >
-        <ElFormItem :label="$t('tenant.apiKey.expiryDays')">
-          <ElInputNumber
-            v-model="createForm.expires_days"
-            :min="1"
-            :max="3650"
-            :step="30"
-          />
-          <CommonInlineHint class="ml-2" size="sm">
-            {{ $t("common.units.days") }} ({{ $t("common.defaults.oneYear") }})
-          </CommonInlineHint>
+        <ElFormItem
+          :label="$t('tenant.apiKey.expiryDays')"
+          prop="expires_days"
+        >
+          <div class="days-input-row">
+            <ElInputNumber
+              v-model="createForm.expires_days"
+              :min="1"
+              :max="3650"
+              :step="30"
+              class="days-input-number"
+            />
+            <CommonInlineHint size="sm">
+              {{ $t("common.units.days") }} ({{ $t("common.defaults.oneYear") }})
+            </CommonInlineHint>
+          </div>
         </ElFormItem>
 
       </ElForm>
@@ -123,15 +128,18 @@
           <ElInput :model-value="renewForm.currentExpires" disabled />
         </ElFormItem>
         <ElFormItem :label="$t('tenant.apiKey.renewDays')" prop="expires_days">
-          <ElInputNumber
-            v-model="renewForm.expires_days"
-            :min="1"
-            :max="3650"
-            :step="30"
-          />
-          <CommonInlineHint class="ml-2" size="sm">{{
-            $t("common.units.days")
-          }}</CommonInlineHint>
+          <div class="days-input-row">
+            <ElInputNumber
+              v-model="renewForm.expires_days"
+              :min="1"
+              :max="3650"
+              :step="30"
+              class="days-input-number"
+            />
+            <CommonInlineHint size="sm">{{
+              $t("common.units.days")
+            }}</CommonInlineHint>
+          </div>
         </ElFormItem>
       </ElForm>
     </EditDialog>
@@ -195,6 +203,7 @@ import {
   deleteApiKey,
 } from "@/api/tenant";
 import { updateApiKey as updateApiKeyApi } from "@/api/api-key";
+import { useI18n } from "vue-i18n";
 import { $t } from "@/locales";
 import { ROLES_BIZ } from "@/utils/ops/roles";
 import { useUserStore } from "@/store/modules/user";
@@ -231,29 +240,30 @@ const apiKeyActions = ref<{
 });
 const createVisible = ref(false);
 const renewVisible = ref(false);
-const apiKeyColumns = ref<ColumnOption<ApiKey>[]>([
+const { t } = useI18n();
+const apiKeyColumns = computed<ColumnOption<ApiKey>[]>(() => [
   {
     prop: "key_suffix",
-    label: $t("tenant.apiKey.key"),
+    label: t("tenant.apiKey.key"),
     minWidth: 120,
     useSlot: true,
   },
 
   {
     prop: "is_active",
-    label: $t("common.fields.status"),
+    label: t("common.fields.status"),
     width: 100,
     useSlot: true,
   },
   {
     prop: "expires_at",
-    label: $t("tenant.apiKey.expiry"),
+    label: t("tenant.apiKey.expiry"),
     width: 180,
     useSlot: true,
   },
   {
     prop: "operations",
-    label: $t("common.fields.operations"),
+    label: t("common.fields.operations"),
     width: 190,
     fixed: "right",
     useSlot: true,
@@ -269,23 +279,24 @@ const renewForm = reactive({
   currentExpires: "",
   expires_days: 365,
 });
-const createRules: FormRules = {};
-const renewRules: FormRules = {
+const daysRules = computed<FormRules>(() => ({
   expires_days: [
     {
       required: true,
-      message: $t("tenant.apiKey.validation.renewDaysRequired"),
+      message: t("tenant.apiKey.validation.renewDaysRequired"),
       trigger: "blur",
     },
     {
       type: "number",
       min: 1,
       max: 3650,
-      message: $t("tenant.apiKey.validation.renewDaysRange"),
+      message: t("tenant.apiKey.validation.renewDaysRange"),
       trigger: "blur",
     },
   ],
-};
+}));
+const createRules = daysRules;
+const renewRules = daysRules;
 const keysLoader = useLatestRequest(async (ctx, code: string) => {
   const res = await fetchTenantApiKeys(code, ctx.signal);
   if (!ctx.isLatest() || props.tenantCode !== code) return;
@@ -489,8 +500,21 @@ onMounted(() => {
 <style scoped lang="scss">
 .api-key-code {
   font-family: monospace;
-  background-color: var(--fill-color-light);
+  background-color: var(--el-fill-color-light);
   padding: 2px 6px;
   border-radius: var(--art-form-control-radius-sm);
+}
+
+.days-input-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+  max-width: 100%;
+
+  :deep(.days-input-number) {
+    width: 168px;
+    flex-shrink: 0;
+  }
 }
 </style>

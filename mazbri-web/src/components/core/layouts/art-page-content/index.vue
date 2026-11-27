@@ -4,11 +4,8 @@
     :class="{ 'overflow-auto': isFullPage }"
     :style="containerStyle"
   >
-    <div id="app-content-header">
-      <ArtFestivalTextScroll v-if="!isFullPage" />
-
+    <div v-if="isOpenRouteInfo === 'true'" id="app-content-header">
       <div
-        v-if="isOpenRouteInfo === 'true'"
         class="px-2 py-1.5 mb-3 text-sm text-g-500 bg-g-200 border-full-d rounded-md"
       >
         router meta：{{ route.meta }}

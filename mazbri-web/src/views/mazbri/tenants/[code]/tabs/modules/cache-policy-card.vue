@@ -143,13 +143,18 @@
           />
         </template>
         <template #ttl="{ row }">
-          <ElInputNumber
-            v-model="row.ttl"
-            :min="0"
-            :disabled="!canWriteBusiness"
-          >
-            <template #suffix>{{ $t("tenant.cachePolicy.seconds") }}</template>
-          </ElInputNumber>
+          <div class="inline-ttl-cell">
+            <ElInputNumber
+              v-model="row.ttl"
+              :min="0"
+              controls-position="right"
+              :disabled="!canWriteBusiness"
+              class="inline-ttl-input"
+            />
+            <span class="inline-ttl-unit">{{
+              $t("tenant.cachePolicy.seconds")
+            }}</span>
+          </div>
         </template>
         <template #operations="{ $index }">
           <TableActionRow>
@@ -182,10 +187,13 @@ import { logger } from "@/utils/sys";
 import { $t } from "@/locales";
 import type { ColumnOption } from "@/types/component";
 
+import { useI18n } from "vue-i18n";
+
 const props = defineProps<{
   tenantCode: string;
 }>();
 
+const { t } = useI18n();
 const loading = ref(false);
 const saving = ref(false);
 
@@ -193,46 +201,46 @@ const userStore = useUserStore();
 const canWriteBusiness = computed(() => userStore.canWriteBusiness);
 
 const warmupKeysList = ref<{ key: string }[]>([]);
-const warmupKeysColumns = ref<
+const warmupKeysColumns = computed<
   ColumnOption<{
     key: string;
   }>[]
->([
+>(() => [
   {
     prop: "key",
-    label: $t("tenant.cachePolicy.fields.warmupKeys"),
+    label: t("tenant.cachePolicy.fields.warmupKeys"),
     useSlot: true,
   },
   {
     prop: "operations",
-    label: $t("common.fields.operations"),
-    width: 80,
+    label: t("common.fields.operations"),
+    width: 104,
     align: "center",
     useSlot: true,
   },
 ]);
 
-const overrideColumns = ref<
+const overrideColumns = computed<
   ColumnOption<{
     path: string;
     ttl: number;
   }>[]
->([
+>(() => [
   {
     prop: "path",
-    label: $t("tenant.cachePolicy.fields.apiPath"),
+    label: t("tenant.cachePolicy.fields.apiPath"),
     useSlot: true,
   },
   {
     prop: "ttl",
-    label: $t("tenant.cachePolicy.fields.overrideTtl"),
-    width: 200,
+    label: t("tenant.cachePolicy.fields.overrideTtl"),
+    width: 196,
     useSlot: true,
   },
   {
     prop: "operations",
-    label: $t("common.fields.operations"),
-    width: 80,
+    label: t("common.fields.operations"),
+    width: 104,
     align: "center",
     useSlot: true,
   },
@@ -380,10 +388,23 @@ onMounted(loadData);
 
 .inline-edit-table {
   width: 100%;
+}
 
-  :deep(.el-input__wrapper) {
-    box-shadow: none !important;
-    background: transparent;
-  }
+.inline-ttl-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.inline-ttl-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.inline-ttl-unit {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 </style>

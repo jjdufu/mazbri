@@ -1,7 +1,11 @@
 <template>
   <div
     class="art-table"
-    :class="{ 'is-empty': isEmpty, 'is-fullscreen': isFullScreen }"
+    :class="{
+      'is-empty': isEmpty,
+      'is-compact-empty': props.emptyHeight === 'auto',
+      'is-fullscreen': isFullScreen,
+    }"
     :style="containerStyle"
   >
     <ElTable

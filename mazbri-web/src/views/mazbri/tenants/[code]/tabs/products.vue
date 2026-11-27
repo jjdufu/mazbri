@@ -2,7 +2,6 @@
   <TenantTabShell>
     <ResourceTableShell
       v-model:columns="productColumns"
-      :title="$t('tenant.products.title')"
       :loading="loading"
       :data="products"
       :pagination="pagination"
@@ -100,8 +99,16 @@
       :saving="granting"
       @confirm="handleSubmitGrant"
     >
-      <ElForm :model="grantForm" label-width="100px">
-        <ElFormItem :label="$t('tenant.products.grantDialog.product')">
+      <ElForm
+        ref="grantFormRef"
+        :model="grantForm"
+        :rules="grantRules"
+        label-width="100px"
+      >
+        <ElFormItem
+          :label="$t('tenant.products.grantDialog.product')"
+          prop="productId"
+        >
           <ElSelect
             v-model="grantForm.productId"
             :placeholder="$t('tenant.products.grantDialog.productPlaceholder')"
@@ -120,7 +127,10 @@
             />
           </ElSelect>
         </ElFormItem>
-        <ElFormItem :label="$t('tenant.products.grantDialog.unitPrice')">
+        <ElFormItem
+          :label="$t('tenant.products.grantDialog.unitPrice')"
+          prop="unit_price"
+        >
           <ElInput
             v-model="grantForm.unit_price"
             :placeholder="
@@ -147,8 +157,14 @@
   </TenantTabShell>
 </template>
 <script setup lang="ts">
+import { useI18n } from "vue-i18n";
 import TenantTabShell from "@/components/common/tenant-tab-shell/index.vue";
-import { ElMessageBox, ElMessage } from "element-plus";
+import {
+  ElMessageBox,
+  ElMessage,
+  type FormInstance,
+  type FormRules,
+} from "element-plus";
 import { $t } from "@/locales";
 import { ROLES_BIZ } from "@/utils/ops/roles";
 import type {
@@ -192,48 +208,67 @@ const productActions = ref<{
   revoke: false,
 });
 const availableProducts = ref<Product[]>([]);
+const { t } = useI18n();
 const grantVisible = ref(false);
 const configDrawerVisible = ref(false);
 const selectedProduct = ref<TenantProduct | null>(null);
+const grantFormRef = ref<FormInstance>();
 const grantForm = reactive({
   productId: "",
   unit_price: "0.001",
   cb_pro_fallback: false,
 });
-const productColumns = ref<ColumnOption<TenantProduct>[]>([
+const grantRules = computed<FormRules>(() => ({
+  productId: [
+    {
+      required: true,
+      message: t("tenant.messages.selectProductToGrant"),
+      trigger: "change",
+    },
+  ],
+  unit_price: [
+    {
+      required: true,
+      pattern: /^(?:0|[1-9]\d{0,11})(?:\.\d{1,6})?$/,
+      message: t("tenant.products.grantDialog.unitPricePlaceholder"),
+      trigger: "blur",
+    },
+  ],
+}));
+const productColumns = computed<ColumnOption<TenantProduct>[]>(() => [
   {
     prop: "product_id",
-    label: $t("tenant.products.columns.productId"),
+    label: t("tenant.products.columns.productId"),
     width: 180,
   },
-  { prop: "name", label: $t("tenant.products.columns.name"), minWidth: 100 },
+  { prop: "name", label: t("tenant.products.columns.name"), minWidth: 100 },
   {
     prop: "description",
-    label: $t("tenant.products.columns.description"),
+    label: t("tenant.products.columns.description"),
     minWidth: 112,
     useSlot: true,
   },
   {
     prop: "granted_at",
-    label: $t("tenant.products.columns.grantedAt"),
+    label: t("tenant.products.columns.grantedAt"),
     width: 170,
     useSlot: true,
   },
   {
     prop: "unit_price",
-    label: $t("tenant.products.columns.unitPrice"),
+    label: t("tenant.products.columns.unitPrice"),
     width: 110,
     useSlot: true,
   },
   {
     prop: "cb_pro_fallback",
-    label: $t("tenant.products.columns.cbProFallback"),
+    label: t("tenant.products.columns.cbProFallback"),
     width: 110,
     useSlot: true,
   },
   {
     prop: "operations",
-    label: $t("common.fields.operations"),
+    label: t("common.fields.operations"),
     width: 150,
     fixed: "right",
     useSlot: true,
@@ -352,10 +387,8 @@ const handleSubmitGrant = async () => {
     ElMessage.warning($t("tenant.validation.tenantCodeRequired"));
     return;
   }
-  if (!grantForm.productId) {
-    ElMessage.warning($t("tenant.messages.selectProductToGrant"));
-    return;
-  }
+  const valid = await grantFormRef.value?.validate().catch(() => false);
+  if (!valid) return;
   granting.value = true;
   try {
     await grantProduct(code, grantForm.productId, {

@@ -2953,6 +2953,9 @@
     }
   },
   "tenant": {
+    "validation": {
+      "tenantCodeRequired": "缺少租户编码"
+    },
     "list": {
       "title": "租户列表",
       "searchPlaceholder": "名称 / 租户账号 / 编码 / 邮箱"
@@ -3057,8 +3060,7 @@
       "table": {
         "version": "版本",
         "status": "状态",
-        "encryptionAlgorithm": "加密算法",
-        "signatureAlgorithm": "签名算法",
+        "algorithmSuite": "算法套件",
         "createdAt": "创建时间",
         "operations": "操作"
       },
@@ -3074,20 +3076,14 @@
     },
     "account": {
       "overviewTitle": "账户概览",
-      "overviewSubtitle": "余额、状态与快捷操作",
       "balanceLabel": "账户余额（现金）",
-      "creditLimitMeta": "授信额度 {amount}",
-      "availableBalanceMeta": "可用额度 {amount}",
       "status": {
         "active": "正常",
         "frozen": "已冻结"
       },
-      "quickActionsTitle": "快捷操作",
-      "quickActionsHint": "",
       "recharge": "充值",
       "refund": "退款",
       "transactionsTitle": "交易记录",
-      "transactionsSubtitle": "充值与退款明细",
       "filterPlaceholder": "全部类型",
       "filters": {
         "all": "全部",
@@ -3242,9 +3238,7 @@
         "productPlaceholder": "请选择或搜索要开通的产品",
         "unitPrice": "单价",
         "unitPricePlaceholder": "例如 0.001",
-        "cbProFallback": "高级熔断",
-        "cbProEnabledHint": "",
-        "cbProDisabledHint": "产品未开启高级熔断"
+        "cbProFallback": "高级熔断"
       }
     },
     "whitelist": {
@@ -3334,14 +3328,7 @@
         "isolated": "租户隔离",
         "apiPath": "接口请求路径",
         "overrideTtl": "定制过期时间（秒）",
-        "warmupKeys": "预热键名",
-        "warmupEnabled": "自动预加载"
-      },
-      "tips": {
-        "enabled": "",
-        "isolated": "",
-        "warmup": "",
-        "override": ""
+        "warmupKeys": "预热键名"
       }
     },
     "messages": {
@@ -3365,15 +3352,6 @@
       "deleteTenantConfirm": "确定要永久删除租户 \"{name}\" 吗？此操作不可恢复，将释放租户编码并清理关联配置。",
       "disableTenantConfirm": "确定要停用租户 \"{name}\" 吗？停用后该租户无法调用业务 API，可随时再启用。",
       "enableTenantConfirm": "确定要启用租户 \"{name}\" 吗？"
-    },
-    "accessStrategy": {
-      "capabilityMapTitle": "",
-      "capabilityMapLead": "",
-      "cacheName": "响应缓存",
-      "cacheSummary": "",
-      "cbproName": "高级熔断",
-      "cbproSummary": "",
-      "openProductsTab": "已开通产品"
     },
     "overview360": {
       "calls": "调用量",

@@ -11,12 +11,9 @@ withDefaults(
   defineProps<{
     /** 可选固定列数（6 卡行在桌面 6 列、中屏 3×2 防 5+1 孤卡；未传则 auto-fit 等分）。 */
     columns?: 3 | 4 | 6;
-    /** 兼容保留签名。 */
-    gutter?: number;
   }>(),
   {
     columns: undefined,
-    gutter: 16,
   },
 );
 </script>

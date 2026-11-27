@@ -192,31 +192,3 @@ onMounted(() => {
   void loadData();
 });
 </script>
-
-<style scoped lang="scss">
-.tenant-identity__name {
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 22px;
-  color: var(--el-text-color-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 360px;
-}
-
-.tenant-identity__code {
-  display: inline-flex;
-  align-items: center;
-  flex-shrink: 0;
-  padding: 1px 8px;
-  border-radius: var(--art-form-control-radius-sm, 4px);
-  background: var(--el-fill-color-light);
-  color: var(--el-text-color-regular);
-  line-height: 20px;
-}
-
-.tenant-identity__status {
-  flex-shrink: 0;
-}
-</style>

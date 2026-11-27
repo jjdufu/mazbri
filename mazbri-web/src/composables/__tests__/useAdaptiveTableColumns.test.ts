@@ -37,4 +37,35 @@ describe("useAdaptiveTableColumns contract", () => {
       `expected supplier_code width >= 200, got ${widthNum}`,
     );
   });
+
+  it("keeps status column floor >= 94px during narrow container shrink when declared >= 94", () => {
+    const baseColumns: ColumnOption<SupplierRow>[] = [
+      { prop: "supplier_code", label: "Supplier Code", minWidth: 220 },
+      { prop: "status", label: "Status", width: 100, minWidth: 98 },
+    ];
+    const columns = ref<ColumnOption<SupplierRow>[]>([]);
+    const rows = ref<SupplierRow[]>([
+      { supplier_code: "LONG-SUPPLIER-CODE-001", status: "Enabled" },
+    ]);
+    const fakeContainer = ref({
+      clientWidth: 260,
+      querySelector: () => ({ clientWidth: 260 }),
+    } as unknown as HTMLElement);
+    const { syncAdaptiveColumns } = useAdaptiveTableColumns<SupplierRow>({
+      columns,
+      containerRef: fakeContainer,
+      rows,
+      baseColumns,
+      getCellText: ({ columnKey, row }) =>
+        String(row[columnKey as keyof SupplierRow] ?? ""),
+    });
+    syncAdaptiveColumns();
+
+    const statusCol = columns.value.find((c) => c.prop === "status");
+    const statusWidth = Number(statusCol?.width ?? statusCol?.minWidth ?? 0);
+    assert.ok(
+      statusWidth >= 94,
+      `expected status column width >= 94, got ${statusWidth}`,
+    );
+  });
 });

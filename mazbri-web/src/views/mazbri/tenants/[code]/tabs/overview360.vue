@@ -4,7 +4,7 @@
       <StatCard
         :label="t('tenant.overview360.calls')"
         :value="overview?.calls ?? null"
-        icon="ri:exchange-box-line"
+        icon="ri:exchange-line"
         :hint="t('ops.timeRange.presets.24h')"
         :loading="loading"
         :digits="0"
@@ -14,8 +14,8 @@
         :value="overview?.success_rate ?? null"
         unit="%"
         icon="ri:checkbox-circle-line"
-        icon-color="#67c23a"
-        icon-background="rgba(103, 194, 58, 0.12)"
+        icon-color="var(--el-color-success)"
+        icon-background="color-mix(in srgb, var(--el-color-success) 12%, transparent)"
         :hint="t('ops.timeRange.presets.24h')"
         :loading="loading"
         :digits="1"
@@ -25,8 +25,8 @@
         :value="overview?.p95_ms ?? null"
         unit="ms"
         icon="ri:timer-flash-line"
-        icon-color="#e6a23c"
-        icon-background="rgba(230, 162, 60, 0.12)"
+        icon-color="var(--el-color-warning)"
+        icon-background="color-mix(in srgb, var(--el-color-warning) 12%, transparent)"
         :hint="t('ops.timeRange.presets.24h')"
         :loading="loading"
         :digits="0"
@@ -58,7 +58,7 @@
           :loading="loading"
           horizontal
           unit-type="count"
-          height="240px"
+          :height="errorChartHeight"
         />
         <ArtTable
           :data="errorTableRows"
@@ -147,6 +147,11 @@ const errorChartSeries = computed(() => [
     data: errors.value.slice(0, 10).map((row) => Number(row.count) || 0),
   },
 ]);
+
+const errorChartHeight = computed(() => {
+  const count = errorChartCategories.value.length;
+  return `${Math.min(260, Math.max(132, count * 44 + 56))}px`;
+});
 
 const errorColumns = computed<ColumnOption<TenantErrorTableRow>[]>(() => [
   { prop: "error_code", label: t("tenant.overview360.errorCode"), minWidth: 160 },

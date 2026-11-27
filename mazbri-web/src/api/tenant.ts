@@ -59,7 +59,7 @@ function tenantPath(code: unknown, ...segments: string[]): string {
 
 
 
-export const DEFAULT_CBPRO_POLICY_CONFIG: CBProPolicyConfig = {
+const DEFAULT_CBPRO_POLICY_CONFIG: CBProPolicyConfig = {
   mode: "fallback_only",
   base_ttl_secs: 300,
   min_ttl_secs: 60,
@@ -83,7 +83,7 @@ export const DEFAULT_CBPRO_POLICY_CONFIG: CBProPolicyConfig = {
   shadow_validate_enabled: false,
   background_analysis_enabled: false,
 };
-export const DEFAULT_TENANT_PRODUCT_CONFIG: TenantProductConfig = {
+const DEFAULT_TENANT_PRODUCT_CONFIG: TenantProductConfig = {
   unit_price: "0.001",
   currency: "CNY",
   cb_pro_fallback: false,
@@ -98,7 +98,7 @@ export function createDefaultCBProPolicyConfig(): CBProPolicyConfig {
     ignore_json_paths: [...DEFAULT_CBPRO_POLICY_CONFIG.ignore_json_paths],
   };
 }
-export function createDefaultTenantProductConfig(): TenantProductConfig {
+function createDefaultTenantProductConfig(): TenantProductConfig {
   return {
     ...DEFAULT_TENANT_PRODUCT_CONFIG,
     cbpro: createDefaultCBProPolicyConfig(),
@@ -189,7 +189,7 @@ export function updateTenant(
   signal?: AbortSignal,
 ) {
   return request.put<Tenant>({
-    url: `${BASE_PATH}/${code}`,
+    url: tenantPath(code),
     params: data,
     showSuccessMessage: true,
     signal,
@@ -197,7 +197,7 @@ export function updateTenant(
 }
 export function deleteTenant(code: string, signal?: AbortSignal) {
   return request.del<void>({
-    url: `${BASE_PATH}/${code}`,
+    url: tenantPath(code),
     showSuccessMessage: true,
     signal,
   });
@@ -208,7 +208,7 @@ export function setTenantEnabled(
   signal?: AbortSignal,
 ) {
   return request.put<void>({
-    url: `${BASE_PATH}/${code}/enabled`,
+    url: tenantPath(code, "enabled"),
     params: data,
     showSuccessMessage: true,
     signal,
@@ -216,7 +216,7 @@ export function setTenantEnabled(
 }
 export function fetchTenantCrypto(code: string, signal?: AbortSignal) {
   return request.get<TenantCryptoBundle>({
-    url: `${BASE_PATH}/${code}/crypto`,
+    url: tenantPath(code, "crypto"),
     signal,
   });
 }
@@ -226,7 +226,7 @@ export function updateTenantCryptoProfile(
   signal?: AbortSignal,
 ) {
   return request.put<TenantCryptoProfile>({
-    url: `${BASE_PATH}/${code}/crypto-profile`,
+    url: tenantPath(code, "crypto-profile"),
     params: data,
     showSuccessMessage: true,
     signal,
@@ -234,14 +234,14 @@ export function updateTenantCryptoProfile(
 }
 export function createTenantCryptoKey(code: string, signal?: AbortSignal) {
   return request.post<TenantCryptoKeyCreateResponse>({
-    url: `${BASE_PATH}/${code}/crypto-keys`,
+    url: tenantPath(code, "crypto-keys"),
     showSuccessMessage: true,
     signal,
   });
 }
 export function rotateTenantCryptoKey(code: string, signal?: AbortSignal) {
   return request.post<TenantCryptoKeyCreateResponse>({
-    url: `${BASE_PATH}/${code}/crypto-keys/rotate`,
+    url: tenantPath(code, "crypto-keys", "rotate"),
     showSuccessMessage: true,
     signal,
   });
@@ -252,7 +252,7 @@ export function activateTenantCryptoKey(
   signal?: AbortSignal,
 ) {
   return request.post<TenantCryptoKey>({
-    url: `${BASE_PATH}/${code}/crypto-keys/${version}/activate`,
+    url: tenantPath(code, "crypto-keys", version, "activate"),
     showSuccessMessage: true,
     signal,
   });
@@ -263,7 +263,7 @@ export function deprecateTenantCryptoKey(
   signal?: AbortSignal,
 ) {
   return request.post<TenantCryptoKey>({
-    url: `${BASE_PATH}/${code}/crypto-keys/${version}/deprecate`,
+    url: tenantPath(code, "crypto-keys", version, "deprecate"),
     showSuccessMessage: true,
     signal,
   });
@@ -274,7 +274,7 @@ export function disableTenantCryptoKey(
   signal?: AbortSignal,
 ) {
   return request.post<TenantCryptoKey>({
-    url: `${BASE_PATH}/${code}/crypto-keys/${version}/disable`,
+    url: tenantPath(code, "crypto-keys", version, "disable"),
     showSuccessMessage: true,
     signal,
   });
@@ -285,7 +285,7 @@ export function deleteTenantCryptoKey(
   signal?: AbortSignal,
 ) {
   return request.del<TenantCryptoKey>({
-    url: `${BASE_PATH}/${code}/crypto-keys/${version}`,
+    url: tenantPath(code, "crypto-keys", version),
     showSuccessMessage: true,
     signal,
   });
