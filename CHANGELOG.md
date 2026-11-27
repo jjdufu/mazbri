@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.8](https://github.com/jjdufu/mazbri/compare/v0.6.7...v0.6.8) (2026-11-27)
+
+
+### Features
+
+* **tenants:** 重构租户列表与详情页排版并同步 WebUI 文档与 AOCI 认知索引 ([#97](https://github.com/jjdufu/mazbri/issues/97)) ([1f15ec8](https://github.com/jjdufu/mazbri/commit/1f15ec8b707c4d62f2bb1f5991cacc8188b9caf1))
+
 ## [0.6.7](https://github.com/jjdufu/mazbri/compare/v0.6.6...v0.6.7) (2026-11-27)
 
 
