@@ -338,9 +338,14 @@ pub fn build_request_logs_latest_universe_data_sql(
 /// 调用量与错误随时间分布：与明细列表共用同一组过滤条件，保证框选区间计数一致。
 #[must_use]
 pub fn build_request_logs_histogram_sql(where_clause: &BoundCond, bucket_seconds: u32) -> BoundCond {
+    let ts_bucket = if bucket_seconds >= 86_400 {
+        format!("toStartOfInterval(timestamp, INTERVAL {bucket_seconds} SECOND, 'Asia/Shanghai')")
+    } else {
+        format!("toStartOfInterval(timestamp, INTERVAL {bucket_seconds} SECOND)")
+    };
     BoundCond {
         sql: format!(
-            "SELECT toUnixTimestamp(toStartOfInterval(timestamp, INTERVAL {bucket_seconds} SECOND)) AS ts, \
+            "SELECT toUnixTimestamp({ts_bucket}) AS ts, \
              toUInt64(count()) AS calls, \
              toUInt64({SQL_COUNT_FAILURES}) AS errors \
              FROM request_logs FINAL{} GROUP BY ts ORDER BY ts",

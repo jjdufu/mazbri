@@ -38,24 +38,28 @@ pub fn normalize_error_code(raw: &str) -> Option<String> {
 }
 
 /// `ClickHouse`：失败谓词 = `NOT` 成功（与 [`is_success_row`] 对齐）。
+///
+/// 显式限定物理表名 `request_logs.`，防止 `SELECT ... AS error_code` 投影别名在
+/// `ClickHouse` `WHERE` 子句中遮蔽底层列 `request_logs.error_code`。
 pub const SQL_IS_FAILURE: &str = "NOT (\
-(error_class = 'ok' OR (error_class = '' AND status_code >= 200 AND status_code < 400)) \
-AND error_code = ''\
+(request_logs.error_class = 'ok' OR (request_logs.error_class = '' AND request_logs.status_code >= 200 AND request_logs.status_code < 400)) \
+AND request_logs.error_code = ''\
 )";
 
 /// `ClickHouse`：错误分布用规范化 `error_code`（空失败码 → `UNKNOWN`，永不 `(empty)`）。
-pub const SQL_NORM_ERROR_CODE: &str = "if(error_code = '', 'UNKNOWN', error_code)";
+pub const SQL_NORM_ERROR_CODE: &str =
+    "if(request_logs.error_code = '', 'UNKNOWN', request_logs.error_code)";
 
 /// `ClickHouse`：`countIf` 失败（直方图等）。
 pub const SQL_COUNT_FAILURES: &str = "countIf(NOT (\
-(error_class = 'ok' OR (error_class = '' AND status_code >= 200 AND status_code < 400)) \
-AND error_code = ''\
+(request_logs.error_class = 'ok' OR (request_logs.error_class = '' AND request_logs.status_code >= 200 AND request_logs.status_code < 400)) \
+AND request_logs.error_code = ''\
 ))";
 
 /// `ClickHouse`：`countIf` 成功（租户成功率等）。
 pub const SQL_COUNT_SUCCESSES: &str = "countIf((\
-(error_class = 'ok' OR (error_class = '' AND status_code >= 200 AND status_code < 400)) \
-AND error_code = ''\
+(request_logs.error_class = 'ok' OR (request_logs.error_class = '' AND request_logs.status_code >= 200 AND request_logs.status_code < 400)) \
+AND request_logs.error_code = ''\
 ))";
 
 #[cfg(test)]
@@ -94,7 +98,8 @@ mod tests {
         assert!(!SQL_NORM_ERROR_CODE.contains("(empty)"));
         assert!(SQL_NORM_ERROR_CODE.contains(UNKNOWN_ERROR_CODE));
         assert!(SQL_IS_FAILURE.starts_with("NOT ("));
+        assert!(SQL_IS_FAILURE.contains("request_logs.error_code = ''"));
         assert!(SQL_COUNT_FAILURES.contains("countIf(NOT ("));
-        assert!(SQL_COUNT_SUCCESSES.contains("error_class = 'ok'"));
+        assert!(SQL_COUNT_SUCCESSES.contains("request_logs.error_class = 'ok'"));
     }
 }

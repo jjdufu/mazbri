@@ -25,6 +25,18 @@ export interface OpsChartThemeTokens {
   splitLineColor: string;
   tooltipBg: string;
   tooltipBorder: string;
+  primaryColor: string;
+  dangerColor: string;
+}
+
+function readCssVar(name: string, fallback: string): string {
+  if (typeof document === "undefined" || typeof getComputedStyle === "undefined") {
+    return fallback;
+  }
+  const val = getComputedStyle(document.documentElement)
+    .getPropertyValue(name)
+    .trim();
+  return val || fallback;
 }
 
 const DISCRETE_COUNT_UNITS = new Set([
@@ -52,6 +64,8 @@ export function getOpsChartThemeTokens(isDark: boolean): OpsChartThemeTokens {
     splitLineColor: isDark ? "rgba(255, 255, 255, 0.07)" : "#EBEEF5",
     tooltipBg: isDark ? "rgba(29, 30, 31, 0.96)" : "rgba(255, 255, 255, 0.96)",
     tooltipBorder: isDark ? "rgba(255, 255, 255, 0.12)" : "#E4E7ED",
+    primaryColor: readCssVar("--el-color-primary", "#409eff"),
+    dangerColor: readCssVar("--el-color-danger", "#f56c6c"),
   };
 }
 

@@ -11,13 +11,14 @@
       v-model="customRange"
       class="ops-time-range-picker__custom"
       type="datetimerange"
-      value-format="x"
+      value-format="YYYY-MM-DD HH:mm:ss"
       :clearable="false"
       :shortcuts="[]"
       :start-placeholder="t('ops.timeRange.start')"
       :end-placeholder="t('ops.timeRange.end')"
       @change="onCustomChange"
     />
+    <span class="ops-time-range-picker__tz tabular-nums">UTC+8</span>
   </div>
 </template>
 
@@ -26,10 +27,10 @@ import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import DatePicker from "@/components/common/DatePicker.vue";
+import { formatDateTime, parseDisplayWallClockMs } from "@/utils/format";
 
 import {
   PRESET_SECONDS,
-  pickerRangeOf,
   rangeFromQuery,
   sameRange,
   type TimeRangePreset,
@@ -60,9 +61,14 @@ const route = useRoute();
 const router = useRouter();
 
 const preset = ref<TimeRangePreset>("1h");
-/** Epoch milliseconds (ElDatePicker `value-format="x"` works on numbers; numeric strings
- * are parsed as date text and land in the wrong year). The URL keeps Unix seconds. */
-const customRange = ref<[number, number] | null>(null);
+/** East-8 wall-clock strings (`YYYY-MM-DD HH:mm:ss`), converted via explicit `+08:00`. */
+const customRange = ref<[string, string] | null>(null);
+
+function toWallClockRange(
+  value: Pick<TimeRangeValue, "start" | "end">,
+): [string, string] {
+  return [formatDateTime(value.start * 1000), formatDateTime(value.end * 1000)];
+}
 
 const presetOptions = computed(() =>
   (["15m", "1h", "6h", "24h", "7d", "30d", "custom"] as TimeRangePreset[]).map(
@@ -80,9 +86,15 @@ function nowSec() {
 function buildValue(nextPreset: TimeRangePreset): TimeRangeValue {
   const end = nowSec();
   if (nextPreset === "custom" && customRange.value) {
-    const start = Math.floor(customRange.value[0] / 1000);
-    const endSec = Math.floor(customRange.value[1] / 1000);
-    return { preset: "custom", start, end: endSec };
+    const startMs = parseDisplayWallClockMs(customRange.value[0]);
+    const endMs = parseDisplayWallClockMs(customRange.value[1]);
+    if (Number.isFinite(startMs) && Number.isFinite(endMs) && endMs > startMs) {
+      return {
+        preset: "custom",
+        start: Math.floor(startMs / 1000),
+        end: Math.floor(endMs / 1000),
+      };
+    }
   }
   const seconds = PRESET_SECONDS[nextPreset as Exclude<TimeRangePreset, "custom">] ?? 3600;
   return { preset: nextPreset, start: end - seconds, end };
@@ -123,7 +135,7 @@ function onPresetChange() {
   if (preset.value === "custom") {
     if (!customRange.value) {
       const base = lastPublished ?? buildValue("1h");
-      customRange.value = pickerRangeOf(base);
+      customRange.value = toWallClockRange(base);
     }
     return;
   }
@@ -143,7 +155,7 @@ function applyQueryRange(emitChange = true): boolean {
   if (!fromQuery) return false;
   preset.value = fromQuery.preset;
   customRange.value =
-    fromQuery.preset === "custom" ? pickerRangeOf(fromQuery) : null;
+    fromQuery.preset === "custom" ? toWallClockRange(fromQuery) : null;
   if (emitChange) {
     publish(fromQuery);
   } else {
@@ -161,7 +173,7 @@ function hydrateFromQuery() {
     preset.value = props.modelValue.preset;
     customRange.value =
       props.modelValue.preset === "custom"
-        ? pickerRangeOf(props.modelValue)
+        ? toWallClockRange(props.modelValue)
         : null;
     lastPublished = { ...props.modelValue };
     syncQueryParams(props.modelValue);
@@ -193,7 +205,7 @@ watch(
     if (!v) return;
     if (v.preset !== preset.value) preset.value = v.preset;
     if (v.preset === "custom") {
-      customRange.value = pickerRangeOf(v);
+      customRange.value = toWallClockRange(v);
     }
   },
 );
@@ -205,5 +217,18 @@ watch(
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+}
+.ops-time-range-picker__tz {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 7px;
+  border-radius: var(--art-form-control-radius-sm, 4px);
+  border: 1px solid var(--el-border-color-lighter);
+  background: var(--el-fill-color-lighter);
+  color: var(--el-text-color-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
 }
 </style>

@@ -1,36 +1,39 @@
 <template>
   <OpsPage :title="t('ops.traces.detail.title')">
+    <template #leading>
+      <div class="ops-trace__title">
+        <CopyableText
+          class="ops-trace__id"
+          :value="traceId"
+          :label="t('ops.traces.columns.traceId')"
+        />
+        <span v-if="rootOperationName" class="ops-trace__root-op">
+          {{ rootOperationName }}
+        </span>
+      </div>
+    </template>
     <template #actions>
-      <div class="ops-trace__toolbar">
-        <div class="ops-trace__title">
-          <CopyableText
-            class="ops-trace__id"
-            :value="traceId"
-            :label="t('ops.traces.columns.traceId')"
-          />
-        </div>
-        <div v-if="detail" class="ops-trace__meta">
-          <span
-            >{{ t("ops.traces.detail.startedAt") }}
-            {{ formatNs(detail.start_ns) }}</span
-          >
-          <span
-            >{{ t("ops.traces.columns.duration") }}
-            {{ detail.duration_ms.toFixed(2) }} ms</span
-          >
-          <span v-if="detail.upstream_wire_ns !== null"
-            >{{ t("ops.traces.detail.upstreamWire") }}
-            {{ formatTraceMs(detail.upstream_wire_ns) }}</span
-          >
-          <span v-if="detail.platform_overhead_ns !== null"
-            >{{ t("ops.traces.detail.platformOverhead") }}
-            {{ formatTraceMs(detail.platform_overhead_ns) }}</span
-          >
-          <span
-            >{{ t("ops.traces.columns.spans") }} {{ detail.spans.length }}</span
-          >
-          <span>{{ t("ops.traces.columns.errors") }} {{ errorCount }}</span>
-        </div>
+      <div v-if="detail" class="ops-trace__meta">
+        <span
+          >{{ t("ops.traces.detail.startedAt") }}
+          {{ formatNs(detail.start_ns) }}</span
+        >
+        <span
+          >{{ t("ops.traces.columns.duration") }}
+          {{ detail.duration_ms.toFixed(2) }} ms</span
+        >
+        <span v-if="detail.upstream_wire_ns !== null"
+          >{{ t("ops.traces.detail.upstreamWire") }}
+          {{ formatTraceMs(detail.upstream_wire_ns) }}</span
+        >
+        <span v-if="detail.platform_overhead_ns !== null"
+          >{{ t("ops.traces.detail.platformOverhead") }}
+          {{ formatTraceMs(detail.platform_overhead_ns) }}</span
+        >
+        <span
+          >{{ t("ops.traces.columns.spans") }} {{ detail.spans.length }}</span
+        >
+        <span>{{ t("ops.traces.columns.errors") }} {{ errorCount }}</span>
       </div>
     </template>
 
@@ -382,7 +385,7 @@
             <ElTableColumn
               prop="channel_code"
               :label="t('ops.calls.stages.columns.channel')"
-              min-width="130"
+              min-width="180"
             >
               <template #default="{ row }">
                 <CopyableText
@@ -395,16 +398,25 @@
               prop="status_code"
               :label="t('ops.calls.stages.columns.status')"
               width="80"
+              align="right"
+              header-align="right"
+              class-name="tabular-nums"
             />
             <ElTableColumn
               prop="duration_ms"
               :label="t('ops.calls.stages.columns.duration')"
-              width="100"
+              width="110"
+              align="right"
+              header-align="right"
+              class-name="tabular-nums"
             />
             <ElTableColumn
               prop="upstream_service_time_ms"
               :label="t('ops.traces.detail.upstreamDuration')"
-              width="120"
+              width="130"
+              align="right"
+              header-align="right"
+              class-name="tabular-nums"
             />
             <ElTableColumn
               prop="error_code"
@@ -444,7 +456,10 @@
             <ElTableColumn
               prop="retry_count"
               :label="t('ops.traces.billing.retries')"
-              width="80"
+              width="88"
+              align="right"
+              header-align="right"
+              class-name="tabular-nums"
             />
             <ElTableColumn
               prop="product_id"
@@ -461,13 +476,23 @@
             <ElTableColumn
               prop="billable_units"
               :label="t('ops.traces.billing.units')"
-              width="90"
+              width="96"
+              align="right"
+              header-align="right"
+              class-name="tabular-nums"
             />
             <ElTableColumn
               prop="billable_amount"
               :label="t('ops.traces.billing.amount')"
-              width="110"
-            />
+              width="124"
+              align="right"
+              header-align="right"
+              class-name="tabular-nums"
+            >
+              <template #default="{ row }">
+                {{ formatMoney(row.billable_amount) }}
+              </template>
+            </ElTableColumn>
             <ElTableColumn
               prop="charge_status"
               :label="t('ops.traces.billing.charge')"
@@ -496,7 +521,11 @@
 <script setup lang="ts">
 import CopyableText from "@/components/common/copyable-text/index.vue";
 import EmptyState from "@/components/common/empty-state/index.vue";
-import { formatDateTime } from "@/utils/format";
+import {
+  formatCodeFilePath,
+  formatDateTime,
+  formatMoney,
+} from "@/utils/format";
 import { computed, defineComponent, h, ref, watch, type PropType } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
@@ -551,10 +580,17 @@ const KeyValueList = defineComponent({
       return h(
         "dl",
         { class: "ops-trace__kv" },
-        entries.flatMap(([k, v]) => [
-          h("dt", k),
-          h("dd", typeof v === "string" ? v : JSON.stringify(v)),
-        ]),
+        entries.flatMap(([k, v]) => {
+          const raw = typeof v === "string" ? v : JSON.stringify(v);
+          const display =
+            k === "code.file.path" && typeof v === "string"
+              ? formatCodeFilePath(v)
+              : raw;
+          return [
+            h("dt", k),
+            h("dd", display !== raw ? { title: raw } : {}, display),
+          ];
+        }),
       );
     };
   },
@@ -616,6 +652,11 @@ function rowColor(span: TraceSpan): string {
 const errorCount = computed(
   () => detail.value?.spans.filter((s) => s.error).length ?? 0,
 );
+const rootOperationName = computed(() => {
+  const spans = detail.value?.spans ?? [];
+  const root = spans.find((s) => !s.parent_span_id) ?? spans[0];
+  return root ? `${root.service_name} · ${root.span_name}` : "";
+});
 
 const childrenByParent = computed(() => {
   const map = new Map<string, TraceSpan[]>();
@@ -942,6 +983,11 @@ watch(traceId, () => void load(), { immediate: true });
   font-size: 13px;
   color: var(--el-text-color-secondary);
 }
+.ops-trace__root-op {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--el-text-color-primary);
+}
 .ops-trace__meta {
   display: flex;
   flex-wrap: wrap;
@@ -962,6 +1008,9 @@ watch(traceId, () => void load(), { immediate: true });
   background: var(--el-bg-color);
   border: 1px solid var(--el-border-color-lighter);
   border-radius: var(--art-card-radius);
+}
+.ops-trace__waterfall {
+  align-self: start;
 }
 /* 右栏粘性：瀑布图超长时跟随滚动停在顶栏下方，自身限高滚动（不拉伸到瀑布图高度） */
 .ops-trace__panel {
@@ -1257,7 +1306,7 @@ watch(traceId, () => void load(), { immediate: true });
 }
 .ops-trace__kv :deep(dd) {
   margin: 0;
-  word-break: break-all;
+  overflow-wrap: anywhere;
 }
 @media (width <= 1200px) {
   .ops-trace__body {

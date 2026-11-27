@@ -115,6 +115,7 @@ import type { TraceSearchQuery, TraceSummary } from "@/types/api/traces";
 import type { ColumnOption } from "@/types/component";
 import type { ListFilter, ResourceFilterCatalog } from "@/types/list-query";
 import { formatDateTime } from "@/utils/format";
+import { formatAxisTime } from "@/utils/ops/time-range";
 import { buildTraceRoute, TRACE_SEARCH_KEYS } from "@/utils/ops/trace-link";
 import {
   OPS_CHART_GRID,
@@ -582,7 +583,7 @@ function buildScatterOption(): EChartsOption {
           item.seriesIndex === 1 ? errorTraces.value : okTraces.value;
         const row = series[item.dataIndex];
         if (!row) return "";
-        return `${row.root_service} · ${row.root_span}<br/>${row.duration_ms.toFixed(1)} ms · ${row.span_count} ${t("ops.traces.columns.spans")}<br/>${row.trace_id}`;
+        return `${row.root_service} · ${row.root_span}<br/>${formatDateTime(row.start_ms)} (UTC+8)<br/>${row.duration_ms.toFixed(1)} ms · ${row.span_count} ${t("ops.traces.columns.spans")}<br/>${row.trace_id}`;
       },
     },
     legend: {
@@ -602,7 +603,11 @@ function buildScatterOption(): EChartsOption {
       axisLine: { lineStyle: { color: tokens.axisLineColor } },
       axisTick: { lineStyle: { color: tokens.axisLineColor } },
       splitLine: { show: false },
-      axisLabel: { color: tokens.textColor, hideOverlap: true },
+      axisLabel: {
+        color: tokens.textColor,
+        hideOverlap: true,
+        formatter: (val: number) => formatAxisTime(val, end - start),
+      },
     },
     yAxis: {
       type: "value",
@@ -621,7 +626,7 @@ function buildScatterOption(): EChartsOption {
         type: "scatter",
         symbol: "circle",
         symbolSize: 8,
-        itemStyle: { color: "#409eff" },
+        itemStyle: { color: tokens.primaryColor },
         data: okTraces.value.map(toPoint),
       },
       {
@@ -629,7 +634,7 @@ function buildScatterOption(): EChartsOption {
         type: "scatter",
         symbol: "circle",
         symbolSize: 10,
-        itemStyle: { color: "#f56c6c" },
+        itemStyle: { color: tokens.dangerColor },
         data: errorTraces.value.map(toPoint),
       },
     ],

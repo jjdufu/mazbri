@@ -32,6 +32,7 @@
 import { ElMessage } from "element-plus";
 import { saveAs } from "file-saver";
 import { isMfaStepUpCancelled } from "@/utils/http/mfa-dialog-service";
+import { formatDisplayDateYmd } from "@/utils/format";
 import { $t } from "@/locales";
 import { exportConfigs, fetchServiceList } from "@/api/config-center";
 import EditDialog from "@/components/common/EditDialog.vue";
@@ -87,7 +88,7 @@ const handleExport = async () => {
       service_names:
         selectedServices.value.length > 0 ? selectedServices.value : undefined,
     });
-    const timestamp = new Date().toISOString().slice(0, 10);
+    const timestamp = formatDisplayDateYmd();
     const serviceSuffix =
       selectedServices.value.length > 0
         ? `-${selectedServices.value.slice(0, 2).join("-")}`

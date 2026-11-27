@@ -29,14 +29,19 @@
           </span>
         </div>
       </template>
-      <div v-loading="histogramLoading" class="ops-calls__chart-wrap">
-        <EmptyState
-          v-if="!histogram || histogram.total === 0"
-          compact
-          :description="t('operations.monitoring.empty.noData')"
-        />
+      <div
+        v-loading="histogramLoading"
+        class="ops-calls__chart-wrap"
+        :class="{ 'is-empty': histogram !== null && !histogramLoading && histogram.total === 0 }"
+      >
         <div
-          v-show="histogram && histogram.total > 0"
+          v-if="histogram !== null && !histogramLoading && histogram.total === 0"
+          class="ops-calls__empty-strip"
+        >
+          <span>{{ t("operations.monitoring.empty.noData") }}</span>
+        </div>
+        <div
+          v-show="!histogram || histogram.total > 0"
           ref="chartRef"
           class="ops-calls__chart"
         ></div>
@@ -69,7 +74,6 @@ import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
 import type { TimeRangeValue } from "@/components/ops/TimeRangePicker.vue";
 import { echarts, type EChartsOption } from "@/plugins/echarts";
-import EmptyState from "@/components/common/empty-state/index.vue";
 import OpsCard from "@/components/ops/OpsCard.vue";
 import {
   OPS_CHART_GRID,
@@ -86,9 +90,9 @@ import type {
 } from "@/types/api/call-monitor";
 import type { ListFilter } from "@/types/list-query";
 import { $t } from "@/locales";
-import { formatIntervalHuman } from "@/utils/format";
+import { formatDateTime, formatIntervalHuman } from "@/utils/format";
 import { CALLS_FILTER_KEYS } from "@/utils/ops/calls-link";
-import { sameRange } from "@/utils/ops/time-range";
+import { formatAxisTime, sameRange } from "@/utils/ops/time-range";
 import { buildTraceRoute } from "@/utils/ops/trace-link";
 import { logger } from "@/utils/sys";
 import CallMonitorTable, { type CallTimeRange } from "./CallMonitorTable.vue";
@@ -183,15 +187,15 @@ let chart: echarts.ECharts | null = null;
 let lastQuery: CallHistogramQuery | null = null;
 let histogramSeq = 0;
 
-function bucketLabel(ts: number, bucketSeconds: number): string {
-  const d = new Date(ts * 1000);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const hm = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  if (bucketSeconds >= 86400) return `${d.getMonth() + 1}-${pad(d.getDate())}`;
-  if (bucketSeconds >= 3600) {
-    return `${d.getMonth() + 1}-${pad(d.getDate())} ${hm}`;
+function bucketLabel(ts: number, bucketSeconds: number, spanSecs: number): string {
+  const ms = ts * 1000;
+  if (bucketSeconds >= 86400) {
+    return formatDateTime(ms).slice(5, 10);
   }
-  return bucketSeconds < 60 ? `${hm}:${pad(d.getSeconds())}` : hm;
+  if (bucketSeconds < 60) {
+    return formatDateTime(ms).slice(11, 19);
+  }
+  return formatAxisTime(ms, Math.max(spanSecs, bucketSeconds >= 3600 ? 86401 : 0));
 }
 
 const { isDark } = useOpsChartTheme(() => renderChart());
@@ -199,8 +203,9 @@ watch(locale, () => renderChart());
 
 function buildOption(data: CallHistogramResponse): EChartsOption {
   const tokens = getOpsChartThemeTokens(isDark.value);
+  const spanSecs = Math.max(0, data.end - data.start);
   const labels = data.buckets.map((b) =>
-    bucketLabel(b.ts, data.bucket_seconds),
+    bucketLabel(b.ts, data.bucket_seconds, spanSecs),
   );
   return {
     tooltip: {
@@ -253,15 +258,17 @@ function buildOption(data: CallHistogramResponse): EChartsOption {
         name: t("ops.calls.histogram.calls"),
         type: "bar",
         stack: "calls",
+        barMaxWidth: 32,
         data: data.buckets.map((b) => b.calls - b.errors),
-        itemStyle: { color: "#409eff" },
+        itemStyle: { color: tokens.primaryColor },
       },
       {
         name: t("ops.calls.histogram.errors"),
         type: "bar",
         stack: "calls",
+        barMaxWidth: 32,
         data: data.buckets.map((b) => b.errors),
-        itemStyle: { color: "#f56c6c" },
+        itemStyle: { color: tokens.dangerColor },
       },
     ],
   };
@@ -406,6 +413,21 @@ onUnmounted(() => {
 .ops-calls__chart-wrap {
   width: 100%;
   min-height: 180px;
+
+  &.is-empty {
+    min-height: auto;
+  }
+}
+.ops-calls__empty-strip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 6px 12px;
+  border-radius: var(--art-form-control-radius);
+  background: var(--el-fill-color-lighter);
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
 }
 .ops-calls__chart {
   width: 100%;

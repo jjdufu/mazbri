@@ -155,14 +155,14 @@
           <ElDatePicker
             v-model="form.starts_at"
             type="datetime"
-            value-format="YYYY-MM-DDTHH:mm:ss[Z]"
+            value-format="YYYY-MM-DD HH:mm:ss"
           />
         </ElFormItem>
         <ElFormItem :label="t('ops.alerts.silences.endsAt')">
           <ElDatePicker
             v-model="form.ends_at"
             type="datetime"
-            value-format="YYYY-MM-DDTHH:mm:ss[Z]"
+            value-format="YYYY-MM-DD HH:mm:ss"
           />
         </ElFormItem>
         <ElFormItem :label="t('ops.alerts.silences.comment')">
@@ -210,6 +210,7 @@
 import { onMounted, reactive, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { isMfaStepUpCancelled } from "@/utils/http/mfa-dialog-service";
+import { formatDateTime, parseDisplayWallClockMs } from "@/utils/format";
 import { ElMessage, ElMessageBox } from "element-plus";
 import EditDialog from "@/components/common/EditDialog.vue";
 import OpsCard from "@/components/ops/OpsCard.vue";
@@ -276,10 +277,10 @@ async function reload() {
 }
 
 function openCreate() {
-  const now = new Date();
-  const end = new Date(now.getTime() + 10 * 60 * 1000);
-  form.starts_at = now.toISOString();
-  form.ends_at = end.toISOString();
+  const now = Date.now();
+  const end = now + 10 * 60 * 1000;
+  form.starts_at = formatDateTime(now);
+  form.ends_at = formatDateTime(end);
   form.comment = "";
   dialog.value = true;
 }
@@ -293,8 +294,8 @@ async function save() {
   try {
     await createAlertSilence({
       matchers: parseJson(form.matchersText),
-      starts_at: new Date(form.starts_at).toISOString(),
-      ends_at: new Date(form.ends_at).toISOString(),
+      starts_at: new Date(parseDisplayWallClockMs(form.starts_at)).toISOString(),
+      ends_at: new Date(parseDisplayWallClockMs(form.ends_at)).toISOString(),
       comment: form.comment,
     });
     dialog.value = false;

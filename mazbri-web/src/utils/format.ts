@@ -44,6 +44,37 @@ export function formatWallClockMdHm(ms: number): string {
   return `${g.month}-${g.day} ${g.hour}:${g.minute}`;
 }
 
+/** Asia/Shanghai 墙钟 `YYYY-MM-DD`（默认当前时刻），避免 UTC 00:00~08:00 跨日偏差。 */
+export function formatDisplayDateYmd(ms: number = Date.now()): string {
+  const g = wallClockParts(ms);
+  return `${g.year}-${g.month}-${g.day}`;
+}
+
+/**
+ * 将东八区墙钟字面串（`YYYY-MM-DD HH:mm:ss` 或 `YYYY-MM-DDTHH:mm:ss`）解析为 UTC 毫秒时间戳，
+ * 彻底规避宿主浏览器本地时区与夏令时偏移。
+ */
+export function parseDisplayWallClockMs(wallClock: string): number {
+  const trimmed = wallClock.trim();
+  if (!trimmed) return Number.NaN;
+  if (/(?:Z|[+-]\d{2}:?\d{2})$/i.test(trimmed)) {
+    return Date.parse(trimmed);
+  }
+  const normalized = trimmed.includes("T")
+    ? trimmed
+    : trimmed.replace(" ", "T");
+  const withTime = /^\d{4}-\d{2}-\d{2}$/.test(normalized)
+    ? `${normalized}T00:00:00`
+    : normalized;
+  return Date.parse(`${withTime}+08:00`);
+}
+
+/** 剥离 CI 构建机绝对路径前缀，保留仓库相对路径（`mazbri-(bin|libs|web)/...`）。 */
+export function formatCodeFilePath(raw: string): string {
+  if (!raw) return "";
+  return raw.replace(/^.*?\/(?=mazbri-(?:bin|libs|web)\/)/, "");
+}
+
 /**
  * 把 ISO / Date 格式化为 Asia/Shanghai 墙钟日期 `YYYY-MM-DD`。
  * 禁止把原始毫秒数字直接 toString 甩给 UI。

@@ -5,8 +5,11 @@
 -->
 <template>
   <div class="ops-page">
-    <div v-if="$slots.actions" class="ops-page__toolbar">
-      <div class="ops-page__actions">
+    <div v-if="$slots.leading || $slots.actions" class="ops-page__toolbar">
+      <div v-if="$slots.leading" class="ops-page__leading">
+        <slot name="leading" />
+      </div>
+      <div v-if="$slots.actions" class="ops-page__actions">
         <slot name="actions" />
       </div>
     </div>
@@ -38,8 +41,15 @@ defineProps<{ title?: string; subtitle?: string }>();
   flex-wrap: wrap;
   gap: var(--ops-space-sm, 12px);
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   flex-shrink: 0;
+}
+.ops-page__leading {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ops-header-actions-gap, 8px);
+  align-items: center;
+  min-width: 0;
 }
 .ops-page__actions {
   display: flex;

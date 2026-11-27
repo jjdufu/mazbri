@@ -3,7 +3,7 @@
     <ElCol :xs="24" :lg="12">
       <OpsCard :title="t('ops.overview.securityGov.topIp')" class="ops-main-panel">
         <template #extra>
-          <ElButton link type="primary" @click="openCalls">
+          <ElButton link type="primary" @click="openCalls()">
             {{ t("ops.overview.securityGov.openCalls") }}
           </ElButton>
         </template>
@@ -13,7 +13,7 @@
             :key="row.dim_value"
             type="button"
             class="sec-gov__row"
-            @click="openCalls"
+            @click="openCalls({ client_ip: row.dim_value })"
           >
             <span class="sec-gov__left">
               <span class="sec-gov__rank" :data-top="idx < 3">{{ idx + 1 }}</span>
@@ -32,7 +32,7 @@
     <ElCol :xs="24" :lg="12">
       <OpsCard :title="t('ops.overview.securityGov.topKey')" class="ops-main-panel">
         <template #extra>
-          <ElButton link type="primary" @click="openCalls">
+          <ElButton link type="primary" @click="openCalls()">
             {{ t("ops.overview.securityGov.openCalls") }}
           </ElButton>
         </template>
@@ -42,7 +42,7 @@
             :key="row.dim_value"
             type="button"
             class="sec-gov__row"
-            @click="openCalls"
+            @click="openCalls({ api_key_id: row.dim_value })"
           >
             <span class="sec-gov__left">
               <span class="sec-gov__rank" :data-top="idx < 3">{{ idx + 1 }}</span>
@@ -92,12 +92,13 @@ const topIp = ref<TopRow[]>([]);
 const topKey = ref<TopRow[]>([]);
 let seq = 0;
 
-function openCalls() {
+function openCalls(filters?: { client_ip?: string; api_key_id?: string }) {
   void router.push(
     buildCallsRoute({
       tab: "customer",
       start: props.start,
       end: props.end,
+      filters,
     }),
   );
 }

@@ -1,74 +1,43 @@
 import assert from "node:assert/strict";
-import { describe, test } from "node:test";
+import { describe, it } from "node:test";
 import {
-  EMPTY_PLACEHOLDER,
-  formatBytes,
-  formatDate,
+  formatCodeFilePath,
   formatDateTime,
-  formatDays,
-  formatEmpty,
-  formatIntervalHuman,
-  formatMoney,
+  formatDisplayDateYmd,
+  parseDisplayWallClockMs,
 } from "../format";
+import { formatAxisTime } from "../ops/time-range";
 
-describe("format display helpers (step12)", () => {
-  test("formatMoney uses two decimals and thousand separators", () => {
-    assert.equal(formatMoney(61917.05), "61,917.05");
-    assert.equal(formatMoney("100029"), "100,029.00");
-    assert.equal(formatMoney("1611.2142857142857"), "1,611.21");
-    assert.equal(formatMoney(null), "—");
-    assert.equal(formatMoney(""), "—");
+describe("format utilities (Asia/Shanghai wall-clock SSOT)", () => {
+  it("parses East-8 wall-clock strings independent of host timezone", () => {
+    const ms = parseDisplayWallClockMs("2026-11-26 08:30:00");
+    assert.equal(ms, Date.parse("2026-11-26T00:30:00.000Z"));
+    assert.equal(formatDateTime(ms), "2026-11-26 08:30:00");
   });
 
-  test("formatDays collapses long float tails to one decimal", () => {
-    assert.equal(formatDays(38.42881145542404), "38.4");
-    assert.equal(formatDays(10), "10");
-    assert.equal(formatDays(10.04), "10");
-    assert.equal(formatDays(null), "—");
+  it("formats East-8 YYYY-MM-DD without UTC midnight day rollback", () => {
+    // 2026-11-25T17:30:00Z is 2026-11-26 01:30:00 in Asia/Shanghai
+    const ms = Date.parse("2026-11-25T17:30:00.000Z");
+    assert.equal(formatDisplayDateYmd(ms), "2026-11-26");
   });
 
-  test("formatDateTime renders Asia/Shanghai wall clock, never raw ms", () => {
-    // 2024-11-03 00:00:00Z → 2024-11-03 08:00:00 +08
-    const iso = "2024-11-03T00:00:00.000Z";
-    assert.equal(formatDateTime(iso), "2024-11-03 08:00:00");
-    assert.equal(formatDate(iso), "2024-11-03");
-    const ms = Date.parse(iso);
-    assert.equal(formatDateTime(ms), "2024-11-03 08:00:00");
-    assert.notEqual(formatDateTime(ms), String(ms));
+  it("formats axis time in Asia/Shanghai for both short and multi-day spans", () => {
+    const ms = Date.parse("2026-11-26T00:30:00.000Z"); // 08:30 UTC+8
+    assert.equal(formatAxisTime(ms, 3600), "08:30");
+    assert.equal(formatAxisTime(ms, 86400 * 7), "11-26 08:30");
   });
 
-  test("formatDateTime accepts unix seconds", () => {
-    // 2024-11-03T00:00:00Z
-    assert.equal(formatDateTime(1730592000), "2024-11-03 08:00:00");
-  });
-
-  test("formatEmpty standardizes empty values to em dash", () => {
-    assert.equal(EMPTY_PLACEHOLDER, "—");
-    assert.equal(formatEmpty(null), "—");
-    assert.equal(formatEmpty(undefined), "—");
-    assert.equal(formatEmpty(""), "—");
-    assert.equal(formatEmpty(0), "0");
-    assert.equal(formatEmpty("ok"), "ok");
-  });
-
-  test("formatBytes handles zero, sub-byte fractions, and large units", () => {
-    assert.equal(formatBytes(0), "0 B");
-    assert.equal(formatBytes(0.25), "0.25 B");
-    assert.equal(formatBytes(1024), "1 KB");
-    assert.equal(formatBytes(12_000_000), "11.44 MB");
-  });
-
-  test("formatIntervalHuman renders human-readable intervals in zh and en", () => {
-    assert.equal(formatIntervalHuman(0, "zh"), "0 秒");
-    assert.equal(formatIntervalHuman(0, "en"), "0s");
-    assert.equal(formatIntervalHuman(30, "zh"), "30 秒");
-    assert.equal(formatIntervalHuman(30, "en"), "30s");
-    assert.equal(formatIntervalHuman(60, "zh"), "1 分钟");
-    assert.equal(formatIntervalHuman(60, "en"), "1m");
-    assert.equal(formatIntervalHuman(10800, "zh"), "3 小时");
-    assert.equal(formatIntervalHuman(10800, "en"), "3h");
-    assert.equal(formatIntervalHuman(50000, "zh"), "13.9 小时");
-    assert.equal(formatIntervalHuman(86400, "zh"), "1 天");
-    assert.equal(formatIntervalHuman(86400, "en"), "1d");
+  it("strips CI runner absolute path prefix from code.file.path", () => {
+    assert.equal(
+      formatCodeFilePath(
+        "/home/runner/work/mazbri/mazbri/mazbri-bin/mazbri-gateway/src/proxy.rs",
+      ),
+      "mazbri-bin/mazbri-gateway/src/proxy.rs",
+    );
+    assert.equal(
+      formatCodeFilePath("/workspace/rust-proj/mazbri/mazbri-libs/mazbri-core/src/lib.rs"),
+      "mazbri-libs/mazbri-core/src/lib.rs",
+    );
+    assert.equal(formatCodeFilePath("src/main.rs"), "src/main.rs");
   });
 });

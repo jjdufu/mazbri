@@ -805,10 +805,12 @@ fn filter_clause(filters: &Filters, binds: &mut Vec<String>) -> String {
 }
 
 fn bucket_expr(ts: &str, bucket: Bucket) -> String {
-    format!(
-        "toUnixTimestamp(toStartOfInterval({ts}, INTERVAL {} SECOND))",
-        bucket.seconds()
-    )
+    let secs = bucket.seconds();
+    if secs >= 86_400 {
+        format!("toUnixTimestamp(toStartOfInterval({ts}, INTERVAL {secs} SECOND, 'Asia/Shanghai'))")
+    } else {
+        format!("toUnixTimestamp(toStartOfInterval({ts}, INTERVAL {secs} SECOND))")
+    }
 }
 
 fn clamp_limit(limit: Option<u32>, default: u32) -> u32 {
@@ -1006,9 +1008,14 @@ fn top_by_dim_sql(p: &TopByDimParams, binds: &mut Vec<String>) -> String {
     let src = w.agg_source();
     let win = window_clause(w, src.ts(), binds);
     let filters = filter_clause(&p.filters, binds);
+    let having = if p.metric == Metric::Cost {
+        " HAVING value > 0"
+    } else {
+        ""
+    };
     format!(
         "SELECT {dim} AS key, {value} AS value, countMerge(c) AS count FROM {table} \
-         WHERE {win}{filters} GROUP BY key ORDER BY value DESC LIMIT {limit}",
+         WHERE {win} AND {dim} != ''{filters} GROUP BY key{having} ORDER BY value DESC LIMIT {limit}",
         dim = p.dim.column(),
         value = p.metric.expr(),
         table = src.table(),
@@ -1286,9 +1293,9 @@ fn security_top_sql(p: &SecurityTopParams, binds: &mut Vec<String>) -> String {
         SecurityDim::Country => "geo_country",
     };
     format!(
-        "SELECT {dim} AS dim_value, sum(fail_count) AS fail_count, sum(req_count) AS req_count \
+        "SELECT {dim} AS dim_value, sum(security_agg_1h.fail_count) AS fail_count, sum(security_agg_1h.req_count) AS req_count \
          FROM security_agg_1h WHERE {win} AND {dim} != '' \
-         GROUP BY dim_value ORDER BY fail_count DESC LIMIT {limit}",
+         GROUP BY dim_value HAVING sum(security_agg_1h.fail_count) > 0 ORDER BY fail_count DESC, req_count DESC LIMIT {limit}",
         limit = clamp_limit(p.limit, 20),
     )
 }

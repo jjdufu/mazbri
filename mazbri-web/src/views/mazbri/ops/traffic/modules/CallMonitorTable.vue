@@ -599,7 +599,7 @@ function openTraceFor(row: CallMonitorItem) {
 
 defineExpose({ refresh: onManualRefresh });
 
-const TIMESTAMP_PARTS_FORMATTER = new Intl.DateTimeFormat(undefined, {
+const TIMESTAMP_PARTS_FORMATTER = new Intl.DateTimeFormat("sv-SE", {
   year: "numeric",
   month: "2-digit",
   day: "2-digit",
@@ -1152,6 +1152,10 @@ onMounted(() => {
 
 .call-monitor-quick-tag {
   user-select: none;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
 }
 
 .detail-card {

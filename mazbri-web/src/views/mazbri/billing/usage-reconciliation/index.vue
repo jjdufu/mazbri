@@ -608,7 +608,11 @@ import { useUserStore } from "@/store/modules/user";
 import { runWithLoading } from "@/composables/useAsyncState";
 import { useTableSelection } from "@/composables/useTableSelection";
 import { logger } from "@/utils/sys";
-import { formatMoney, formatDate } from "@/utils/format";
+import {
+  formatMoney,
+  formatDate,
+  formatDisplayDateYmd,
+} from "@/utils/format";
 import { downloadCsv, serializeRawCsv } from "@/utils/csv";
 import type { ColumnOption, PaginationConfig } from "@/types/component";
 import { buildCallsRoute } from "@/utils/ops/opsRoutes";
@@ -1144,7 +1148,7 @@ const openPolicyDialog = () => {
 
 const openRunDialog = () => {
   if (!runDate.value) {
-    runDate.value = new Date().toISOString().slice(0, 10);
+    runDate.value = formatDisplayDateYmd();
   }
   runDialogVisible.value = true;
 };
@@ -1348,8 +1352,7 @@ const handleSaveSettings = async () => {
 
 onMounted(() => {
   if (!runDate.value) {
-    const d = new Date();
-    runDate.value = d.toISOString().slice(0, 10);
+    runDate.value = formatDisplayDateYmd();
   }
   void loadSettings();
   void reloadAll();

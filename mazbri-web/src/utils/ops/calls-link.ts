@@ -11,6 +11,8 @@ export const CALLS_FILTER_KEYS = [
   "product_id",
   "supplier_code",
   "channel_code",
+  "client_ip",
+  "api_key_id",
   "status_code",
   "duration_ms_gte",
 ] as const;

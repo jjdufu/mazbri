@@ -194,7 +194,10 @@ import { runWithLoading } from "@/composables/useAsyncState";
 import { useLatestRequest } from "@/composables/useLatestRequest";
 import { useTableSelection } from "@/composables/useTableSelection";
 import { logger } from "@/utils/sys";
-import { formatDateTime as formatDate } from "@/utils/format";
+import {
+  formatDateTime as formatDate,
+  formatDisplayDateYmd,
+} from "@/utils/format";
 import { exportResourceCsv } from "@/composables/useResourceCsvImportExport";
 import type { ColumnConfig } from "@/composables/useResourceCsvImportExport";
 import type { ColumnOption } from "@/types/component";
@@ -551,7 +554,7 @@ const exportToCsv = (data: WhitelistEntry[]) => {
       description: entry.description || "",
     };
   });
-  const date = new Date().toISOString().slice(0, 10);
+  const date = formatDisplayDateYmd();
   exportResourceCsv(
     rows,
     [
