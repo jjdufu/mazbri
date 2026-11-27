@@ -1,12 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  Download,
-  Plus,
-  RefreshCw,
-  RotateCcw,
-  Search,
-  Upload,
-} from "lucide-react";
+import { Download, Plus, RefreshCw, Upload } from "lucide-react";
 import {
   deleteConfig,
   fetchConfig,
@@ -20,13 +13,16 @@ import {
   Button,
   ConfirmDialog,
   DataTablePage,
-  Input,
+  ListQueryBar,
   type DataTableColumn,
 } from "@/components/ui";
+import { configCenterCatalog } from "@/list-catalog/common-resources";
 import { useT } from "@/locales";
 import type { ConfigEntry, ConfigSummary } from "@/types/api/config-center";
+import type { ListFilter } from "@/types/list-query";
 import { EMPTY_PLACEHOLDER, formatDateTime } from "@/utils/format";
 import { isMfaStepUpCancelled } from "@/utils/http/mfa-cancelled";
+import { encodeFilters } from "@/utils/list-query/serialize";
 import { logger } from "@/utils/sys/logger";
 import {
   showSuccessToast,
@@ -60,8 +56,9 @@ export function ConfigCenterPage() {
   const [pageSize, setPageSize] = useState(20);
   const [loading, setLoading] = useState(false);
 
-  const [keywordInput, setKeywordInput] = useState("");
-  const [appliedKeyword, setAppliedKeyword] = useState("");
+  const [qInput, setQInput] = useState("");
+  const [appliedQ, setAppliedQ] = useState("");
+  const [listFilters, setListFilters] = useState<ListFilter[]>([]);
 
   const [allExistingNames, setAllExistingNames] = useState<string[]>([]);
   const [coreProtectedSet, setCoreProtectedSet] = useState<Set<string>>(
@@ -113,7 +110,11 @@ export function ConfigCenterPage() {
       const res = await fetchConfigList({
         page,
         page_size: pageSize,
-        q: appliedKeyword || undefined,
+        q: appliedQ || undefined,
+        filters:
+          listFilters.length > 0
+            ? encodeFilters(listFilters).filters
+            : undefined,
       });
       setRows(res.configs ?? []);
       setTotal(res.total ?? 0);
@@ -122,7 +123,7 @@ export function ConfigCenterPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, appliedKeyword]);
+  }, [page, pageSize, appliedQ, listFilters]);
 
   useEffect(() => {
     void loadLicenseStatus();
@@ -142,16 +143,15 @@ export function ConfigCenterPage() {
     [allExistingNames, rows],
   );
 
-  const handleSearchSubmit = () => {
+  const handleSearch = useCallback(() => {
     setPage(1);
-    setAppliedKeyword(keywordInput.trim());
-  };
+    setAppliedQ(qInput.trim());
+  }, [qInput]);
 
-  const handleResetFilters = () => {
-    setKeywordInput("");
-    setAppliedKeyword("");
+  const handleFiltersChange = useCallback((next: ListFilter[]) => {
     setPage(1);
-  };
+    setListFilters(next);
+  }, []);
 
   const handleCreate = () => {
     if (!ensureLicenseActive()) return;
@@ -356,8 +356,10 @@ export function ConfigCenterPage() {
     ],
   );
 
+  const hasFilters = Boolean(appliedQ) || listFilters.length > 0;
+
   return (
-    <>
+    <div className="flex flex-col flex-1 min-h-0 min-w-0">
       <DataTablePage<ConfigSummary>
         testId="config-center-page"
         columns={columns}
@@ -365,7 +367,7 @@ export function ConfigCenterPage() {
         getRowId={(row) => row.id || row.service_name}
         loading={loading}
         emptyText={
-          appliedKeyword
+          hasFilters
             ? t("common.feedback.noMatchingData")
             : t("common.feedback.noData")
         }
@@ -379,43 +381,14 @@ export function ConfigCenterPage() {
           setPage(1);
         }}
         filters={
-          <>
-            <div className="relative w-56">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-              <Input
-                value={keywordInput}
-                onChange={(e) => setKeywordInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleSearchSubmit();
-                }}
-                placeholder={t("common.search")}
-                aria-label={t("common.search")}
-                className="pl-8"
-                data-testid="config-center-search-input"
-              />
-            </div>
-
-            <Button
-              type="button"
-              variant="outline"
-              size="md"
-              onClick={handleSearchSubmit}
-            >
-              {t("common.search")}
-            </Button>
-
-            {appliedKeyword && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="md"
-                onClick={handleResetFilters}
-              >
-                <RotateCcw className="h-3.5 w-3.5" />
-                {t("common.reset")}
-              </Button>
-            )}
-          </>
+          <ListQueryBar
+            q={qInput}
+            onQChange={setQInput}
+            filters={listFilters}
+            onFiltersChange={handleFiltersChange}
+            catalog={configCenterCatalog}
+            onSearch={handleSearch}
+          />
         }
         actions={
           <>
@@ -447,11 +420,14 @@ export function ConfigCenterPage() {
 
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               size="md"
+              disabled={loading}
               onClick={() => void loadData()}
             >
-              <RefreshCw className="h-3.5 w-3.5" />
+              <RefreshCw
+                className={loading ? "h-3.5 w-3.5 animate-spin" : "h-3.5 w-3.5"}
+              />
               {t("common.actions.refresh")}
             </Button>
 
@@ -479,8 +455,9 @@ export function ConfigCenterPage() {
         authorizationDisabledReason={authorizationDisabledReason}
         onClose={() => setEditDrawerOpen(false)}
         onSuccess={() => {
-          setKeywordInput("");
-          setAppliedKeyword("");
+          setQInput("");
+          setAppliedQ("");
+          setListFilters([]);
           setPage(1);
           void Promise.all([loadExistingNames(), loadData()]);
         }}
@@ -528,6 +505,6 @@ export function ConfigCenterPage() {
         danger
         loading={deleting}
       />
-    </>
+    </div>
   );
 }

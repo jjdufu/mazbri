@@ -579,7 +579,7 @@ export function UpstreamAccessWizardDrawer({
                 </div>
                 <dl className="border border-border rounded-lg overflow-hidden divide-y divide-border">
                   <div className="grid grid-cols-[140px_1fr]">
-                    <dt className="bg-muted/45 px-3 py-2 text-muted-foreground border-r border-border">
+                    <dt className="bg-card px-3 py-2 text-muted-foreground border-r border-border">
                       {t("upstreamOnboarding.fields.supplierCode")}
                     </dt>
                     <dd className="px-3 py-2">
@@ -587,7 +587,7 @@ export function UpstreamAccessWizardDrawer({
                     </dd>
                   </div>
                   <div className="grid grid-cols-[140px_1fr]">
-                    <dt className="bg-muted/45 px-3 py-2 text-muted-foreground border-r border-border">
+                    <dt className="bg-card px-3 py-2 text-muted-foreground border-r border-border">
                       {t("upstreamOnboarding.confirm.upstreamType")}
                     </dt>
                     <dd className="px-3 py-2 font-mono-tech">
@@ -598,7 +598,7 @@ export function UpstreamAccessWizardDrawer({
                     </dd>
                   </div>
                   <div className="grid grid-cols-[140px_1fr]">
-                    <dt className="bg-muted/45 px-3 py-2 text-muted-foreground border-r border-border">
+                    <dt className="bg-card px-3 py-2 text-muted-foreground border-r border-border">
                       {t("upstreamOnboarding.fields.channelCode")}
                     </dt>
                     <dd className="px-3 py-2">
@@ -608,13 +608,13 @@ export function UpstreamAccessWizardDrawer({
                     </dd>
                   </div>
                   <div className="grid grid-cols-[140px_1fr]">
-                    <dt className="bg-muted/45 px-3 py-2 text-muted-foreground border-r border-border">
+                    <dt className="bg-card px-3 py-2 text-muted-foreground border-r border-border">
                       {t("upstreamOnboarding.confirm.targetProduct")}
                     </dt>
                     <dd className="px-3 py-2">{selectedProductSummary}</dd>
                   </div>
                   <div className="grid grid-cols-[140px_1fr]">
-                    <dt className="bg-muted/45 px-3 py-2 text-muted-foreground border-r border-border">
+                    <dt className="bg-card px-3 py-2 text-muted-foreground border-r border-border">
                       {t("upstreamOnboarding.fields.priority")} /{" "}
                       {t("upstreamOnboarding.fields.weight")}
                     </dt>
@@ -623,7 +623,7 @@ export function UpstreamAccessWizardDrawer({
                     </dd>
                   </div>
                   <div className="grid grid-cols-[140px_1fr]">
-                    <dt className="bg-muted/45 px-3 py-2 text-muted-foreground border-r border-border">
+                    <dt className="bg-card px-3 py-2 text-muted-foreground border-r border-border">
                       {t("upstreamOnboarding.confirm.plannedActions")}
                     </dt>
                     <dd className="px-3 py-2 flex flex-wrap gap-1.5">
@@ -679,7 +679,7 @@ export function UpstreamAccessWizardDrawer({
           {result && (
             <dl className="border border-border rounded-lg overflow-hidden divide-y divide-border">
               <div className="grid grid-cols-[140px_1fr]">
-                <dt className="bg-muted/45 px-3 py-2 text-muted-foreground border-r border-border">
+                <dt className="bg-card px-3 py-2 text-muted-foreground border-r border-border">
                   {t("upstreamOnboarding.done.supplierId")}
                 </dt>
                 <dd className="px-3 py-2">
@@ -691,7 +691,7 @@ export function UpstreamAccessWizardDrawer({
                 </dd>
               </div>
               <div className="grid grid-cols-[140px_1fr]">
-                <dt className="bg-muted/45 px-3 py-2 text-muted-foreground border-r border-border">
+                <dt className="bg-card px-3 py-2 text-muted-foreground border-r border-border">
                   {t("upstreamOnboarding.done.channelId")}
                 </dt>
                 <dd className="px-3 py-2">
@@ -703,7 +703,7 @@ export function UpstreamAccessWizardDrawer({
                 </dd>
               </div>
               <div className="grid grid-cols-[140px_1fr]">
-                <dt className="bg-muted/45 px-3 py-2 text-muted-foreground border-r border-border">
+                <dt className="bg-card px-3 py-2 text-muted-foreground border-r border-border">
                   {t("upstreamOnboarding.done.routeRuleId")}
                 </dt>
                 <dd className="px-3 py-2">
@@ -715,7 +715,7 @@ export function UpstreamAccessWizardDrawer({
                 </dd>
               </div>
               <div className="grid grid-cols-[140px_1fr]">
-                <dt className="bg-muted/45 px-3 py-2 text-muted-foreground border-r border-border">
+                <dt className="bg-card px-3 py-2 text-muted-foreground border-r border-border">
                   {t("upstreamOnboarding.done.bindingId")}
                 </dt>
                 <dd className="px-3 py-2">
@@ -727,7 +727,7 @@ export function UpstreamAccessWizardDrawer({
                 </dd>
               </div>
               <div className="grid grid-cols-[140px_1fr]">
-                <dt className="bg-muted/45 px-3 py-2 text-muted-foreground border-r border-border">
+                <dt className="bg-card px-3 py-2 text-muted-foreground border-r border-border">
                   {t("upstreamOnboarding.done.routeVersion")}
                 </dt>
                 <dd className="px-3 py-2 font-mono-tech tabular-nums">

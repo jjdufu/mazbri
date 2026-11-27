@@ -1,11 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  Ban,
-  Plus,
-  RefreshCw,
-  RotateCcw,
-  Search,
-} from "lucide-react";
+import { Ban, Plus, RefreshCw } from "lucide-react";
 import {
   fetchCertificateList,
   fetchIssuedCertificateSubjects,
@@ -18,18 +12,20 @@ import {
   ConfirmDialog,
   CopyableText,
   DataTablePage,
-  Input,
-  Select,
+  ListQueryBar,
   StatusBadge,
   Tooltip,
   cn,
   type DataTableColumn,
 } from "@/components/ui";
+import { certificatesCatalog } from "@/list-catalog/certificates";
 import { useT } from "@/locales";
 import type { Certificate, CertificateStatus } from "@/types/api/certificate";
+import type { ListFilter } from "@/types/list-query";
 import { getStatusLabel } from "@/utils/display-labels";
 import { EMPTY_PLACEHOLDER, formatDateTime } from "@/utils/format";
 import { isMfaStepUpCancelled } from "@/utils/http/mfa-cancelled";
+import { encodeFilters } from "@/utils/list-query/serialize";
 import { logger } from "@/utils/sys/logger";
 import { showSuccessToast } from "@/utils/ui/message-guard";
 import { useLicenseGate } from "../shared/useLicenseGate";
@@ -79,9 +75,9 @@ export function CertificatesPage() {
   const [pageSize, setPageSize] = useState(10);
   const [loading, setLoading] = useState(false);
 
-  const [keywordInput, setKeywordInput] = useState("");
-  const [appliedKeyword, setAppliedKeyword] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"" | CertificateStatus>("");
+  const [qInput, setQInput] = useState("");
+  const [appliedQ, setAppliedQ] = useState("");
+  const [listFilters, setListFilters] = useState<ListFilter[]>([]);
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [issueOpen, setIssueOpen] = useState(false);
@@ -99,14 +95,24 @@ export function CertificatesPage() {
     try {
       const active = await loadLicenseStatus();
       const offset = (page - 1) * pageSize;
+      const hasRevokedStatusFilter = listFilters.some(
+        (f) =>
+          f.field === "status" &&
+          (f.value === "revoked" ||
+            (Array.isArray(f.value) &&
+              f.value.some((v) => String(v) === "revoked"))),
+      );
       try {
         const res = await fetchCertificateList({
           page,
           limit: pageSize,
           offset,
-          q: appliedKeyword || undefined,
-          status: statusFilter || undefined,
-          include_revoked: statusFilter === "revoked" ? true : undefined,
+          q: appliedQ || undefined,
+          filters:
+            listFilters.length > 0
+              ? encodeFilters(listFilters).filters
+              : undefined,
+          include_revoked: hasRevokedStatusFilter ? true : undefined,
         });
         setRows(res.data ?? []);
         setTotal(res.pagination?.total ?? 0);
@@ -121,23 +127,21 @@ export function CertificatesPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, appliedKeyword, statusFilter, loadLicenseStatus]);
+  }, [page, pageSize, appliedQ, listFilters, loadLicenseStatus]);
 
   useEffect(() => {
     void loadData();
   }, [loadData]);
 
-  const handleSearchSubmit = () => {
+  const handleSearch = useCallback(() => {
     setPage(1);
-    setAppliedKeyword(keywordInput.trim());
-  };
+    setAppliedQ(qInput.trim());
+  }, [qInput]);
 
-  const handleResetFilters = () => {
-    setKeywordInput("");
-    setAppliedKeyword("");
-    setStatusFilter("");
+  const handleFiltersChange = useCallback((next: ListFilter[]) => {
     setPage(1);
-  };
+    setListFilters(next);
+  }, []);
 
   const handleOpenIssue = async () => {
     if (!ensureLicenseActive()) return;
@@ -342,7 +346,7 @@ export function CertificatesPage() {
                 size="xs"
                 disabled={revokeDisabled}
                 disabledReason={revokeReason}
-                className="text-danger-fg hover:text-danger-fg hover:bg-danger-fg/10"
+                className="text-muted-foreground hover:text-danger-fg hover:bg-danger-fg/10"
                 onClick={() => setRevokeTarget(row)}
               >
                 {t("certificate.list.actions.revoke")}
@@ -355,10 +359,10 @@ export function CertificatesPage() {
     [t, authorizationDisabled, authorizationDisabledReason],
   );
 
-  const hasFilters = Boolean(appliedKeyword || statusFilter);
+  const hasFilters = Boolean(appliedQ) || listFilters.length > 0;
 
   return (
-    <>
+    <div className="flex flex-col flex-1 min-h-0 min-w-0">
       <DataTablePage<Certificate>
         testId="certificates-page"
         columns={columns}
@@ -387,80 +391,14 @@ export function CertificatesPage() {
           setDetailOpen(true);
         }}
         filters={
-          <>
-            <div className="relative w-56">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-              <Input
-                value={keywordInput}
-                onChange={(e) => setKeywordInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleSearchSubmit();
-                }}
-                placeholder={t("common.search")}
-                aria-label={t("common.search")}
-                className="pl-8"
-                data-testid="certificates-search-input"
-              />
-            </div>
-
-            <Select
-              value={statusFilter}
-              onChange={(e) => {
-                setStatusFilter(e.target.value as "" | CertificateStatus);
-                setPage(1);
-              }}
-              aria-label={t("certificate.list.columns.status")}
-              className="w-36"
-              options={[
-                {
-                  value: "",
-                  label: `${t("certificate.list.columns.status")}: ${t("common.all")}`,
-                  text: t("common.all"),
-                },
-                {
-                  value: "valid",
-                  label: t("common.statusLabels.valid"),
-                  text: t("common.statusLabels.valid"),
-                },
-                {
-                  value: "expiring_soon",
-                  label: t("common.statusLabels.expiringSoon"),
-                  text: t("common.statusLabels.expiringSoon"),
-                },
-                {
-                  value: "expired",
-                  label: t("common.statusLabels.expired"),
-                  text: t("common.statusLabels.expired"),
-                },
-                {
-                  value: "revoked",
-                  label: t("common.statusLabels.revoked"),
-                  text: t("common.statusLabels.revoked"),
-                },
-              ]}
-            />
-
-            <Button
-              type="button"
-              variant="outline"
-              size="md"
-              onClick={handleSearchSubmit}
-            >
-              {t("common.search")}
-            </Button>
-
-            {hasFilters && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="md"
-                onClick={handleResetFilters}
-              >
-                <RotateCcw className="h-3.5 w-3.5" />
-                {t("common.reset")}
-              </Button>
-            )}
-          </>
+          <ListQueryBar
+            q={qInput}
+            onQChange={setQInput}
+            filters={listFilters}
+            onFiltersChange={handleFiltersChange}
+            catalog={certificatesCatalog}
+            onSearch={handleSearch}
+          />
         }
         batchActions={(ids) => (
           <AuthorizationTooltipButton
@@ -480,11 +418,14 @@ export function CertificatesPage() {
           <>
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               size="md"
+              disabled={loading}
               onClick={() => void loadData()}
             >
-              <RefreshCw className="h-3.5 w-3.5" />
+              <RefreshCw
+                className={loading ? "h-3.5 w-3.5 animate-spin" : "h-3.5 w-3.5"}
+              />
               {t("common.actions.refresh")}
             </Button>
             <AuthorizationTooltipButton
@@ -549,6 +490,6 @@ export function CertificatesPage() {
         danger
         loading={revoking}
       />
-    </>
+    </div>
   );
 }

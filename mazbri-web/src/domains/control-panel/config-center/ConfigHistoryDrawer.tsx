@@ -224,7 +224,7 @@ export function ConfigHistoryDrawer({
               <div className="max-h-60 overflow-y-auto">
                 <table className="w-full border-collapse text-xs">
                   <thead>
-                    <tr className="border-b border-border bg-muted/45 text-muted-foreground sticky top-0">
+                    <tr className="border-b border-border bg-card text-muted-foreground sticky top-0">
                       <th className="h-8 px-3 text-left font-medium w-20">
                         {t("configCenter.historyDrawer.columns.version")}
                       </th>

@@ -61,7 +61,7 @@ export function CopyableText({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 min-w-0 max-w-full",
+        "group/copy inline-flex items-center gap-1 min-w-0 max-w-full",
         className,
       )}
     >
@@ -81,12 +81,17 @@ export function CopyableText({
           type="button"
           onClick={handleCopy}
           aria-label={label}
-          className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-hover-bg hover:text-foreground transition-colors cursor-pointer"
+          className={cn(
+            "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-hover-bg hover:text-foreground transition-opacity duration-150 cursor-pointer",
+            copied
+              ? "opacity-100"
+              : "opacity-0 group-hover/copy:opacity-100 group-hover/row:opacity-75 hover:!opacity-100 focus-visible:opacity-100",
+          )}
         >
           {copied ? (
-            <Check className="h-3.5 w-3.5 text-success-fg" />
+            <Check className="h-3 w-3 text-success-fg" />
           ) : (
-            <Copy className="h-3.5 w-3.5" />
+            <Copy className="h-3 w-3" />
           )}
         </button>
       </Tooltip>

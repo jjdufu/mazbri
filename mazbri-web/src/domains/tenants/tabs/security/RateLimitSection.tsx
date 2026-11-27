@@ -375,7 +375,7 @@ export function RateLimitSection({ tenantCode }: RateLimitSectionProps) {
     >
       <div className="space-y-4">
         {/* Enable Plan */}
-        <div className="flex items-center justify-between gap-4 rounded-md border border-border-subtle bg-muted/25 px-3 py-2.5">
+        <div className="flex items-center justify-between gap-4 rounded-md border border-border-subtle px-3 py-2.5">
           <span className="text-xs font-medium text-foreground">
             {t("rateLimit.enablePlan")}
           </span>
@@ -691,7 +691,7 @@ export function RateLimitSection({ tenantCode }: RateLimitSectionProps) {
                   </Button>
                 </div>
 
-                <div className="space-y-2 rounded-md border border-border-subtle bg-muted/20 p-2.5">
+                <div className="space-y-2 rounded-md border border-border-subtle p-2.5">
                   <div className="flex flex-wrap items-center gap-2">
                     <NumberInput
                       value={denyMinutes}

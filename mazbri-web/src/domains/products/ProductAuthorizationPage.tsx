@@ -48,17 +48,34 @@ export function ProductAuthorizationPage() {
   ];
 
   return (
-    <div className="space-y-4 min-w-0" data-testid="product-authorization-page">
-      <Tabs items={tabItems} value={activeTab} onChange={handleTabChange} />
+    <div
+      className="flex flex-col flex-1 min-h-0 gap-4 min-w-0"
+      data-testid="product-authorization-page"
+    >
+      <div className="shrink-0">
+        <Tabs items={tabItems} value={activeTab} onChange={handleTabChange} />
+      </div>
 
       {loadedTabs.has("products") && (
-        <div className={activeTab === "products" ? "min-w-0" : "hidden"}>
+        <div
+          className={
+            activeTab === "products"
+              ? "flex flex-col flex-1 min-h-0 min-w-0"
+              : "hidden"
+          }
+        >
           <ProductListTab />
         </div>
       )}
 
       {loadedTabs.has("authorizations") && (
-        <div className={activeTab === "authorizations" ? "min-w-0" : "hidden"}>
+        <div
+          className={
+            activeTab === "authorizations"
+              ? "flex flex-col flex-1 min-h-0 min-w-0"
+              : "hidden"
+          }
+        >
           <AuthorizationListTab />
         </div>
       )}

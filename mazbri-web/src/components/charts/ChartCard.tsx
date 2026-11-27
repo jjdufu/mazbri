@@ -80,9 +80,9 @@ export function ChartCard({
         ) : empty ? (
           <div
             style={{ height: styleHeight }}
-            className="flex flex-col items-center justify-center gap-1.5 rounded-md border border-dashed border-border-subtle bg-muted/25 text-center text-xs text-muted-foreground"
+            className="flex flex-col items-center justify-center gap-1.5 text-center text-xs text-muted-foreground"
           >
-            <BarChart3 className="h-4 w-4 opacity-55" />
+            <BarChart3 className="h-4 w-4 opacity-45" />
             <span>{resolvedEmptyText}</span>
           </div>
         ) : (

@@ -537,8 +537,8 @@ export function TenantListPage() {
                   size="xs"
                   className={
                     row.enabled
-                      ? "text-warning-fg hover:text-warning-fg"
-                      : "text-success-fg hover:text-success-fg"
+                      ? "text-muted-foreground hover:bg-warning-bg hover:text-warning-fg"
+                      : "text-muted-foreground hover:bg-success-fg/10 hover:text-success-fg"
                   }
                   onClick={() =>
                     setToggleTarget({ row, enable: !row.enabled })
@@ -552,7 +552,7 @@ export function TenantListPage() {
                   type="button"
                   variant="link"
                   size="xs"
-                  className="text-danger-fg hover:text-danger-fg"
+                  className="text-muted-foreground hover:bg-danger-fg/10 hover:text-danger-fg"
                   onClick={() => setDeleteTarget(row)}
                 >
                   {t("common.actions.delete")}
@@ -569,7 +569,7 @@ export function TenantListPage() {
   const hasActiveSearch = Boolean(appliedQ) || listFilters.length > 0;
 
   return (
-    <div className="space-y-4 min-w-0">
+    <div className="flex flex-col flex-1 min-h-0 gap-4 min-w-0">
       <DataTablePage<Tenant>
         testId="tenant-list-page"
         columns={columns}
@@ -623,7 +623,7 @@ export function TenantListPage() {
           <>
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               size="md"
               onClick={() => void loadData()}
               disabled={loading}

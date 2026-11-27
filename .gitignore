@@ -59,11 +59,6 @@ certs/
 run/
 .antigravitycli/
 
-# WebUI React 19 迁移期临时忽略（Stage 7 退场时随 .migration/ 一并移除）
-.migration/.env.local
-.migration/artifacts/
-mazbri-web-legacy/node_modules/
-
 # Vector runtime data (checkpoints / disk buffers; do not commit)
 vector/data/
 **/vector/data/

@@ -486,7 +486,7 @@ export function ProductsTab({ tenantCode }: ProductsTabProps) {
           </div>
         </FormField>
 
-        <div className="flex items-center justify-between gap-4 rounded-md border border-border-subtle bg-muted/25 px-3 py-2.5">
+        <div className="flex items-center justify-between gap-4 rounded-md border border-border-subtle px-3 py-2.5">
           <span className="text-xs font-medium text-foreground">
             {t("tenant.products.grantDialog.cbProFallback")}
           </span>

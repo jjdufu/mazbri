@@ -312,7 +312,7 @@ export function TrafficTracesPanel({
             const series = rec.seriesIndex === 1 ? errorTraces : okTraces;
             const row = series[rec.dataIndex ?? -1];
             if (!row) return "";
-            return `${row.root_service} · ${row.root_span}<br/>${formatChartTooltipTime(row.start_ms)} (UTC+8)<br/>${row.duration_ms.toFixed(1)} ms · ${row.span_count} ${t("ops.traces.columns.spans")}<br/>${row.trace_id}`;
+            return `${row.root_service} · ${row.root_span}<br/>${formatChartTooltipTime(row.start_ms)}<br/>${row.duration_ms.toFixed(1)} ms · ${row.span_count} ${t("ops.traces.columns.spans")}<br/>${row.trace_id}`;
           },
         },
         legend: {
@@ -486,7 +486,7 @@ export function TrafficTracesPanel({
   };
 
   return (
-    <div className="space-y-4 min-w-0">
+    <div className="flex flex-col flex-1 min-h-0 gap-4 min-w-0">
       <ChartCard
         title={t("ops.traces.scatter.title")}
         loading={loading}

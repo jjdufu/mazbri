@@ -5,7 +5,6 @@ import {
   Download,
   RefreshCw,
   RotateCcw,
-  Search,
 } from "lucide-react";
 import {
   exportAuditLogs,
@@ -18,22 +17,21 @@ import {
   CopyableText,
   DataTablePage,
   DateRangePicker,
-  Input,
+  ListQueryBar,
   Popover,
-  Select,
   StatusBadge,
   Tooltip,
   type DataTableColumn,
   type DateRangeValue,
 } from "@/components/ui";
+import { auditLogsCatalog } from "@/list-catalog/common-resources";
 import { useT } from "@/locales";
 import type {
   AuditLog,
   AuditLogDetail,
   AuditLogListQuery,
-  AuditService,
-  AuditStatus,
 } from "@/types/api/audit";
+import type { ListFilter } from "@/types/list-query";
 import { downloadCsv, generateCsv } from "@/utils/csv";
 import {
   EMPTY_PLACEHOLDER,
@@ -41,6 +39,7 @@ import {
   parseDisplayWallClockMs,
 } from "@/utils/format";
 import { isMfaStepUpCancelled } from "@/utils/http/mfa-cancelled";
+import { encodeFilters } from "@/utils/list-query/serialize";
 import { logger } from "@/utils/sys/logger";
 import {
   AuditDetailDrawer,
@@ -53,9 +52,6 @@ import {
   mapAuditStatusBadgeCode,
 } from "./AuditDetailDrawer";
 import {
-  ACTION_LABELS,
-  AUDIT_SERVICES,
-  RESOURCE_TYPE_LABELS,
   formatChainFlowCode,
   groupAuditLogsByRequestId,
   guardCsvFormula,
@@ -72,12 +68,9 @@ export function AuditLogsPage() {
   const [pageSize, setPageSize] = useState(10);
   const [loading, setLoading] = useState(false);
 
-  const [keywordInput, setKeywordInput] = useState("");
-  const [appliedKeyword, setAppliedKeyword] = useState("");
-  const [actionFilter, setActionFilter] = useState("");
-  const [resourceFilter, setResourceFilter] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"" | AuditStatus>("");
-  const [serviceFilter, setServiceFilter] = useState<"" | AuditService>("");
+  const [qInput, setQInput] = useState("");
+  const [appliedQ, setAppliedQ] = useState("");
+  const [listFilters, setListFilters] = useState<ListFilter[]>([]);
   const [dateRange, setDateRange] = useState<DateRangeValue>({
     start: "",
     end: "",
@@ -102,11 +95,10 @@ export function AuditLogsPage() {
         params.page = page;
         params.limit = pageSize;
       }
-      if (appliedKeyword) params.q = appliedKeyword;
-      if (actionFilter) params.action = actionFilter;
-      if (resourceFilter) params.resource_type = resourceFilter;
-      if (statusFilter) params.status = statusFilter;
-      if (serviceFilter) params.service = serviceFilter;
+      if (appliedQ) params.q = appliedQ;
+      if (listFilters.length > 0) {
+        params.filters = encodeFilters(listFilters).filters;
+      }
 
       const startMs = parseDisplayWallClockMs(dateRange.start);
       const endMs = parseDisplayWallClockMs(dateRange.end);
@@ -121,17 +113,7 @@ export function AuditLogsPage() {
       }
       return params;
     },
-    [
-      page,
-      pageSize,
-      appliedKeyword,
-      actionFilter,
-      resourceFilter,
-      statusFilter,
-      serviceFilter,
-      dateRange,
-      includeSelfAudit,
-    ],
+    [page, pageSize, appliedQ, listFilters, dateRange, includeSelfAudit],
   );
 
   const loadData = useCallback(async () => {
@@ -190,18 +172,20 @@ export function AuditLogsPage() {
     return matches.length >= 2 && uniqueServices.size >= 2 ? matches : [];
   }, [currentLog, rawLogs]);
 
-  const handleSearchSubmit = () => {
+  const handleSearch = useCallback(() => {
     setPage(1);
-    setAppliedKeyword(keywordInput.trim());
-  };
+    setAppliedQ(qInput.trim());
+  }, [qInput]);
+
+  const handleFiltersChange = useCallback((next: ListFilter[]) => {
+    setPage(1);
+    setListFilters(next);
+  }, []);
 
   const handleResetFilters = () => {
-    setKeywordInput("");
-    setAppliedKeyword("");
-    setActionFilter("");
-    setResourceFilter("");
-    setStatusFilter("");
-    setServiceFilter("");
+    setQInput("");
+    setAppliedQ("");
+    setListFilters([]);
     setDateRange({ start: "", end: "" });
     setIncludeSelfAudit(false);
     setPage(1);
@@ -289,51 +273,6 @@ export function AuditLogsPage() {
       setExporting(false);
     }
   };
-
-  const actionOptions = useMemo(
-    () => [
-      {
-        value: "",
-        label: `${t("auditLogs.columns.action")}: ${t("common.all")}`,
-        text: t("common.all"),
-      },
-      ...Object.entries(ACTION_LABELS).map(([code, key]) => {
-        const label = t(key);
-        return { value: code, label, text: `${label} ${code}` };
-      }),
-    ],
-    [t],
-  );
-
-  const resourceOptions = useMemo(
-    () => [
-      {
-        value: "",
-        label: `${t("auditLogs.columns.resourceType")}: ${t("common.all")}`,
-        text: t("common.all"),
-      },
-      ...Object.entries(RESOURCE_TYPE_LABELS).map(([code, key]) => {
-        const label = t(key);
-        return { value: code, label, text: `${label} ${code}` };
-      }),
-    ],
-    [t],
-  );
-
-  const serviceOptions = useMemo(
-    () => [
-      {
-        value: "",
-        label: `${t("auditLogs.columns.service")}: ${t("common.all")}`,
-        text: t("common.all"),
-      },
-      ...AUDIT_SERVICES.map((svc) => {
-        const label = formatAuditService(svc, t);
-        return { value: svc, label, text: label };
-      }),
-    ],
-    [t],
-  );
 
   const columns = useMemo<DataTableColumn<GroupedAuditRow<AuditLog>>[]>(
     () => [
@@ -481,19 +420,15 @@ export function AuditLogsPage() {
     [t, toggleChainExpand, handleOpenDetail],
   );
 
+  const hasExtraFilters = Boolean(
+    dateRange.start || dateRange.end || includeSelfAudit,
+  );
   const hasFilters = Boolean(
-    appliedKeyword ||
-      actionFilter ||
-      resourceFilter ||
-      statusFilter ||
-      serviceFilter ||
-      dateRange.start ||
-      dateRange.end ||
-      includeSelfAudit,
+    appliedQ || listFilters.length > 0 || hasExtraFilters,
   );
 
   return (
-    <>
+    <div className="flex flex-col flex-1 min-h-0 min-w-0">
       <DataTablePage<GroupedAuditRow<AuditLog>>
         testId="audit-logs-page"
         columns={columns}
@@ -520,86 +455,13 @@ export function AuditLogsPage() {
         onRowClick={(row) => void handleOpenDetail(row)}
         filters={
           <>
-            <div className="relative w-48">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-              <Input
-                value={keywordInput}
-                onChange={(e) => setKeywordInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleSearchSubmit();
-                }}
-                placeholder={t("common.search")}
-                aria-label={t("common.search")}
-                className="pl-8"
-                data-testid="audit-search-input"
-              />
-            </div>
-
-            <Select
-              value={actionFilter}
-              onChange={(e) => {
-                setActionFilter(e.target.value);
-                setPage(1);
-              }}
-              searchable
-              aria-label={t("auditLogs.columns.action")}
-              className="w-36"
-              options={actionOptions}
-            />
-
-            <Select
-              value={resourceFilter}
-              onChange={(e) => {
-                setResourceFilter(e.target.value);
-                setPage(1);
-              }}
-              searchable
-              aria-label={t("auditLogs.columns.resourceType")}
-              className="w-32"
-              options={resourceOptions}
-            />
-
-            <Select
-              value={statusFilter}
-              onChange={(e) => {
-                setStatusFilter(e.target.value as "" | AuditStatus);
-                setPage(1);
-              }}
-              aria-label={t("auditLogs.columns.status")}
-              className="w-28"
-              options={[
-                {
-                  value: "",
-                  label: `${t("auditLogs.columns.status")}: ${t("common.all")}`,
-                  text: t("common.all"),
-                },
-                {
-                  value: "success",
-                  label: t("auditLogs.status.success"),
-                  text: t("auditLogs.status.success"),
-                },
-                {
-                  value: "failure",
-                  label: t("auditLogs.status.failure"),
-                  text: t("auditLogs.status.failure"),
-                },
-                {
-                  value: "denied",
-                  label: t("auditLogs.status.denied"),
-                  text: t("auditLogs.status.denied"),
-                },
-              ]}
-            />
-
-            <Select
-              value={serviceFilter}
-              onChange={(e) => {
-                setServiceFilter(e.target.value as "" | AuditService);
-                setPage(1);
-              }}
-              aria-label={t("auditLogs.columns.service")}
-              className="w-32"
-              options={serviceOptions}
+            <ListQueryBar
+              q={qInput}
+              onQChange={setQInput}
+              filters={listFilters}
+              onFiltersChange={handleFiltersChange}
+              catalog={auditLogsCatalog}
+              onSearch={handleSearch}
             />
 
             <DateRangePicker
@@ -626,16 +488,7 @@ export function AuditLogsPage() {
               </span>
             </label>
 
-            <Button
-              type="button"
-              variant="outline"
-              size="md"
-              onClick={handleSearchSubmit}
-            >
-              {t("common.search")}
-            </Button>
-
-            {hasFilters && (
+            {hasExtraFilters && (
               <Button
                 type="button"
                 variant="ghost"
@@ -691,11 +544,14 @@ export function AuditLogsPage() {
 
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               size="md"
+              disabled={loading}
               onClick={() => void loadData()}
             >
-              <RefreshCw className="h-3.5 w-3.5" />
+              <RefreshCw
+                className={loading ? "h-3.5 w-3.5 animate-spin" : "h-3.5 w-3.5"}
+              />
               {t("common.actions.refresh")}
             </Button>
           </>
@@ -710,6 +566,6 @@ export function AuditLogsPage() {
         onClose={() => setDetailOpen(false)}
         onSelectRelated={(item) => void handleOpenDetail(item)}
       />
-    </>
+    </div>
   );
 }

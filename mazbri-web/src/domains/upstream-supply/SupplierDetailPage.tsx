@@ -459,7 +459,7 @@ export function SupplierDetailPage() {
 
               <dl className="grid grid-cols-1 md:grid-cols-2 border border-border rounded-lg overflow-hidden">
                 <div className="grid grid-cols-[152px_1fr] border-b border-border">
-                  <dt className="bg-muted/45 px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
+                  <dt className="bg-card px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
                     {t("supplier.fields.id")}
                   </dt>
                   <dd className="px-3 py-2.5 text-xs text-foreground min-w-0">
@@ -472,7 +472,7 @@ export function SupplierDetailPage() {
                 </div>
 
                 <div className="grid grid-cols-[152px_1fr] border-b border-border md:border-l">
-                  <dt className="bg-muted/45 px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
+                  <dt className="bg-card px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
                     {t("supplier.fields.upstreamType")}
                   </dt>
                   <dd className="px-3 py-2.5 text-xs">
@@ -487,7 +487,7 @@ export function SupplierDetailPage() {
                 </div>
 
                 <div className="grid grid-cols-[152px_1fr] border-b border-border">
-                  <dt className="bg-muted/45 px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
+                  <dt className="bg-card px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
                     {t("supplier.fields.code")}
                   </dt>
                   <dd className="px-3 py-2 text-xs text-foreground min-w-0">
@@ -519,7 +519,7 @@ export function SupplierDetailPage() {
                 </div>
 
                 <div className="grid grid-cols-[152px_1fr] border-b border-border md:border-l">
-                  <dt className="bg-muted/45 px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
+                  <dt className="bg-card px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
                     {t("supplier.fields.name")}
                   </dt>
                   <dd className="px-3 py-2 text-xs text-foreground min-w-0">
@@ -545,7 +545,7 @@ export function SupplierDetailPage() {
                 </div>
 
                 <div className="grid grid-cols-[152px_1fr] border-b border-border md:col-span-2">
-                  <dt className="bg-muted/45 px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
+                  <dt className="bg-card px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
                     {upstreamType === "transparent"
                       ? t("supplier.fields.targetAddress")
                       : t("supplier.fields.accessAddress")}
@@ -592,7 +592,7 @@ export function SupplierDetailPage() {
 
                 {upstreamType !== "transparent" && (
                   <div className="grid grid-cols-[152px_1fr] border-b border-border">
-                    <dt className="bg-muted/45 px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
+                    <dt className="bg-card px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
                       {t("supplier.fields.contractId")}
                     </dt>
                     <dd className="px-3 py-2 text-xs text-foreground min-w-0">
@@ -633,7 +633,7 @@ export function SupplierDetailPage() {
                       upstreamType !== "transparent" ? "md:border-l" : "md:col-span-2"
                     }`}
                   >
-                    <dt className="bg-muted/45 px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
+                    <dt className="bg-card px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
                       {t("supplier.fields.status")}
                     </dt>
                     <dd className="px-3 py-2 text-xs">
@@ -666,11 +666,11 @@ export function SupplierDetailPage() {
                 )}
 
                 {!editing && upstreamType !== "transparent" && (
-                  <div className="hidden md:block border-b border-border md:border-l bg-muted/15" />
+                  <div className="hidden md:block border-b border-border md:border-l bg-card" />
                 )}
 
                 <div className="grid grid-cols-[152px_1fr]">
-                  <dt className="bg-muted/45 px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
+                  <dt className="bg-card px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
                     {t("common.fields.createdAt")}
                   </dt>
                   <dd className="px-3 py-2.5 text-xs font-mono-tech">
@@ -679,7 +679,7 @@ export function SupplierDetailPage() {
                 </div>
 
                 <div className="grid grid-cols-[152px_1fr] border-t md:border-t-0 border-border md:border-l">
-                  <dt className="bg-muted/45 px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
+                  <dt className="bg-card px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
                     {t("common.fields.updatedAt")}
                   </dt>
                   <dd className="px-3 py-2.5 text-xs font-mono-tech">
@@ -698,7 +698,7 @@ export function SupplierDetailPage() {
             testId="supplier-integration-card"
           >
             <div className="space-y-4">
-              <div className="flex items-center justify-between gap-3 rounded-md border-l-3 border-primary bg-muted/45 px-3 py-2">
+              <div className="flex items-center justify-between gap-3 rounded-md border border-border border-l-3 border-l-primary bg-card px-3 py-2">
                 <span className="text-xs font-semibold text-foreground">
                   {t("supplier.detail.authSectionTitle")}
                 </span>
@@ -735,7 +735,7 @@ export function SupplierDetailPage() {
                     {(editing || hasActiveHttpAuth) && (
                       <>
                         <div className="grid grid-cols-[152px_1fr] border-b border-border md:col-span-2">
-                          <dt className="bg-muted/45 px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
+                          <dt className="bg-card px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
                             {t("supplier.config.tokenUrl")}
                           </dt>
                           <dd className="px-3 py-2 text-xs min-w-0">
@@ -758,7 +758,7 @@ export function SupplierDetailPage() {
                         </div>
 
                         <div className="grid grid-cols-[152px_1fr] border-b border-border md:col-span-2">
-                          <dt className="bg-muted/45 px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
+                          <dt className="bg-card px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
                             {t("supplier.config.method")}
                           </dt>
                           <dd className="px-3 py-2 text-xs">
@@ -787,7 +787,7 @@ export function SupplierDetailPage() {
 
                     {/* Credentials KV */}
                     <div className="grid grid-cols-[152px_1fr] border-b border-border md:col-span-2">
-                      <dt className="bg-muted/45 px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
+                      <dt className="bg-card px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
                         {isVaultOnly && !editing
                           ? t("upstreamConnector.authVaultSection")
                           : t("supplier.config.credentials")}
@@ -798,7 +798,7 @@ export function SupplierDetailPage() {
                             <div className="overflow-x-auto rounded-md border border-border">
                               <table className="w-full border-collapse text-xs">
                                 <thead>
-                                  <tr className="border-b border-border bg-muted/40 text-muted-foreground">
+                                  <tr className="border-b border-border bg-card text-muted-foreground">
                                     <th className="h-8 px-2.5 text-left font-medium w-2/5">
                                       {t("supplier.config.credKey")}
                                     </th>
@@ -979,7 +979,7 @@ export function SupplierDetailPage() {
                     {(editing || hasActiveHttpAuth) && (
                       <>
                         <div className="grid grid-cols-[152px_1fr] border-b border-border md:col-span-2">
-                          <dt className="bg-muted/45 px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
+                          <dt className="bg-card px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
                             {t("supplier.config.requestBodyTpl")}
                           </dt>
                           <dd className="px-3 py-2 text-xs min-w-0">
@@ -1007,7 +1007,7 @@ export function SupplierDetailPage() {
                         </div>
 
                         <div className="grid grid-cols-[152px_1fr] border-b border-border">
-                          <dt className="bg-muted/45 px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
+                          <dt className="bg-card px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
                             {t("supplier.config.tokenJsonpath")}
                           </dt>
                           <dd className="px-3 py-2 text-xs min-w-0">
@@ -1040,7 +1040,7 @@ export function SupplierDetailPage() {
                         </div>
 
                         <div className="grid grid-cols-[152px_1fr] border-b border-border md:border-l">
-                          <dt className="bg-muted/45 px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
+                          <dt className="bg-card px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
                             {t("supplier.config.expiryJsonpath")}
                           </dt>
                           <dd className="px-3 py-2 text-xs min-w-0">
@@ -1073,7 +1073,7 @@ export function SupplierDetailPage() {
                         </div>
 
                         <div className="grid grid-cols-[152px_1fr]">
-                          <dt className="bg-muted/45 px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
+                          <dt className="bg-card px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
                             {t("supplier.config.injectKey")}
                           </dt>
                           <dd className="px-3 py-2 text-xs min-w-0">
@@ -1126,7 +1126,7 @@ export function SupplierDetailPage() {
                         </div>
 
                         <div className="grid grid-cols-[152px_1fr] border-t md:border-t-0 border-border md:border-l">
-                          <dt className="bg-muted/45 px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
+                          <dt className="bg-card px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
                             {t("supplier.config.injectFormat")}
                           </dt>
                           <dd className="px-3 py-2 text-xs min-w-0">

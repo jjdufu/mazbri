@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
-import { Plus, RefreshCw, Search, Trash2, Upload } from "lucide-react";
+import { Plus, RefreshCw, Trash2, Upload } from "lucide-react";
 import {
   createProduct,
   createProductReservation,
@@ -16,17 +16,18 @@ import {
   ConfirmDialog,
   CopyableText,
   DataTablePage,
-  Input,
-  Select,
+  ListQueryBar,
   StatusBadge,
   type DataTableColumn,
 } from "@/components/ui";
+import { productsCatalog } from "@/list-catalog/common-resources";
 import { useT } from "@/locales";
 import { useAuthStore } from "@/stores/auth";
 import type { Product, ProductIdReservation } from "@/types/api/product";
 import type { ListFilter } from "@/types/list-query";
 import { EMPTY_PLACEHOLDER, formatDateTime } from "@/utils/format";
 import { isMfaStepUpCancelled } from "@/utils/http/mfa-cancelled";
+import { encodeFilters } from "@/utils/list-query/serialize";
 import { isBizRole } from "@/utils/ops/roles";
 import {
   exportResourceCsv,
@@ -72,9 +73,9 @@ export function ProductListTab() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [total, setTotal] = useState(0);
-  const [keywordInput, setKeywordInput] = useState("");
-  const [appliedKeyword, setAppliedKeyword] = useState("");
-  const [enabledFilter, setEnabledFilter] = useState<"" | "true" | "false">("");
+  const [qInput, setQInput] = useState("");
+  const [appliedQ, setAppliedQ] = useState("");
+  const [listFilters, setListFilters] = useState<ListFilter[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const [createOpen, setCreateOpen] = useState(false);
@@ -92,15 +93,9 @@ export function ProductListTab() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const filters: ListFilter[] = [];
-      if (enabledFilter === "true") {
-        filters.push({ field: "enabled", op: "eq", value: true });
-      } else if (enabledFilter === "false") {
-        filters.push({ field: "enabled", op: "eq", value: false });
-      }
       const res = await fetchProductList({
-        q: appliedKeyword || undefined,
-        filters: filters.length ? JSON.stringify(filters) : undefined,
+        q: appliedQ || undefined,
+        filters: encodeFilters(listFilters).filters,
         page,
         page_size: pageSize,
       });
@@ -112,7 +107,7 @@ export function ProductListTab() {
     } finally {
       setLoading(false);
     }
-  }, [appliedKeyword, enabledFilter, page, pageSize]);
+  }, [appliedQ, listFilters, page, pageSize]);
 
   useEffect(() => {
     void loadData();
@@ -167,10 +162,15 @@ export function ProductListTab() {
     await loadData();
   };
 
-  const handleSearch = () => {
+  const handleSearch = useCallback(() => {
     setPage(1);
-    setAppliedKeyword(keywordInput.trim());
-  };
+    setAppliedQ(qInput.trim());
+  }, [qInput]);
+
+  const handleFiltersChange = useCallback((next: ListFilter[]) => {
+    setPage(1);
+    setListFilters(next);
+  }, []);
 
   const handleConfirmSingleDelete = async () => {
     if (!deleteTarget || deleting) return;
@@ -413,7 +413,7 @@ export function ProductListTab() {
                 type="button"
                 variant="link"
                 size="xs"
-                className="text-danger-fg hover:text-danger-fg hover:bg-danger-fg/10"
+                className="text-muted-foreground hover:text-danger-fg hover:bg-danger-fg/10"
                 onClick={() => setDeleteTarget(row)}
               >
                 {t("common.actions.delete")}
@@ -426,10 +426,10 @@ export function ProductListTab() {
     [t, canWrite, navigate],
   );
 
-  const hasActiveSearch = Boolean(appliedKeyword || enabledFilter);
+  const hasActiveSearch = Boolean(appliedQ) || listFilters.length > 0;
 
   return (
-    <>
+    <div className="flex flex-col flex-1 min-h-0 min-w-0">
       <DataTablePage
         columns={columns}
         data={rows}
@@ -454,51 +454,14 @@ export function ProductListTab() {
         }}
         testId="product-list-table"
         filters={
-          <>
-            <div className="flex items-center gap-1.5">
-              <Input
-                value={keywordInput}
-                onChange={(e) => setKeywordInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleSearch();
-                }}
-                placeholder={t("product.list.searchPlaceholder")}
-                className="w-56"
-                data-testid="product-search-input"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="md"
-                onClick={handleSearch}
-              >
-                <Search className="h-3.5 w-3.5" />
-                {t("common.fields.search")}
-              </Button>
-            </div>
-            <Select
-              value={enabledFilter}
-              onChange={(e) => {
-                setEnabledFilter(e.target.value as "" | "true" | "false");
-                setPage(1);
-              }}
-              aria-label={t("product.columns.enabled")}
-              className="w-28"
-              options={[
-                { value: "", label: t("common.all"), text: t("common.all") },
-                {
-                  value: "true",
-                  label: t("common.status.enabled"),
-                  text: t("common.status.enabled"),
-                },
-                {
-                  value: "false",
-                  label: t("common.status.disabled"),
-                  text: t("common.status.disabled"),
-                },
-              ]}
-            />
-          </>
+          <ListQueryBar
+            q={qInput}
+            onQChange={setQInput}
+            filters={listFilters}
+            onFiltersChange={handleFiltersChange}
+            catalog={productsCatalog}
+            onSearch={handleSearch}
+          />
         }
         batchActions={
           canWrite
@@ -520,11 +483,14 @@ export function ProductListTab() {
           <>
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               size="md"
               onClick={() => void loadData()}
+              disabled={loading}
             >
-              <RefreshCw className="h-3.5 w-3.5" />
+              <RefreshCw
+                className={loading ? "h-3.5 w-3.5 animate-spin" : "h-3.5 w-3.5"}
+              />
               {t("common.actions.refresh")}
             </Button>
             {canWrite && (
@@ -611,6 +577,6 @@ export function ProductListTab() {
         cancelLabel={t("common.cancel")}
         loading={deleting}
       />
-    </>
+    </div>
   );
 }

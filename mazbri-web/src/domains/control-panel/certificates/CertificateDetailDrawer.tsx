@@ -681,7 +681,7 @@ export function CertificateDetailDrawer({
                 </div>
               )}
 
-              <div className="flex items-center justify-between gap-3 px-3.5 py-2.5 bg-muted/25">
+              <div className="flex items-center justify-between gap-3 px-3.5 py-2.5 bg-card">
                 <div className="text-xs text-muted-foreground">
                   <span>
                     {t("certificate.detail.autoRenewal.nextRenewalAt")}:{" "}
@@ -749,7 +749,7 @@ export function CertificateDetailDrawer({
                       </Button>
                     </div>
                   </div>
-                  <pre className="max-h-60 overflow-auto rounded-md border border-border bg-muted/40 p-3 font-mono-tech text-[11px] leading-relaxed text-foreground whitespace-pre-wrap break-all">
+                  <pre className="max-h-60 overflow-auto rounded-md border border-border bg-muted/30 p-3 font-mono-tech text-[11px] leading-relaxed text-foreground whitespace-pre-wrap break-all">
                     {cert.cert_pem}
                   </pre>
                 </div>
@@ -773,12 +773,12 @@ export function CertificateDetailDrawer({
                     </Button>
                   </div>
                   {loadingCa ? (
-                    <div className="flex items-center justify-center py-8 text-xs text-muted-foreground gap-2 rounded-md border border-border bg-muted/30">
+                    <div className="flex items-center justify-center py-8 text-xs text-muted-foreground gap-2 rounded-md border border-border bg-card">
                       <Loader2 className="h-4 w-4 animate-spin text-primary" />
                       <span>{t("layout.loading")}</span>
                     </div>
                   ) : (
-                    <pre className="max-h-60 overflow-auto rounded-md border border-border bg-muted/40 p-3 font-mono-tech text-[11px] leading-relaxed text-foreground whitespace-pre-wrap break-all">
+                    <pre className="max-h-60 overflow-auto rounded-md border border-border bg-muted/30 p-3 font-mono-tech text-[11px] leading-relaxed text-foreground whitespace-pre-wrap break-all">
                       {caPem || EMPTY_PLACEHOLDER}
                     </pre>
                   )}
@@ -787,7 +787,7 @@ export function CertificateDetailDrawer({
 
               {activePemTab === "key" &&
                 (!keyPem ? (
-                  <div className="flex flex-col items-center justify-center gap-2.5 rounded-lg border border-dashed border-border bg-muted/25 py-8 px-4 text-center">
+                  <div className="flex flex-col items-center justify-center gap-2.5 rounded-lg border border-border bg-card py-8 px-4 text-center">
                     <div className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-primary-soft text-primary">
                       <KeyRound className="h-5 w-5" />
                     </div>
@@ -840,7 +840,7 @@ export function CertificateDetailDrawer({
                         </Button>
                       </div>
                     </div>
-                    <pre className="max-h-60 overflow-auto rounded-md border border-warning-border bg-muted/40 p-3 font-mono-tech text-[11px] leading-relaxed text-foreground whitespace-pre-wrap break-all">
+                    <pre className="max-h-60 overflow-auto rounded-md border border-warning-border bg-muted/30 p-3 font-mono-tech text-[11px] leading-relaxed text-foreground whitespace-pre-wrap break-all">
                       {keyPem}
                     </pre>
                   </div>

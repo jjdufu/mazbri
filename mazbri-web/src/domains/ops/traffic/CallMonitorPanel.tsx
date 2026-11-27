@@ -807,7 +807,7 @@ export function CallMonitorPanel({
     histogram !== null && !histogramLoading && histogram.total === 0;
 
   return (
-    <div className="space-y-4 min-w-0">
+    <div className="flex flex-col flex-1 min-h-0 gap-4 min-w-0">
       <ChartCard
         title={t("ops.calls.histogram.title")}
         info={t("ops.calls.histogram.brushHint")}
@@ -849,8 +849,8 @@ export function CallMonitorPanel({
       </ChartCard>
 
       {/* Unified Data Table Card: all quick filters, search, advanced filters, export & reset inside Card Header (A-08) */}
-      <Card className="overflow-hidden">
-        <div className="space-y-2.5 border-b border-border px-4 py-3">
+      <Card className="flex flex-col flex-1 min-h-0 overflow-hidden">
+        <div className="space-y-2.5 border-b border-border px-4 py-3 shrink-0">
           <div className="flex flex-wrap items-center justify-between gap-2.5">
             <div className="flex flex-wrap items-center gap-2 min-w-0">
               {quickFilters.map((qf) => (
@@ -926,7 +926,7 @@ export function CallMonitorPanel({
           />
         </div>
 
-        <div className="relative overflow-x-auto">
+        <div className="relative flex-1 min-h-0 overflow-auto">
           {loading && tableData.length > 0 && (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-card/65 backdrop-blur-[1px]">
               <Loader2 className="h-5 w-5 animate-spin text-primary" />
@@ -1076,7 +1076,7 @@ export function CallMonitorPanel({
                         </td>
                       </tr>
                       {expanded && (
-                        <tr className="bg-muted/25">
+                        <tr>
                           <td colSpan={colCount} className="px-4 py-2">
                             <StageBreakdown
                               requestId={row.serial_no}
@@ -1105,7 +1105,7 @@ export function CallMonitorPanel({
           )}
         </div>
 
-        <div className="border-t border-border px-4 py-2.5">
+        <div className="mt-auto border-t border-border px-4 py-2.5 shrink-0">
           <Pagination
             page={page}
             pageSize={pageSize}

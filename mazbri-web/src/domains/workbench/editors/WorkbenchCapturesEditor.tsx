@@ -174,7 +174,7 @@ export function WorkbenchCapturesEditor({
         </div>
 
         {!capturedEntries.length ? (
-          <div className="rounded-lg border border-dashed border-border bg-muted/30 px-3 py-4 text-xs text-muted-foreground">
+          <div className="px-3 py-4 text-center text-xs text-muted-foreground">
             {t("upstreamConnector.capturedEmpty")}
           </div>
         ) : (

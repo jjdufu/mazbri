@@ -345,7 +345,7 @@ export function UserCreateModal({
         </div>
       </FormField>
 
-      <div className="rounded-lg border border-border divide-y divide-border bg-muted/25">
+      <div className="rounded-lg border border-border divide-y divide-border bg-card">
         <div className="flex items-center justify-between gap-4 px-3.5 py-2.5">
           <div className="min-w-0 space-y-0.5">
             <div className="text-xs font-medium text-foreground">

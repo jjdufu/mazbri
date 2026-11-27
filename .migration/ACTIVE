@@ -1,4 +1,0 @@
-ACTIVE=true
-MIGRATION_SCOPE=mazbri-web-react19-xbluenode-architecture
-CREATED_AT=2026-11-27
-SUNSET_RULE=Remove entire .migration/ directory and AGENTS.md migration sentinel block after Stage 7 gate-4 passes.

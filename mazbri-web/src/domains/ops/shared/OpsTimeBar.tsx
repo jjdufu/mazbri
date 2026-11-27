@@ -1,13 +1,12 @@
-import React, { useEffect, useMemo } from "react";
-import { RefreshCw } from "lucide-react";
+import React, { useEffect, useMemo, useState } from "react";
+import { Check, ChevronDown, RefreshCw } from "lucide-react";
 import {
   DateRangePicker,
   IconButton,
-  Select,
+  Popover,
   Tooltip,
   cn,
   type DateRangeValue,
-  type SelectOptionItem,
 } from "@/components/ui";
 import { useT } from "@/locales";
 import { formatDateTime, parseDisplayWallClockMs } from "@/utils/format";
@@ -59,6 +58,7 @@ export function OpsTimeBar({
   className,
 }: OpsTimeBarProps) {
   const { t } = useT();
+  const [refreshMenuOpen, setRefreshMenuOpen] = useState(false);
 
   useEffect(() => {
     if (!showAutoRefresh || !refreshInterval || refreshInterval <= 0 || !onRefresh) {
@@ -82,36 +82,17 @@ export function OpsTimeBar({
     [value],
   );
 
-  const pickerPresets = useMemo(
-    () =>
-      PRESETS.map((key) => ({
-        key,
-        label: t(`ops.timeRange.presets.${key}`),
-        durationMs: PRESET_SECONDS[key] * 1000,
-      })),
-    [t],
-  );
-
-  const refreshOptions = useMemo<SelectOptionItem[]>(
+  const refreshOptions = useMemo(
     () => [
-      {
-        value: "0",
-        label: t("ops.autoRefresh.off"),
-        text: t("ops.autoRefresh.off"),
-      },
-      {
-        value: "30",
-        label: t("ops.autoRefresh.thirtySeconds"),
-        text: t("ops.autoRefresh.thirtySeconds"),
-      },
-      {
-        value: "60",
-        label: t("ops.autoRefresh.oneMinute"),
-        text: t("ops.autoRefresh.oneMinute"),
-      },
+      { value: 0, short: "", label: t("ops.autoRefresh.off") },
+      { value: 30, short: "30s", label: t("ops.autoRefresh.thirtySeconds") },
+      { value: 60, short: "1m", label: t("ops.autoRefresh.oneMinute") },
     ],
     [t],
   );
+
+  const activeRefreshShort =
+    refreshOptions.find((o) => o.value === refreshInterval)?.short ?? "";
 
   const handlePresetClick = (preset: Exclude<TimeRangePreset, "custom">) => {
     const end = Math.floor(Date.now() / 1000);
@@ -136,10 +117,12 @@ export function OpsTimeBar({
     });
   };
 
+  const hasAutoRefresh = Boolean(showAutoRefresh && onRefreshIntervalChange);
+
   return (
     <div
       className={cn(
-        "flex flex-wrap items-center gap-2",
+        "flex flex-wrap items-center gap-2 shrink-0",
         className,
       )}
     >
@@ -148,7 +131,7 @@ export function OpsTimeBar({
       <div
         role="group"
         aria-label={t("ops.timeRange.start")}
-        className="inline-flex h-8 items-center gap-0.5 rounded-md border border-border bg-muted/60 p-0.5"
+        className="inline-flex h-8 items-center gap-0.5 rounded-md border border-border bg-card p-0.5"
       >
         {PRESETS.map((preset) => {
           const active = value.preset === preset;
@@ -161,7 +144,7 @@ export function OpsTimeBar({
               className={cn(
                 "inline-flex h-full items-center justify-center rounded-md px-2 text-xs font-mono-tech transition-colors cursor-pointer whitespace-nowrap",
                 active
-                  ? "bg-primary-soft text-primary font-semibold shadow-2xs"
+                  ? "bg-primary-soft text-primary font-semibold"
                   : "font-medium text-muted-foreground hover:text-foreground hover:bg-hover-bg",
               )}
             >
@@ -174,32 +157,80 @@ export function OpsTimeBar({
       <DateRangePicker
         value={pickerValue}
         onChange={handleCustomChange}
-        presets={pickerPresets}
+        showPresets={false}
         placeholder={t("ops.timeRange.presets.custom")}
         clearable={value.preset === "custom"}
         align="right"
       />
 
-      <span className="inline-flex h-8 items-center rounded-md border border-border bg-muted/40 px-2 text-[11px] font-mono-tech text-muted-foreground select-none">
-        UTC+8
-      </span>
-
-      {showAutoRefresh && onRefreshIntervalChange && (
-        <Select
-          value={String(refreshInterval)}
-          options={refreshOptions}
-          onChange={(e) => {
-            const secs = Number(e.target.value);
-            if (Number.isFinite(secs) && secs >= 0) {
-              onRefreshIntervalChange(secs);
+      {hasAutoRefresh && onRefresh ? (
+        <div className="inline-flex h-8 items-stretch rounded-md border border-border bg-card overflow-hidden">
+          <Tooltip content={t("ops.autoRefresh.refreshNow")}>
+            <button
+              type="button"
+              onClick={onRefresh}
+              disabled={loading}
+              aria-label={t("ops.autoRefresh.refreshNow")}
+              className={cn(
+                "inline-flex h-full items-center gap-1.5 px-2.5 text-xs transition-colors hover:bg-hover-bg active:bg-active-bg disabled:opacity-45 cursor-pointer",
+                activeRefreshShort
+                  ? "text-primary font-medium"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <RefreshCw
+                className={cn("h-3.5 w-3.5 shrink-0", loading && "animate-spin")}
+              />
+              {activeRefreshShort && (
+                <span className="font-mono-tech text-[11px] tabular-nums">
+                  {activeRefreshShort}
+                </span>
+              )}
+            </button>
+          </Tooltip>
+          <Popover
+            open={refreshMenuOpen}
+            onOpenChange={setRefreshMenuOpen}
+            align="right"
+            contentClassName="w-32 p-1"
+            trigger={
+              <button
+                type="button"
+                onClick={() => setRefreshMenuOpen((v) => !v)}
+                aria-label={t("ops.autoRefresh.label")}
+                className="inline-flex h-full items-center justify-center border-l border-border px-1.5 text-muted-foreground hover:bg-hover-bg hover:text-foreground transition-colors cursor-pointer"
+              >
+                <ChevronDown className="h-3.5 w-3.5" />
+              </button>
             }
-          }}
-          aria-label={t("ops.autoRefresh.label")}
-          className="w-32"
-        />
-      )}
-
-      {onRefresh && (
+          >
+            <div className="flex flex-col gap-0.5">
+              {refreshOptions.map((opt) => {
+                const active = opt.value === refreshInterval;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => {
+                      onRefreshIntervalChange?.(opt.value);
+                      setRefreshMenuOpen(false);
+                    }}
+                    className={cn(
+                      "flex w-full h-7 items-center justify-between gap-2 rounded-md px-2 text-xs transition-colors cursor-pointer text-left",
+                      active
+                        ? "bg-primary-soft text-primary font-medium"
+                        : "text-foreground hover:bg-hover-bg",
+                    )}
+                  >
+                    <span>{opt.label}</span>
+                    {active && <Check className="h-3.5 w-3.5 shrink-0" />}
+                  </button>
+                );
+              })}
+            </div>
+          </Popover>
+        </div>
+      ) : onRefresh ? (
         <Tooltip content={t("ops.autoRefresh.refreshNow")}>
           <IconButton
             size="md"
@@ -211,7 +242,7 @@ export function OpsTimeBar({
             <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
           </IconButton>
         </Tooltip>
-      )}
+      ) : null}
     </div>
   );
 }

@@ -430,7 +430,7 @@ export function ConfigEditDrawer({
             </div>
           </FormField>
 
-          <div className="flex items-center justify-between gap-4 rounded-lg border border-border bg-muted/25 px-3.5 py-2.5">
+          <div className="flex items-center justify-between gap-4 rounded-lg border border-border bg-card px-3.5 py-2.5">
             <span className="text-xs font-medium text-foreground">
               {t("configCenter.editDialog.cors.allowCredentials")}
             </span>

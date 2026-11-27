@@ -199,7 +199,7 @@ export function UserEditModal({
             />
           </FormField>
 
-          <div className="rounded-lg border border-border divide-y divide-border bg-muted/25">
+          <div className="rounded-lg border border-border divide-y divide-border bg-card">
             <div className="flex items-center justify-between gap-4 px-3.5 py-2.5">
               <span className="text-xs font-medium text-foreground">
                 {t("userManagement.detail.labels.forcePasswordReset")}

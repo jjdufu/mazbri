@@ -74,23 +74,40 @@ export function BillingHubPage() {
   );
 
   return (
-    <div className="space-y-4 min-w-0" data-testid="billing-hub-page">
+    <div
+      className="flex flex-col flex-1 min-h-0 gap-4 min-w-0"
+      data-testid="billing-hub-page"
+    >
       <Tabs items={tabs} value={activeTab} onChange={handleTabChange} />
 
       {visited.has("overview") && (
-        <div className={activeTab === "overview" ? "block" : "hidden"}>
+        <div
+          className={
+            activeTab === "overview" ? "flex flex-col flex-1 min-h-0" : "hidden"
+          }
+        >
           <FinanceOverviewPanel active={activeTab === "overview"} />
         </div>
       )}
 
       {visited.has("bills") && (
-        <div className={activeTab === "bills" ? "block" : "hidden"}>
+        <div
+          className={
+            activeTab === "bills" ? "flex flex-col flex-1 min-h-0" : "hidden"
+          }
+        >
           <BillListPanel active={activeTab === "bills"} />
         </div>
       )}
 
       {visited.has("reconcile") && (
-        <div className={activeTab === "reconcile" ? "block" : "hidden"}>
+        <div
+          className={
+            activeTab === "reconcile"
+              ? "flex flex-col flex-1 min-h-0"
+              : "hidden"
+          }
+        >
           <UsageReconciliationPanel active={activeTab === "reconcile"} />
         </div>
       )}

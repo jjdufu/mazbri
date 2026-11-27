@@ -148,7 +148,7 @@ export function CachePolicySection({ tenantCode }: CachePolicySectionProps) {
       <div className="space-y-4">
         {/* Toggle tiles */}
         <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-          <div className="flex items-center justify-between gap-3 rounded-md border border-border-subtle bg-muted/25 px-3 py-2.5">
+          <div className="flex items-center justify-between gap-3 rounded-md border border-border-subtle px-3 py-2.5">
             <span className="text-xs font-medium text-foreground">
               {t("tenant.cachePolicy.fields.enabled")}
             </span>
@@ -159,7 +159,7 @@ export function CachePolicySection({ tenantCode }: CachePolicySectionProps) {
               aria-label={t("tenant.cachePolicy.fields.enabled")}
             />
           </div>
-          <div className="flex items-center justify-between gap-3 rounded-md border border-border-subtle bg-muted/25 px-3 py-2.5">
+          <div className="flex items-center justify-between gap-3 rounded-md border border-border-subtle px-3 py-2.5">
             <span className="text-xs font-medium text-foreground">
               {t("tenant.cachePolicy.fields.isolated")}
             </span>
@@ -250,7 +250,7 @@ export function CachePolicySection({ tenantCode }: CachePolicySectionProps) {
           </div>
 
           {warmupKeys.length === 0 ? (
-            <div className="rounded-md border border-dashed border-border py-4 text-center text-xs text-muted-foreground">
+            <div className="py-4 text-center text-xs text-muted-foreground">
               {t("common.feedback.noData")}
             </div>
           ) : (
@@ -310,7 +310,7 @@ export function CachePolicySection({ tenantCode }: CachePolicySectionProps) {
           </div>
 
           {overrides.length === 0 ? (
-            <div className="rounded-md border border-dashed border-border py-4 text-center text-xs text-muted-foreground">
+            <div className="py-4 text-center text-xs text-muted-foreground">
               {t("common.feedback.noData")}
             </div>
           ) : (

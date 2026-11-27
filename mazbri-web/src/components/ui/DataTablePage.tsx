@@ -257,7 +257,10 @@ export function DataTablePage<T extends RowData>({
   const headerGroups = table.getHeaderGroups();
 
   return (
-    <div data-testid={testId} className={cn("space-y-4 min-w-0", className)}>
+    <div
+      data-testid={testId}
+      className={cn("flex flex-col flex-1 min-h-0 space-y-4 min-w-0", className)}
+    >
       {title && (
         <PageHeader
           title={title}
@@ -267,9 +270,9 @@ export function DataTablePage<T extends RowData>({
         />
       )}
 
-      <Card className="overflow-hidden">
+      <Card className="flex flex-col flex-1 min-h-0 overflow-hidden">
         {hasToolbar && (
-          <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-border px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-border px-4 py-3 shrink-0">
             <div className="flex flex-wrap items-center gap-2 min-w-0">
               {filters}
               {hasSelection && (
@@ -290,7 +293,7 @@ export function DataTablePage<T extends RowData>({
           </div>
         )}
 
-        <div className="relative overflow-x-auto">
+        <div className="relative flex-1 min-h-0 overflow-auto">
           {loading && rows.length > 0 && (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-card/65 backdrop-blur-[1px]">
               <Loader2 className="h-5 w-5 animate-spin text-primary" />
@@ -298,12 +301,12 @@ export function DataTablePage<T extends RowData>({
           )}
 
           {loading && rows.length === 0 ? (
-            <div className="flex items-center justify-center gap-2 py-14 text-xs text-muted-foreground">
+            <div className="flex h-full min-h-[200px] items-center justify-center gap-2 py-14 text-xs text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin text-primary" />
               <span>{tx("加载中…", "Loading…")}</span>
             </div>
           ) : rows.length === 0 ? (
-            <div className="p-4">
+            <div className="flex h-full min-h-[200px] items-center justify-center p-4">
               <EmptyState
                 title={emptyText ?? tx("暂无数据", "No data")}
                 action={emptyAction}
@@ -320,7 +323,7 @@ export function DataTablePage<T extends RowData>({
                 {headerGroups.map((headerGroup) => (
                   <tr
                     key={headerGroup.id}
-                    className="border-b border-border bg-muted/45 text-muted-foreground"
+                    className="border-b border-border bg-transparent text-muted-foreground"
                   >
                     {headerGroup.headers.map((header) => {
                       const colId = header.column.id;
@@ -367,7 +370,7 @@ export function DataTablePage<T extends RowData>({
                         onRowClick ? () => onRowClick(row.original) : undefined
                       }
                       className={cn(
-                        "transition-colors hover:bg-hover-bg/75",
+                        "group/row transition-colors hover:bg-muted/50",
                         selected && "bg-primary-soft/50 hover:bg-primary-soft/75",
                         onRowClick && "cursor-pointer",
                         rowClassName?.(row.original),
@@ -382,7 +385,7 @@ export function DataTablePage<T extends RowData>({
                           <td
                             key={cell.id}
                             className={cn(
-                              "px-3 py-2.5 align-middle",
+                              "px-3 py-3 align-middle",
                               isSelectCol && "w-10 text-center px-3",
                               !isSelectCol && align === "left" && "text-left",
                               !isSelectCol &&
@@ -411,7 +414,7 @@ export function DataTablePage<T extends RowData>({
         </div>
 
         {showPagination && (
-          <div className="border-t border-border px-4 py-2.5">
+          <div className="mt-auto border-t border-border px-4 py-2.5 shrink-0">
             <Pagination
               page={page}
               pageSize={pageSize}

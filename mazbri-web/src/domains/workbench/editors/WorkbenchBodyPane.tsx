@@ -354,7 +354,7 @@ export function WorkbenchBodyPane({
       </div>
 
       {contentType === "none" ? (
-        <div className="flex min-h-[120px] flex-1 items-center justify-center rounded-lg border border-dashed border-border px-4 py-8 text-center text-xs text-muted-foreground">
+        <div className="flex min-h-[120px] flex-1 items-center justify-center px-4 py-8 text-center text-xs text-muted-foreground">
           {t("upstreamConnector.bodyNoneEmpty")}
         </div>
       ) : (

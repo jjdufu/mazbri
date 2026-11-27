@@ -545,7 +545,7 @@ export function AlertEventsPanel() {
   };
 
   return (
-    <div className="space-y-4 min-w-0">
+    <div className="flex flex-col flex-1 min-h-0 gap-4 min-w-0">
       <DataTablePage
         columns={columns}
         data={filteredRows}
@@ -721,7 +721,7 @@ export function AlertEventsPanel() {
                   {t("ops.alerts.columns.startedAt")}
                 </dt>
                 <dd className="col-span-8 font-mono-tech tabular-nums">
-                  {formatAlertTime(selected.started_at)} (UTC+8)
+                  {formatAlertTime(selected.started_at)}
                 </dd>
               </div>
               <div className="grid grid-cols-12 gap-2 px-3 py-2">
@@ -730,7 +730,7 @@ export function AlertEventsPanel() {
                 </dt>
                 <dd className="col-span-8 font-mono-tech tabular-nums">
                   {selected.resolved_at
-                    ? `${formatAlertTime(selected.resolved_at)} (UTC+8)`
+                    ? formatAlertTime(selected.resolved_at)
                     : "—"}
                 </dd>
               </div>
@@ -801,7 +801,7 @@ export function AlertEventsPanel() {
         </FormField>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <FormField
-            label={`${t("ops.alerts.silences.startsAt")} (UTC+8)`}
+            label={t("ops.alerts.silences.startsAt")}
             required
           >
             <input
@@ -812,7 +812,7 @@ export function AlertEventsPanel() {
             />
           </FormField>
           <FormField
-            label={`${t("ops.alerts.silences.endsAt")} (UTC+8)`}
+            label={t("ops.alerts.silences.endsAt")}
             required
           >
             <input

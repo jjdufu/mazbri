@@ -143,7 +143,7 @@ function calendarCellClass(status: string): string {
   if (status === "error") {
     return "border-danger-fg/35 bg-danger-fg/10 text-danger-fg";
   }
-  return "border-border-subtle bg-muted/35 text-foreground";
+  return "border-border-subtle text-foreground";
 }
 
 export function UsageReconciliationPanel({
@@ -822,7 +822,7 @@ export function UsageReconciliationPanel({
 
   return (
     <div
-      className="space-y-4 min-w-0"
+      className="flex flex-col flex-1 min-h-0 gap-4 min-w-0"
       data-testid="billing-reconciliation-panel"
     >
       {/* Calendar Bar / Card */}
@@ -974,7 +974,7 @@ export function UsageReconciliationPanel({
           <>
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               size="md"
               onClick={() => void reloadAll()}
               disabled={loading}
@@ -1035,7 +1035,7 @@ export function UsageReconciliationPanel({
       >
         <div className="space-y-3">
           {/* Switch row 1 */}
-          <div className="flex items-center justify-between gap-4 rounded-md border border-border-subtle bg-muted/20 px-3.5 py-2.5">
+          <div className="flex items-center justify-between gap-4 rounded-md border border-border-subtle px-3.5 py-2.5">
             <span className="text-xs font-medium text-foreground whitespace-nowrap">
               {t("billing.reconciliation.scheduledEnabled")}
             </span>
@@ -1110,7 +1110,7 @@ export function UsageReconciliationPanel({
 
           {/* Boolean policy toggles — clean full-row flex items-center justify-between */}
           <div className="space-y-2">
-            <div className="flex items-center justify-between gap-4 rounded-md border border-border-subtle bg-muted/20 px-3.5 py-2.5">
+            <div className="flex items-center justify-between gap-4 rounded-md border border-border-subtle px-3.5 py-2.5">
               <span className="text-xs font-medium text-foreground whitespace-nowrap">
                 {t("billing.reconciliation.usePreviousDay")}
               </span>
@@ -1121,7 +1121,7 @@ export function UsageReconciliationPanel({
               />
             </div>
 
-            <div className="flex items-center justify-between gap-4 rounded-md border border-border-subtle bg-muted/20 px-3.5 py-2.5">
+            <div className="flex items-center justify-between gap-4 rounded-md border border-border-subtle px-3.5 py-2.5">
               <span className="text-xs font-medium text-foreground whitespace-nowrap">
                 {t("billing.reconciliation.includeAmount")}
               </span>
@@ -1132,7 +1132,7 @@ export function UsageReconciliationPanel({
               />
             </div>
 
-            <div className="flex items-center justify-between gap-4 rounded-md border border-border-subtle bg-muted/20 px-3.5 py-2.5">
+            <div className="flex items-center justify-between gap-4 rounded-md border border-border-subtle px-3.5 py-2.5">
               <span className="text-xs font-medium text-foreground whitespace-nowrap">
                 {t("billing.reconciliation.warnBeforeBill")}
               </span>
@@ -1143,7 +1143,7 @@ export function UsageReconciliationPanel({
               />
             </div>
 
-            <div className="flex items-center justify-between gap-4 rounded-md border border-border-subtle bg-muted/20 px-3.5 py-2.5">
+            <div className="flex items-center justify-between gap-4 rounded-md border border-border-subtle px-3.5 py-2.5">
               <span className="text-xs font-medium text-foreground whitespace-nowrap">
                 {t("billing.reconciliation.alertOnFlagged")}
               </span>

@@ -534,7 +534,7 @@ export function ProductDetailPage() {
             ) : (
               <dl className="grid grid-cols-1 md:grid-cols-2 border border-border rounded-lg overflow-hidden divide-y md:divide-y-0">
                 <div className="grid grid-cols-[140px_1fr] border-b border-border">
-                  <dt className="bg-muted/45 px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
+                  <dt className="bg-card px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
                     {t("product.fields.internalId")}
                   </dt>
                   <dd className="px-3 py-2.5 text-xs text-foreground min-w-0">
@@ -547,7 +547,7 @@ export function ProductDetailPage() {
                 </div>
 
                 <div className="grid grid-cols-[140px_1fr] border-b border-border md:border-l">
-                  <dt className="bg-muted/45 px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
+                  <dt className="bg-card px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
                     {t("product.fields.name")}
                   </dt>
                   <dd className="px-3 py-2.5 text-xs text-foreground">
@@ -556,7 +556,7 @@ export function ProductDetailPage() {
                 </div>
 
                 <div className="grid grid-cols-[140px_1fr] border-b border-border">
-                  <dt className="bg-muted/45 px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
+                  <dt className="bg-card px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
                     {t("product.fields.enabled")}
                   </dt>
                   <dd className="px-3 py-2.5 text-xs text-foreground flex items-center gap-2">
@@ -575,7 +575,7 @@ export function ProductDetailPage() {
                 </div>
 
                 <div className="grid grid-cols-[140px_1fr] border-b border-border md:border-l">
-                  <dt className="bg-muted/45 px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
+                  <dt className="bg-card px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
                     {t("product.fields.timeout")}
                   </dt>
                   <dd className="px-3 py-2.5 text-xs text-foreground font-mono-tech tabular-nums">
@@ -586,7 +586,7 @@ export function ProductDetailPage() {
                 </div>
 
                 <div className="grid grid-cols-[140px_1fr] border-b border-border md:col-span-2">
-                  <dt className="bg-muted/45 px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
+                  <dt className="bg-card px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
                     {t("product.fields.description")}
                   </dt>
                   <dd className="px-3 py-2.5 text-xs text-foreground">
@@ -595,7 +595,7 @@ export function ProductDetailPage() {
                 </div>
 
                 <div className="grid grid-cols-[140px_1fr] border-b border-border">
-                  <dt className="bg-muted/45 px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
+                  <dt className="bg-card px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
                     {t("product.fields.cbProEnabled")}
                   </dt>
                   <dd className="px-3 py-2.5 text-xs text-foreground">
@@ -612,7 +612,7 @@ export function ProductDetailPage() {
                 {product?.cb_pro_enabled ? (
                   <>
                     <div className="grid grid-cols-[140px_1fr] border-b border-border md:border-l">
-                      <dt className="bg-muted/45 px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
+                      <dt className="bg-card px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
                         {t("product.fields.cbFailureThresholdLabel")}
                       </dt>
                       <dd className="px-3 py-2.5 text-xs text-foreground font-mono-tech tabular-nums">
@@ -620,7 +620,7 @@ export function ProductDetailPage() {
                       </dd>
                     </div>
                     <div className="grid grid-cols-[140px_1fr] border-b border-border">
-                      <dt className="bg-muted/45 px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
+                      <dt className="bg-card px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
                         {t("product.fields.cbSuccessThresholdLabel")}
                       </dt>
                       <dd className="px-3 py-2.5 text-xs text-foreground font-mono-tech tabular-nums">
@@ -628,7 +628,7 @@ export function ProductDetailPage() {
                       </dd>
                     </div>
                     <div className="grid grid-cols-[140px_1fr] border-b border-border md:border-l">
-                      <dt className="bg-muted/45 px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
+                      <dt className="bg-card px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
                         {t("product.fields.cbCooldownLabel")}
                       </dt>
                       <dd className="px-3 py-2.5 text-xs text-foreground font-mono-tech tabular-nums">
@@ -637,11 +637,11 @@ export function ProductDetailPage() {
                     </div>
                   </>
                 ) : (
-                  <div className="hidden md:block border-b border-border md:border-l bg-muted/15" />
+                  <div className="hidden md:block border-b border-border md:border-l bg-card" />
                 )}
 
                 <div className="grid grid-cols-[140px_1fr]">
-                  <dt className="bg-muted/45 px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
+                  <dt className="bg-card px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
                     {t("common.fields.createdAt")}
                   </dt>
                   <dd className="px-3 py-2.5 text-xs text-foreground font-mono-tech">
@@ -650,7 +650,7 @@ export function ProductDetailPage() {
                 </div>
 
                 <div className="grid grid-cols-[140px_1fr] border-t md:border-t-0 border-border md:border-l">
-                  <dt className="bg-muted/45 px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
+                  <dt className="bg-card px-3 py-2.5 text-xs font-medium text-muted-foreground border-r border-border">
                     {t("common.fields.updatedAt")}
                   </dt>
                   <dd className="px-3 py-2.5 text-xs text-foreground font-mono-tech">

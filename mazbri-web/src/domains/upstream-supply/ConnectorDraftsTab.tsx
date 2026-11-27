@@ -287,7 +287,7 @@ export function ConnectorDraftsTab() {
                 type="button"
                 variant="link"
                 size="xs"
-                className="text-danger-fg hover:text-danger-fg hover:bg-danger-fg/10"
+                className="text-muted-foreground hover:text-danger-fg hover:bg-danger-fg/10"
                 onClick={() => setDeleteTarget(row)}
               >
                 {t("common.actions.delete")}
@@ -306,7 +306,7 @@ export function ConnectorDraftsTab() {
   };
 
   return (
-    <>
+    <div className="flex flex-col flex-1 min-h-0 min-w-0">
       <DataTablePage
         columns={columns}
         data={rows}
@@ -372,11 +372,14 @@ export function ConnectorDraftsTab() {
           <>
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               size="md"
               onClick={() => void loadData()}
+              disabled={loading}
             >
-              <RefreshCw className="h-3.5 w-3.5" />
+              <RefreshCw
+                className={loading ? "h-3.5 w-3.5 animate-spin" : "h-3.5 w-3.5"}
+              />
               {t("common.actions.refresh")}
             </Button>
             {canWrite && (
@@ -454,6 +457,6 @@ export function ConnectorDraftsTab() {
         cancelLabel={t("common.cancel")}
         loading={deleting}
       />
-    </>
+    </div>
   );
 }

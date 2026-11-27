@@ -282,6 +282,23 @@ export function resolveBreadcrumbs(
   return [{ label: t("menus.mazbri.title") }];
 }
 
+export function resolveMenuPageHeader(pathname: string): MenuItem | null {
+  const normalized = normalizePathname(pathname);
+  for (const rule of DETAIL_ROUTE_RULES) {
+    if (rule.pattern.test(normalized)) {
+      return null;
+    }
+  }
+  for (const group of MENU_GROUPS) {
+    for (const item of group.items) {
+      if (normalized === item.path) {
+        return item;
+      }
+    }
+  }
+  return null;
+}
+
 export function resolveDefaultHomePath(role: RoleLike): string {
   const groups = getFilteredMenuGroups(role);
   return groups[0]?.items[0]?.path ?? "/operations/tenants";

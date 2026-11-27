@@ -1,100 +1,46 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Link, useLocation } from "react-router";
-import { PanelLeftClose, PanelLeftOpen, Shield } from "lucide-react";
 import { Tooltip, cn } from "@/components/ui";
-import { LanguageEnum } from "@/enums/appEnum";
 import { useT } from "@/locales";
 import { useAuthStore } from "@/stores/auth";
-import { useWatermarkStore } from "@/stores/watermark";
-import {
-  getFilteredMenuGroups,
-  resolveActiveMenuPath,
-  resolveDefaultHomePath,
-} from "./menuConfig";
+import { getFilteredMenuGroups, resolveActiveMenuPath } from "./menuConfig";
 
-const SIDEBAR_COLLAPSED_KEY = "mazbri-sidebar-collapsed";
-
-function readInitialCollapsed(): boolean {
-  if (typeof localStorage === "undefined") return false;
-  try {
-    return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1";
-  } catch {
-    return false;
-  }
+export interface SidebarProps {
+  collapsed: boolean;
 }
 
-export function Sidebar() {
+export function Sidebar({ collapsed }: SidebarProps) {
   const location = useLocation();
-  const { t, locale } = useT();
+  const { t } = useT();
   const role = useAuthStore((s) => s.info.role);
-  const siteName = useWatermarkStore((s) => s.siteName);
-  const [collapsed, setCollapsed] = useState<boolean>(readInitialCollapsed);
-
-  useEffect(() => {
-    if (typeof localStorage === "undefined") return;
-    try {
-      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? "1" : "0");
-    } catch {
-      // Ignore storage errors in restricted contexts.
-    }
-  }, [collapsed]);
 
   const menuGroups = useMemo(() => getFilteredMenuGroups(role), [role]);
   const activePath = useMemo(
     () => resolveActiveMenuPath(location.pathname),
     [location.pathname],
   );
-  const homePath = useMemo(() => resolveDefaultHomePath(role), [role]);
-  const brandTitle = siteName.trim() || "Mazbri";
-  const toggleLabel = collapsed
-    ? locale === LanguageEnum.ZH
-      ? "展开侧栏"
-      : "Expand sidebar"
-    : locale === LanguageEnum.ZH
-      ? "收起侧栏"
-      : "Collapse sidebar";
 
   return (
     <aside
       data-testid="app-sidebar"
       data-collapsed={collapsed ? "true" : "false"}
       className={cn(
-        "bg-sidebar-bg text-slate-200 flex flex-col shrink-0 border-r border-white/10 select-none transition-[width] duration-200",
-        collapsed ? "w-[60px]" : "w-[220px]",
+        "border-r border-border bg-card/35 flex flex-col justify-between shrink-0 transition-all overflow-y-auto select-none",
+        collapsed ? "w-[60px] px-2 py-3" : "w-52 px-2.5 py-3",
       )}
     >
-      <Link
-        to={homePath}
-        className={cn(
-          "h-12 flex items-center border-b border-white/10 shrink-0 transition-colors hover:bg-sidebar-hover",
-          collapsed ? "justify-center px-0" : "gap-2.5 px-3.5",
-        )}
-      >
-        <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-sidebar-active text-white shrink-0">
-          <Shield className="h-4 w-4" />
-        </span>
-        {!collapsed && (
-          <span className="text-sm font-semibold tracking-tight text-white truncate">
-            {brandTitle}
-          </span>
-        )}
-      </Link>
-
-      <nav
-        aria-label={t("menus.mazbri.title")}
-        className="flex-1 overflow-y-auto py-2 px-2 space-y-1"
-      >
+      <nav aria-label={t("menus.mazbri.title")} className="space-y-1">
         {menuGroups.map((group, groupIndex) => (
           <div
             key={group.key}
-            className={cn(groupIndex > 0 && (collapsed ? "pt-2" : "pt-3"))}
+            className={cn(groupIndex > 0 && (collapsed ? "pt-2" : "pt-3.5"))}
           >
             {collapsed ? (
               groupIndex > 0 && (
-                <div className="mx-1.5 mb-2 border-t border-white/10" />
+                <div className="mx-1.5 mb-2 border-t border-border" />
               )
             ) : (
-              <div className="px-2.5 pb-1 text-[11px] font-medium uppercase tracking-wider text-slate-400 truncate">
+              <div className="px-2.5 pb-1.5 text-[11px] font-medium text-sidebar-muted truncate">
                 {t(group.titleKey)}
               </div>
             )}
@@ -116,16 +62,21 @@ export function Sidebar() {
                         data-testid={`nav-item-${item.key}`}
                         aria-current={isActive ? "page" : undefined}
                         className={cn(
-                          "flex h-8 items-center rounded-md text-xs transition-colors duration-150",
+                          "relative w-full flex items-center rounded-md py-1.5 text-[13px] transition-colors cursor-pointer",
                           collapsed
                             ? "justify-center px-0"
                             : "gap-2.5 px-2.5",
                           isActive
-                            ? "bg-sidebar-active text-white font-medium"
-                            : "text-slate-300 hover:bg-sidebar-hover hover:text-white",
+                            ? "bg-xblue-soft text-xblue font-semibold before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-[3px] before:rounded-r before:bg-xblue"
+                            : "font-medium text-muted-foreground hover:text-foreground hover:bg-hover-bg active:bg-active-bg",
                         )}
                       >
-                        <Icon className="h-4 w-4 shrink-0" />
+                        <Icon
+                          className={cn(
+                            "h-4 w-4 shrink-0",
+                            isActive && "text-xblue",
+                          )}
+                        />
                         {!collapsed && (
                           <span className="truncate">{label}</span>
                         )}
@@ -139,29 +90,12 @@ export function Sidebar() {
         ))}
       </nav>
 
-      <div className="border-t border-white/10 p-2 shrink-0">
-        <Tooltip content={toggleLabel} side="right" disabled={!collapsed}>
-          <button
-            type="button"
-            data-testid="sidebar-collapse-btn"
-            aria-label={toggleLabel}
-            onClick={() => setCollapsed((prev) => !prev)}
-            className={cn(
-              "flex h-8 w-full items-center rounded-md text-xs text-slate-300 hover:bg-sidebar-hover hover:text-white transition-colors cursor-pointer",
-              collapsed ? "justify-center px-0" : "gap-2 px-2.5",
-            )}
-          >
-            {collapsed ? (
-              <PanelLeftOpen className="h-4 w-4 shrink-0" />
-            ) : (
-              <>
-                <PanelLeftClose className="h-4 w-4 shrink-0" />
-                <span className="truncate">{toggleLabel}</span>
-              </>
-            )}
-          </button>
-        </Tooltip>
-      </div>
+      {!collapsed && (
+        <div className="mt-3 pt-2 border-t border-border/60 text-[11px] text-muted-foreground/70 select-none px-2.5 flex items-center justify-between">
+          <span>Mazbri</span>
+          <span className="font-mono-tech">v0.6.8</span>
+        </div>
+      )}
     </aside>
   );
 }

@@ -1,31 +1,52 @@
 import { create } from "zustand";
 
-export type ThemeMode = "light" | "dark";
+export type ThemeMode = "auto" | "light" | "dark";
 
 const THEME_STORAGE_KEY = "mazbri-theme";
 const LEGACY_THEME_STORAGE_KEY = "sys-theme";
 
-function isThemeMode(value: unknown): value is ThemeMode {
-  return value === "light" || value === "dark";
+function normalizeThemeMode(value: unknown): ThemeMode | null {
+  if (value === "light" || value === "dark" || value === "auto") {
+    return value;
+  }
+  if (value === "system") {
+    return "auto";
+  }
+  return null;
+}
+
+function getSystemPrefersDark(): boolean {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+    return false;
+  }
+  return window.matchMedia("(prefers-color-scheme: dark)").matches;
+}
+
+function resolveIsDark(mode: ThemeMode): boolean {
+  if (mode === "dark") return true;
+  if (mode === "light") return false;
+  return getSystemPrefersDark();
 }
 
 function readInitialTheme(): ThemeMode {
   if (typeof localStorage === "undefined") {
-    return "light";
+    return "auto";
   }
   try {
-    const primary = localStorage.getItem(THEME_STORAGE_KEY);
-    if (isThemeMode(primary)) {
+    const primary = normalizeThemeMode(localStorage.getItem(THEME_STORAGE_KEY));
+    if (primary) {
       return primary;
     }
-    const legacy = localStorage.getItem(LEGACY_THEME_STORAGE_KEY);
-    if (isThemeMode(legacy)) {
+    const legacy = normalizeThemeMode(
+      localStorage.getItem(LEGACY_THEME_STORAGE_KEY),
+    );
+    if (legacy) {
       return legacy;
     }
   } catch {
-    // Fallback to light theme when storage is restricted.
+    // Fallback to auto theme when storage is restricted.
   }
-  return "light";
+  return "auto";
 }
 
 function syncThemeClass(isDark: boolean): void {
@@ -51,23 +72,46 @@ export interface ThemeState {
 }
 
 const initialTheme = readInitialTheme();
-syncThemeClass(initialTheme === "dark");
+const initialIsDark = resolveIsDark(initialTheme);
+syncThemeClass(initialIsDark);
 
 export const useThemeStore = create<ThemeState>((set, get) => ({
   theme: initialTheme,
-  isDark: initialTheme === "dark",
+  isDark: initialIsDark,
   setTheme: (theme: ThemeMode) => {
-    if (!isThemeMode(theme)) return;
-    const isDark = theme === "dark";
+    const normalized = normalizeThemeMode(theme);
+    if (!normalized) return;
+    const isDark = resolveIsDark(normalized);
     syncThemeClass(isDark);
-    persistTheme(theme);
-    set({ theme, isDark });
+    persistTheme(normalized);
+    set({ theme: normalized, isDark });
   },
   toggleTheme: () => {
-    const next: ThemeMode = get().isDark ? "light" : "dark";
+    const cur = get().theme;
+    const next: ThemeMode =
+      cur === "auto" ? "light" : cur === "light" ? "dark" : "auto";
     get().setTheme(next);
   },
   applyThemeToDom: () => {
-    syncThemeClass(get().isDark);
+    const isDark = resolveIsDark(get().theme);
+    syncThemeClass(isDark);
+    if (isDark !== get().isDark) {
+      set({ isDark });
+    }
   },
 }));
+
+if (typeof window !== "undefined" && typeof window.matchMedia === "function") {
+  const media = window.matchMedia("(prefers-color-scheme: dark)");
+  const handleSystemChange = () => {
+    const state = useThemeStore.getState();
+    if (state.theme === "auto") {
+      const nextDark = media.matches;
+      syncThemeClass(nextDark);
+      useThemeStore.setState({ isDark: nextDark });
+    }
+  };
+  if (typeof media.addEventListener === "function") {
+    media.addEventListener("change", handleSystemChange);
+  }
+}

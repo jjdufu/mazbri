@@ -285,7 +285,7 @@ export function JsonTemplateEditor({
 
   return (
     <div className="rounded-lg border border-border bg-card overflow-hidden w-full">
-      <div className="flex items-center justify-between gap-2 border-b border-border bg-muted/45 px-3 py-1.5">
+      <div className="flex items-center justify-between gap-2 border-b border-border bg-card px-3 py-1.5">
         <SegmentedControl
           value={mode}
           onChange={handleModeSwitch}
@@ -331,7 +331,7 @@ export function JsonTemplateEditor({
           {(!emptyPlaceholder || formItems.length > 0) && (
             <table className="w-full border-collapse text-xs">
               <thead>
-                <tr className="border-b border-border bg-muted/30 text-muted-foreground">
+                <tr className="border-b border-border bg-card text-muted-foreground">
                   <th className="h-8 px-2.5 text-left font-medium w-2/5">
                     {resolvedKeyCol}
                   </th>

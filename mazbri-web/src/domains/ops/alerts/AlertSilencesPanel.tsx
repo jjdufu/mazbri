@@ -375,10 +375,10 @@ export function AlertSilencesPanel() {
   }, [t, isAdmin]);
 
   return (
-    <div className="space-y-4 min-w-0">
+    <div className="flex flex-col flex-1 min-h-0 gap-4 min-w-0">
       {/* Silences Card: unified Card Header (fixes A-09 external floating Refresh) */}
-      <Card className="overflow-hidden">
-        <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-border px-4 py-3">
+      <Card className="flex flex-col flex-1 min-h-0 overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-border px-4 py-3 shrink-0">
           <div className="flex items-center gap-1.5 min-w-0">
             <h3 className="text-xs font-semibold text-foreground">
               {t("menus.mazbri.alertSilences")}
@@ -393,7 +393,7 @@ export function AlertSilencesPanel() {
           <div className="flex items-center gap-2 shrink-0">
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               size="md"
               loading={loadingSilences}
               onClick={() => void reloadSilences()}
@@ -426,8 +426,8 @@ export function AlertSilencesPanel() {
       </Card>
 
       {/* Inhibits Card: unified Card Header */}
-      <Card className="overflow-hidden">
-        <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-border px-4 py-3">
+      <Card className="flex flex-col flex-1 min-h-0 overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-border px-4 py-3 shrink-0">
           <h3 className="text-xs font-semibold text-foreground">
             {t("ops.alerts.inhibits.title")}
           </h3>
@@ -435,7 +435,7 @@ export function AlertSilencesPanel() {
           <div className="flex items-center gap-2 shrink-0">
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               size="md"
               loading={loadingInhibits}
               onClick={() => void reloadInhibits()}
@@ -488,7 +488,7 @@ export function AlertSilencesPanel() {
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <FormField
-            label={`${t("ops.alerts.silences.startsAt")} (UTC+8)`}
+            label={t("ops.alerts.silences.startsAt")}
             required
           >
             <input
@@ -499,7 +499,7 @@ export function AlertSilencesPanel() {
             />
           </FormField>
           <FormField
-            label={`${t("ops.alerts.silences.endsAt")} (UTC+8)`}
+            label={t("ops.alerts.silences.endsAt")}
             required
           >
             <input
@@ -568,7 +568,7 @@ export function AlertSilencesPanel() {
           />
         </FormField>
 
-        <div className="flex items-center justify-between rounded-lg border border-border bg-muted/25 px-3 py-2">
+        <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
           <span className="text-xs font-medium text-foreground">
             {t("ops.alerts.rules.columns.enabled")}
           </span>

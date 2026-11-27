@@ -46,7 +46,7 @@ export function AlertsPage() {
   );
 
   return (
-    <div className="space-y-4 min-w-0">
+    <div className="flex flex-col flex-1 min-h-0 gap-4 min-w-0">
       {tabOptions.length > 1 && (
         <Tabs items={tabOptions} value={activeTab} onChange={setActiveTab} />
       )}

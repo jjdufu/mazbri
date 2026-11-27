@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
-import { Plus, RefreshCw, Search, Trash2, Upload } from "lucide-react";
+import { Plus, RefreshCw, Trash2, Upload } from "lucide-react";
 import { fetchAuthorizations } from "@/api/product";
 import {
   createDefaultCBProPolicyConfig,
@@ -14,10 +14,11 @@ import {
   ConfirmDialog,
   CopyableText,
   DataTablePage,
-  Input,
+  ListQueryBar,
   StatusBadge,
   type DataTableColumn,
 } from "@/components/ui";
+import { authorizationsCatalog } from "@/list-catalog/common-resources";
 import { useT } from "@/locales";
 import { useAuthStore } from "@/stores/auth";
 import {
@@ -25,8 +26,10 @@ import {
   type AuthorizationDetail,
 } from "@/types/api/product";
 import type { TenantProduct } from "@/types/api/tenant";
+import type { ListFilter } from "@/types/list-query";
 import { EMPTY_PLACEHOLDER, formatDateTime, formatMoney } from "@/utils/format";
 import { isMfaStepUpCancelled } from "@/utils/http/mfa-cancelled";
+import { encodeFilters } from "@/utils/list-query/serialize";
 import { isBizRole } from "@/utils/ops/roles";
 import {
   exportResourceCsv,
@@ -105,8 +108,9 @@ export function AuthorizationListTab() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [total, setTotal] = useState(0);
-  const [keywordInput, setKeywordInput] = useState("");
-  const [appliedKeyword, setAppliedKeyword] = useState("");
+  const [qInput, setQInput] = useState("");
+  const [appliedQ, setAppliedQ] = useState("");
+  const [listFilters, setListFilters] = useState<ListFilter[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const [createOpen, setCreateOpen] = useState(false);
@@ -129,7 +133,8 @@ export function AuthorizationListTab() {
     setLoading(true);
     try {
       const res = await fetchAuthorizations({
-        q: appliedKeyword || undefined,
+        q: appliedQ || undefined,
+        filters: encodeFilters(listFilters).filters,
         page,
         page_size: pageSize,
       });
@@ -141,16 +146,21 @@ export function AuthorizationListTab() {
     } finally {
       setLoading(false);
     }
-  }, [appliedKeyword, page, pageSize]);
+  }, [appliedQ, listFilters, page, pageSize]);
 
   useEffect(() => {
     void loadData();
   }, [loadData]);
 
-  const handleSearch = () => {
+  const handleSearch = useCallback(() => {
     setPage(1);
-    setAppliedKeyword(keywordInput.trim());
-  };
+    setAppliedQ(qInput.trim());
+  }, [qInput]);
+
+  const handleFiltersChange = useCallback((next: ListFilter[]) => {
+    setPage(1);
+    setListFilters(next);
+  }, []);
 
   const handleConfigure = (row: AuthorizationDetail) => {
     setSelectedAuth(row);
@@ -450,7 +460,7 @@ export function AuthorizationListTab() {
               type="button"
               variant="link"
               size="xs"
-              className="text-danger-fg hover:text-danger-fg hover:bg-danger-fg/10"
+              className="text-muted-foreground hover:text-danger-fg hover:bg-danger-fg/10"
               onClick={() => setRevokeTarget(row)}
             >
               {t("authorization.list.actions.revoke")}
@@ -462,15 +472,17 @@ export function AuthorizationListTab() {
     return cols;
   }, [t, canWrite, navigate]);
 
+  const hasActiveSearch = Boolean(appliedQ) || listFilters.length > 0;
+
   return (
-    <>
+    <div className="flex flex-col flex-1 min-h-0 min-w-0">
       <DataTablePage
         columns={columns}
         data={rows}
         getRowId={(row) => row.id}
         loading={loading}
         emptyText={
-          appliedKeyword
+          hasActiveSearch
             ? t("common.feedback.noMatchingData")
             : t("common.feedback.noData")
         }
@@ -488,27 +500,14 @@ export function AuthorizationListTab() {
         }}
         testId="authorization-list-table"
         filters={
-          <div className="flex items-center gap-1.5">
-            <Input
-              value={keywordInput}
-              onChange={(e) => setKeywordInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleSearch();
-              }}
-              placeholder={t("authorization.list.searchPlaceholder")}
-              className="w-60"
-              data-testid="authorization-search-input"
-            />
-            <Button
-              type="button"
-              variant="outline"
-              size="md"
-              onClick={handleSearch}
-            >
-              <Search className="h-3.5 w-3.5" />
-              {t("common.fields.search")}
-            </Button>
-          </div>
+          <ListQueryBar
+            q={qInput}
+            onQChange={setQInput}
+            filters={listFilters}
+            onFiltersChange={handleFiltersChange}
+            catalog={authorizationsCatalog}
+            onSearch={handleSearch}
+          />
         }
         batchActions={
           canWrite
@@ -530,11 +529,14 @@ export function AuthorizationListTab() {
           <>
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               size="md"
               onClick={() => void loadData()}
+              disabled={loading}
             >
-              <RefreshCw className="h-3.5 w-3.5" />
+              <RefreshCw
+                className={loading ? "h-3.5 w-3.5 animate-spin" : "h-3.5 w-3.5"}
+              />
               {t("common.actions.refresh")}
             </Button>
             {canWrite && (
@@ -621,6 +623,6 @@ export function AuthorizationListTab() {
         cancelLabel={t("common.cancel")}
         loading={revoking}
       />
-    </>
+    </div>
   );
 }

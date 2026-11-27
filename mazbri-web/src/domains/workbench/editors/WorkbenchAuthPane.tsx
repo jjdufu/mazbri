@@ -389,7 +389,7 @@ function AuthInvalidationSection({
   }, [form, t]);
 
   return (
-    <div className="border-t border-dashed border-border p-3 space-y-2.5">
+    <div className="border-t border-border p-3 space-y-2.5">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-xs font-semibold text-foreground">
@@ -830,7 +830,7 @@ export function WorkbenchAuthPane({
       </div>
 
       {group === "empty" ? (
-        <div className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-xs text-muted-foreground">
+        <div className="px-4 py-6 text-center text-xs text-muted-foreground">
           {picker === "inherit"
             ? t("upstreamConnector.authInheritDesc", { profile: sessionLabel })
             : picker === "skip"

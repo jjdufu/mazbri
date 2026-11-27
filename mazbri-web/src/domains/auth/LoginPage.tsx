@@ -2,7 +2,6 @@ import { type FormEvent, useCallback, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import {
   ArrowLeft,
-  Check,
   Copy,
   KeyRound,
   Moon,
@@ -18,7 +17,6 @@ import {
   Input,
   PasswordInput,
   Tooltip,
-  cn,
 } from "@/components/ui";
 import { resolveDefaultHomePath } from "@/components/layout/menuConfig";
 import {
@@ -52,9 +50,6 @@ import {
 } from "@/utils/ui/message-guard";
 
 type LoginStep = "login" | "mfa" | "mfaSetup" | "changePassword";
-
-const LOGIN_SLIDER_ENABLED =
-  import.meta.env.VITE_LOGIN_SLIDER_ENABLED === "true";
 
 const WARN_LOGIN_ERROR_CODES = new Set<ErrorCode>([
   ErrorCodes.AUTH_ERROR,
@@ -108,10 +103,7 @@ export function LoginPage() {
   const [loginError, setLoginError] = useState<{
     username?: string;
     password?: string;
-    slider?: string;
   }>({});
-  const [sliderValue, setSliderValue] = useState(0);
-  const [sliderPassed, setSliderPassed] = useState(false);
 
   const [mfaCode, setMfaCode] = useState("");
   const [mfaError, setMfaError] = useState<string | undefined>(undefined);
@@ -159,8 +151,6 @@ export function LoginPage() {
       confirmPassword: "",
     });
     setChangeErrors({});
-    setSliderValue(0);
-    setSliderPassed(false);
   }, []);
 
   const handleLoginError = useCallback(
@@ -323,16 +313,12 @@ export function LoginPage() {
   const handleLoginSubmit = async (event: FormEvent) => {
     event.preventDefault();
     const trimmedUser = username.trim();
-    const nextErrors: { username?: string; password?: string; slider?: string } =
-      {};
+    const nextErrors: { username?: string; password?: string } = {};
     if (!trimmedUser) {
       nextErrors.username = t("login.placeholder.username");
     }
     if (!password) {
       nextErrors.password = t("login.placeholder.password");
-    }
-    if (LOGIN_SLIDER_ENABLED && !sliderPassed) {
-      nextErrors.slider = t("login.placeholder.slider");
     }
     if (Object.keys(nextErrors).length > 0) {
       setLoginError(nextErrors);
@@ -626,67 +612,6 @@ export function LoginPage() {
                     }}
                   />
                 </FormField>
-
-                {LOGIN_SLIDER_ENABLED && (
-                  <div className="space-y-1.5">
-                    <div
-                      className={cn(
-                        "rounded-md border px-3 py-2 space-y-1.5",
-                        sliderPassed
-                          ? "border-emerald-500/40 bg-emerald-500/10"
-                          : "border-border bg-muted/50",
-                      )}
-                    >
-                      <div className="flex items-center justify-between text-xs">
-                        <span
-                          className={cn(
-                            sliderPassed
-                              ? "text-emerald-700 dark:text-emerald-400 font-medium"
-                              : "text-muted-foreground",
-                          )}
-                        >
-                          {sliderPassed
-                            ? t("login.sliderSuccessText")
-                            : t("login.sliderText")}
-                        </span>
-                        {sliderPassed && (
-                          <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-                        )}
-                      </div>
-                      <input
-                        type="range"
-                        min={0}
-                        max={100}
-                        value={sliderPassed ? 100 : sliderValue}
-                        disabled={sliderPassed}
-                        data-testid="login-slider"
-                        onChange={(e) => {
-                          const next = Number(e.target.value);
-                          setSliderValue(next);
-                          if (next >= 100) {
-                            setSliderPassed(true);
-                            setLoginError((prev) => ({
-                              ...prev,
-                              slider: undefined,
-                            }));
-                          }
-                        }}
-                        onMouseUp={() => {
-                          if (!sliderPassed) setSliderValue(0);
-                        }}
-                        onTouchEnd={() => {
-                          if (!sliderPassed) setSliderValue(0);
-                        }}
-                        className="w-full cursor-pointer accent-xblue"
-                      />
-                    </div>
-                    {loginError.slider && (
-                      <p className="text-[11px] text-red-600 dark:text-red-400">
-                        {loginError.slider}
-                      </p>
-                    )}
-                  </div>
-                )}
 
                 <Button
                   type="submit"

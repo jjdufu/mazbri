@@ -4,7 +4,6 @@ import {
   Plus,
   RefreshCw,
   RotateCw,
-  Search,
   Trash2,
   Upload,
 } from "lucide-react";
@@ -24,20 +23,24 @@ import {
   ConfirmDialog,
   CopyableText,
   DataTablePage,
-  Input,
+  ListQueryBar,
   Modal,
-  Select,
   StatusBadge,
   Tabs,
   type DataTableColumn,
   type TabOption,
 } from "@/components/ui";
+import {
+  callbackDeliveriesCatalog,
+  callbackSubscriptionsCatalog,
+} from "@/list-catalog/callbacks";
 import { useT } from "@/locales";
 import { useAuthStore } from "@/stores/auth";
 import type { ListFilter } from "@/types/list-query";
 import { EMPTY_PLACEHOLDER, formatDateTime } from "@/utils/format";
 import { getUserFacingErrorMessage } from "@/utils/http/error";
 import { isMfaStepUpCancelled } from "@/utils/http/mfa-cancelled";
+import { encodeFilters } from "@/utils/list-query/serialize";
 import { isBizRole } from "@/utils/ops/roles";
 import {
   exportResourceCsv,
@@ -96,11 +99,9 @@ export function CallbacksPage() {
   const [subPage, setSubPage] = useState(1);
   const [subPageSize, setSubPageSize] = useState(20);
   const [subTotal, setSubTotal] = useState(0);
-  const [subKeywordInput, setSubKeywordInput] = useState("");
-  const [subAppliedKeyword, setSubAppliedKeyword] = useState("");
-  const [subActiveFilter, setSubActiveFilter] = useState<"" | "true" | "false">(
-    "",
-  );
+  const [subQInput, setSubQInput] = useState("");
+  const [subAppliedQ, setSubAppliedQ] = useState("");
+  const [subFilters, setSubFilters] = useState<ListFilter[]>([]);
   const [selectedSubIds, setSelectedSubIds] = useState<string[]>([]);
 
   const [createOpen, setCreateOpen] = useState(false);
@@ -116,9 +117,9 @@ export function CallbacksPage() {
   const [delPage, setDelPage] = useState(1);
   const [delPageSize, setDelPageSize] = useState(20);
   const [delTotal, setDelTotal] = useState(0);
-  const [delKeywordInput, setDelKeywordInput] = useState("");
-  const [delAppliedKeyword, setDelAppliedKeyword] = useState("");
-  const [delStatusFilter, setDelStatusFilter] = useState("");
+  const [delQInput, setDelQInput] = useState("");
+  const [delAppliedQ, setDelAppliedQ] = useState("");
+  const [delFilters, setDelFilters] = useState<ListFilter[]>([]);
   const [detailDelivery, setDetailDelivery] =
     useState<CallbackDeliveryLog | null>(null);
   const [retryingId, setRetryingId] = useState<string | null>(null);
@@ -141,15 +142,9 @@ export function CallbacksPage() {
   const loadSubscriptions = useCallback(async () => {
     setSubLoading(true);
     try {
-      const filters: ListFilter[] = [];
-      if (subActiveFilter === "true") {
-        filters.push({ field: "is_active", op: "eq", value: true });
-      } else if (subActiveFilter === "false") {
-        filters.push({ field: "is_active", op: "eq", value: false });
-      }
       const res = await fetchCallbackSubscriptions({
-        q: subAppliedKeyword || undefined,
-        filters: filters.length ? JSON.stringify(filters) : undefined,
+        q: subAppliedQ || undefined,
+        filters: encodeFilters(subFilters).filters,
         page: subPage,
         page_size: subPageSize,
       });
@@ -163,18 +158,14 @@ export function CallbacksPage() {
     } finally {
       setSubLoading(false);
     }
-  }, [subAppliedKeyword, subActiveFilter, subPage, subPageSize, t]);
+  }, [subAppliedQ, subFilters, subPage, subPageSize, t]);
 
   const loadDeliveries = useCallback(async () => {
     setDelLoading(true);
     try {
-      const filters: ListFilter[] = [];
-      if (delStatusFilter) {
-        filters.push({ field: "status", op: "eq", value: delStatusFilter });
-      }
       const res = await fetchCallbackDeliveries({
-        q: delAppliedKeyword || undefined,
-        filters: filters.length ? JSON.stringify(filters) : undefined,
+        q: delAppliedQ || undefined,
+        filters: encodeFilters(delFilters).filters,
         page: delPage,
         page_size: delPageSize,
       });
@@ -190,7 +181,27 @@ export function CallbacksPage() {
     } finally {
       setDelLoading(false);
     }
-  }, [delAppliedKeyword, delStatusFilter, delPage, delPageSize, t]);
+  }, [delAppliedQ, delFilters, delPage, delPageSize, t]);
+
+  const handleSubSearch = useCallback(() => {
+    setSubPage(1);
+    setSubAppliedQ(subQInput.trim());
+  }, [subQInput]);
+
+  const handleSubFiltersChange = useCallback((next: ListFilter[]) => {
+    setSubPage(1);
+    setSubFilters(next);
+  }, []);
+
+  const handleDelSearch = useCallback(() => {
+    setDelPage(1);
+    setDelAppliedQ(delQInput.trim());
+  }, [delQInput]);
+
+  const handleDelFiltersChange = useCallback((next: ListFilter[]) => {
+    setDelPage(1);
+    setDelFilters(next);
+  }, []);
 
   useEffect(() => {
     if (loadedTabs.has("subscriptions")) {
@@ -491,7 +502,7 @@ export function CallbacksPage() {
               type="button"
               variant="link"
               size="xs"
-              className="text-danger-fg hover:text-danger-fg hover:bg-danger-fg/10"
+              className="text-muted-foreground hover:text-danger-fg hover:bg-danger-fg/10"
               onClick={() => setDeleteTarget(row)}
             >
               {t("common.actions.delete")}
@@ -631,11 +642,22 @@ export function CallbacksPage() {
   ];
 
   return (
-    <div className="space-y-4 min-w-0" data-testid="callbacks-page">
-      <Tabs items={tabItems} value={activeTab} onChange={handleTabChange} />
+    <div
+      className="flex flex-col flex-1 min-h-0 gap-4 min-w-0"
+      data-testid="callbacks-page"
+    >
+      <div className="shrink-0">
+        <Tabs items={tabItems} value={activeTab} onChange={handleTabChange} />
+      </div>
 
       {loadedTabs.has("subscriptions") && (
-        <div className={activeTab === "subscriptions" ? "min-w-0" : "hidden"}>
+        <div
+          className={
+            activeTab === "subscriptions"
+              ? "flex flex-col flex-1 min-h-0 min-w-0"
+              : "hidden"
+          }
+        >
           <DataTablePage
             columns={subscriptionColumns}
             data={subscriptions}
@@ -655,57 +677,14 @@ export function CallbacksPage() {
             }}
             testId="callback-subscriptions-table"
             filters={
-              <>
-                <div className="flex items-center gap-1.5">
-                  <Input
-                    value={subKeywordInput}
-                    onChange={(e) => setSubKeywordInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        setSubPage(1);
-                        setSubAppliedKeyword(subKeywordInput.trim());
-                      }
-                    }}
-                    placeholder={t("common.search")}
-                    className="w-56"
-                    data-testid="callback-sub-search-input"
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="md"
-                    onClick={() => {
-                      setSubPage(1);
-                      setSubAppliedKeyword(subKeywordInput.trim());
-                    }}
-                  >
-                    <Search className="h-3.5 w-3.5" />
-                    {t("common.fields.search")}
-                  </Button>
-                </div>
-                <Select
-                  value={subActiveFilter}
-                  onChange={(e) => {
-                    setSubActiveFilter(e.target.value as "" | "true" | "false");
-                    setSubPage(1);
-                  }}
-                  aria-label={t("common.fields.status")}
-                  className="w-28"
-                  options={[
-                    { value: "", label: t("common.all"), text: t("common.all") },
-                    {
-                      value: "true",
-                      label: t("common.status.enabled"),
-                      text: t("common.status.enabled"),
-                    },
-                    {
-                      value: "false",
-                      label: t("common.status.disabled"),
-                      text: t("common.status.disabled"),
-                    },
-                  ]}
-                />
-              </>
+              <ListQueryBar
+                q={subQInput}
+                onQChange={setSubQInput}
+                filters={subFilters}
+                onFiltersChange={handleSubFiltersChange}
+                catalog={callbackSubscriptionsCatalog}
+                onSearch={handleSubSearch}
+              />
             }
             batchActions={
               canWrite
@@ -727,11 +706,16 @@ export function CallbacksPage() {
               <>
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="ghost"
                   size="md"
                   onClick={() => void loadSubscriptions()}
+                  disabled={subLoading}
                 >
-                  <RefreshCw className="h-3.5 w-3.5" />
+                  <RefreshCw
+                    className={
+                      subLoading ? "h-3.5 w-3.5 animate-spin" : "h-3.5 w-3.5"
+                    }
+                  />
                   {t("common.actions.refresh")}
                 </Button>
                 {canWrite && (
@@ -769,7 +753,13 @@ export function CallbacksPage() {
       )}
 
       {loadedTabs.has("deliveries") && (
-        <div className={activeTab === "deliveries" ? "min-w-0" : "hidden"}>
+        <div
+          className={
+            activeTab === "deliveries"
+              ? "flex flex-col flex-1 min-h-0 min-w-0"
+              : "hidden"
+          }
+        >
           <DataTablePage
             columns={deliveryColumns}
             data={deliveries}
@@ -786,76 +776,28 @@ export function CallbacksPage() {
             }}
             testId="callback-deliveries-table"
             filters={
-              <>
-                <div className="flex items-center gap-1.5">
-                  <Input
-                    value={delKeywordInput}
-                    onChange={(e) => setDelKeywordInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        setDelPage(1);
-                        setDelAppliedKeyword(delKeywordInput.trim());
-                      }
-                    }}
-                    placeholder={t("common.search")}
-                    className="w-56"
-                    data-testid="callback-del-search-input"
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="md"
-                    onClick={() => {
-                      setDelPage(1);
-                      setDelAppliedKeyword(delKeywordInput.trim());
-                    }}
-                  >
-                    <Search className="h-3.5 w-3.5" />
-                    {t("common.fields.search")}
-                  </Button>
-                </div>
-                <Select
-                  value={delStatusFilter}
-                  onChange={(e) => {
-                    setDelStatusFilter(e.target.value);
-                    setDelPage(1);
-                  }}
-                  aria-label={t("common.fields.status")}
-                  className="w-32"
-                  options={[
-                    { value: "", label: t("common.all"), text: t("common.all") },
-                    {
-                      value: "success",
-                      label: t("callbacks.status.success"),
-                      text: t("callbacks.status.success"),
-                    },
-                    {
-                      value: "failed",
-                      label: t("callbacks.status.failed"),
-                      text: t("callbacks.status.failed"),
-                    },
-                    {
-                      value: "retrying",
-                      label: t("callbacks.status.retrying"),
-                      text: t("callbacks.status.retrying"),
-                    },
-                    {
-                      value: "pending",
-                      label: t("common.status.pending"),
-                      text: t("common.status.pending"),
-                    },
-                  ]}
-                />
-              </>
+              <ListQueryBar
+                q={delQInput}
+                onQChange={setDelQInput}
+                filters={delFilters}
+                onFiltersChange={handleDelFiltersChange}
+                catalog={callbackDeliveriesCatalog}
+                onSearch={handleDelSearch}
+              />
             }
             actions={
               <Button
                 type="button"
-                variant="outline"
+                variant="ghost"
                 size="md"
                 onClick={() => void loadDeliveries()}
+                disabled={delLoading}
               >
-                <RefreshCw className="h-3.5 w-3.5" />
+                <RefreshCw
+                  className={
+                    delLoading ? "h-3.5 w-3.5 animate-spin" : "h-3.5 w-3.5"
+                  }
+                />
                 {t("common.actions.refresh")}
               </Button>
             }
@@ -944,7 +886,7 @@ export function CallbacksPage() {
         {detailDelivery && (
           <dl className="border border-border rounded-lg overflow-hidden divide-y divide-border">
             <div className="grid grid-cols-[128px_1fr]">
-              <dt className="bg-muted/45 px-3 py-2 text-muted-foreground border-r border-border">
+              <dt className="bg-card px-3 py-2 text-muted-foreground border-r border-border">
                 {t("callbacks.columns.eventId")}
               </dt>
               <dd className="px-3 py-2 min-w-0">
@@ -952,7 +894,7 @@ export function CallbacksPage() {
               </dd>
             </div>
             <div className="grid grid-cols-[128px_1fr]">
-              <dt className="bg-muted/45 px-3 py-2 text-muted-foreground border-r border-border">
+              <dt className="bg-card px-3 py-2 text-muted-foreground border-r border-border">
                 {t("callbacks.columns.callbackUrl")}
               </dt>
               <dd className="px-3 py-2 min-w-0">
@@ -960,7 +902,7 @@ export function CallbacksPage() {
               </dd>
             </div>
             <div className="grid grid-cols-[128px_1fr]">
-              <dt className="bg-muted/45 px-3 py-2 text-muted-foreground border-r border-border">
+              <dt className="bg-card px-3 py-2 text-muted-foreground border-r border-border">
                 {t("common.fields.status")}
               </dt>
               <dd className="px-3 py-2">
@@ -971,7 +913,7 @@ export function CallbacksPage() {
               </dd>
             </div>
             <div className="grid grid-cols-[128px_1fr]">
-              <dt className="bg-muted/45 px-3 py-2 text-muted-foreground border-r border-border">
+              <dt className="bg-card px-3 py-2 text-muted-foreground border-r border-border">
                 {t("callbacks.columns.retryCount")}
               </dt>
               <dd className="px-3 py-2 font-mono-tech tabular-nums">
@@ -979,7 +921,7 @@ export function CallbacksPage() {
               </dd>
             </div>
             <div className="grid grid-cols-[128px_1fr]">
-              <dt className="bg-muted/45 px-3 py-2 text-muted-foreground border-r border-border">
+              <dt className="bg-card px-3 py-2 text-muted-foreground border-r border-border">
                 {t("callbacks.columns.responseCode")}
               </dt>
               <dd className="px-3 py-2 font-mono-tech tabular-nums">
@@ -987,7 +929,7 @@ export function CallbacksPage() {
               </dd>
             </div>
             <div className="grid grid-cols-[128px_1fr]">
-              <dt className="bg-muted/45 px-3 py-2 text-muted-foreground border-r border-border">
+              <dt className="bg-card px-3 py-2 text-muted-foreground border-r border-border">
                 {t("callbacks.columns.failureReason")}
               </dt>
               <dd className="px-3 py-2 break-all text-danger-fg">
@@ -995,7 +937,7 @@ export function CallbacksPage() {
               </dd>
             </div>
             <div className="grid grid-cols-[128px_1fr]">
-              <dt className="bg-muted/45 px-3 py-2 text-muted-foreground border-r border-border">
+              <dt className="bg-card px-3 py-2 text-muted-foreground border-r border-border">
                 {t("common.fields.createdAt")}
               </dt>
               <dd className="px-3 py-2 font-mono-tech">
@@ -1003,7 +945,7 @@ export function CallbacksPage() {
               </dd>
             </div>
             <div className="grid grid-cols-[128px_1fr]">
-              <dt className="bg-muted/45 px-3 py-2 text-muted-foreground border-r border-border">
+              <dt className="bg-card px-3 py-2 text-muted-foreground border-r border-border">
                 {t("common.fields.updatedAt")}
               </dt>
               <dd className="px-3 py-2 font-mono-tech">

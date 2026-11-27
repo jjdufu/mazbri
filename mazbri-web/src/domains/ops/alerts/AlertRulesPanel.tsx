@@ -479,7 +479,7 @@ export function AlertRulesPanel() {
   }, [t, locale, isAdmin, drillRouteOf, navigate]);
 
   return (
-    <div className="space-y-4 min-w-0">
+    <div className="flex flex-col flex-1 min-h-0 gap-4 min-w-0">
       <DataTablePage
         columns={columns}
         data={filteredRules}
@@ -535,7 +535,7 @@ export function AlertRulesPanel() {
           <>
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               size="md"
               loading={loading}
               onClick={() => void reload()}
@@ -737,7 +737,7 @@ export function AlertRulesPanel() {
           />
         </FormField>
 
-        <div className="grid grid-cols-1 gap-3 rounded-lg border border-border bg-muted/25 p-3 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 rounded-lg border border-border p-3 sm:grid-cols-2">
           <div className="flex items-center justify-between gap-2">
             <LabelWithHint
               label={t("ops.alerts.rules.form.notifyEnabled")}

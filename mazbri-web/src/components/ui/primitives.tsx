@@ -161,16 +161,12 @@ export function Badge({
       className={cn(
         "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-sans font-medium whitespace-nowrap shrink-0",
         variant === "neutral" && "bg-muted text-muted-foreground",
-        variant === "xblue" &&
-          "bg-primary-soft text-primary border border-primary/25",
+        variant === "xblue" && "bg-primary-soft text-primary",
         variant === "outline" &&
           "border border-border text-muted-foreground bg-transparent",
-        variant === "success" &&
-          "bg-success-fg/12 text-success-fg border border-success-fg/25",
-        variant === "warning" &&
-          "bg-warning-bg text-warning-fg border border-warning-border",
-        variant === "danger" &&
-          "bg-danger-fg/12 text-danger-fg border border-danger-fg/25",
+        variant === "success" && "bg-success-fg/10 text-success-fg",
+        variant === "warning" && "bg-warning-bg text-warning-fg",
+        variant === "danger" && "bg-danger-fg/10 text-danger-fg",
         className,
       )}
       {...props}
@@ -1039,7 +1035,7 @@ export function EmptyState({
   return (
     <div
       className={cn(
-        "rounded-lg border border-dashed border-border py-10 px-4 text-center space-y-3",
+        "py-12 px-4 text-center space-y-3",
         className,
       )}
     >
@@ -1347,7 +1343,7 @@ export function Modal({
           {children}
         </div>
         {footer && (
-          <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3 bg-muted/30 shrink-0">
+          <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3 bg-card shrink-0">
             {footer}
           </div>
         )}
@@ -1429,7 +1425,7 @@ export function Drawer({
           {children}
         </div>
         {footer && (
-          <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3 bg-muted/30 shrink-0">
+          <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3 bg-card shrink-0">
             {footer}
           </div>
         )}
@@ -1461,11 +1457,40 @@ export function Popover({
   contentTestId,
 }: PopoverProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const [coords, setCoords] = useState<{
+    top: number;
+    left?: number;
+    right?: number;
+  } | null>(null);
+
+  const updateCoords = useCallback(() => {
+    const el = rootRef.current;
+    if (!el || typeof window === "undefined") return;
+    const rect = el.getBoundingClientRect();
+    const top = Math.round(rect.bottom + 6);
+    if (align === "right") {
+      const right = Math.max(8, Math.round(window.innerWidth - rect.right));
+      setCoords({ top, right });
+    } else {
+      const left = Math.max(8, Math.round(rect.left));
+      setCoords({ top, left });
+    }
+  }, [align]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setCoords(null);
+      return;
+    }
+    updateCoords();
     const onDown = (ev: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(ev.target as Node)) {
+      const target = ev.target as Node | null;
+      if (
+        target &&
+        !rootRef.current?.contains(target) &&
+        !contentRef.current?.contains(target)
+      ) {
         onOpenChange(false);
       }
     };
@@ -1475,29 +1500,46 @@ export function Popover({
         onOpenChange(false);
       }
     };
+    const onViewportChange = () => updateCoords();
     window.addEventListener("mousedown", onDown);
     window.addEventListener("keydown", onKey);
+    window.addEventListener("resize", onViewportChange);
+    window.addEventListener("scroll", onViewportChange, true);
     return () => {
       window.removeEventListener("mousedown", onDown);
       window.removeEventListener("keydown", onKey);
+      window.removeEventListener("resize", onViewportChange);
+      window.removeEventListener("scroll", onViewportChange, true);
     };
-  }, [open, onOpenChange]);
+  }, [open, onOpenChange, updateCoords]);
+
+  const portalContent =
+    open && coords && typeof document !== "undefined"
+      ? createPortal(
+          <div
+            ref={contentRef}
+            data-testid={contentTestId}
+            style={{
+              position: "fixed",
+              top: coords.top,
+              left: coords.left,
+              right: coords.right,
+            }}
+            className={cn(
+              "z-[60] rounded-lg border border-border bg-card text-card-foreground shadow-lg",
+              contentClassName,
+            )}
+          >
+            {children}
+          </div>,
+          document.body,
+        )
+      : null;
 
   return (
     <div ref={rootRef} className={cn("relative inline-flex", className)}>
       {trigger}
-      {open && (
-        <div
-          data-testid={contentTestId}
-          className={cn(
-            "absolute top-full mt-1.5 z-50 rounded-lg border border-border bg-card text-card-foreground shadow-lg",
-            align === "right" ? "right-0" : "left-0",
-            contentClassName,
-          )}
-        >
-          {children}
-        </div>
-      )}
+      {portalContent}
     </div>
   );
 }

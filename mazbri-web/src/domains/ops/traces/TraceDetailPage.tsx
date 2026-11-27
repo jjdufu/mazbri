@@ -1017,7 +1017,7 @@ export function TraceDetailPage() {
                         <div
                           key={i}
                           className={cn(
-                            "rounded-md border border-border bg-muted/35 p-2.5 space-y-1.5 text-xs",
+                            "rounded-md border border-border p-2.5 space-y-1.5 text-xs",
                             isErrorEvent(ev) && "border-l-3 border-l-danger-fg",
                           )}
                         >

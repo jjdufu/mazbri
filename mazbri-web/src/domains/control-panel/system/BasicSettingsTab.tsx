@@ -243,7 +243,7 @@ export function BasicSettingsTab({ onDirtyChange }: BasicSettingsTabProps) {
           />
         </SettingRow>
 
-        <div className="rounded-lg border border-border divide-y divide-border bg-muted/20">
+        <div className="rounded-lg border border-border divide-y divide-border bg-card">
           <div className="px-3.5 py-2.5">
             <SettingRow
               label={t("systemSettings.form.enableAuditLog")}

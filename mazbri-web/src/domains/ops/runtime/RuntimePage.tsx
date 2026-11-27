@@ -57,8 +57,8 @@ export function RuntimePage() {
   );
 
   return (
-    <div className="space-y-4 min-w-0">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-2">
+    <div className="flex flex-col flex-1 min-h-0 gap-4 min-w-0">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-2 shrink-0">
         {tabOptions.length > 1 ? (
           <Tabs
             items={tabOptions}
@@ -87,7 +87,7 @@ export function RuntimePage() {
       )}
 
       {activeTab === "middleware" && (
-        <div className="space-y-4 min-w-0">
+        <div className="flex flex-col flex-1 min-h-0 gap-4 min-w-0">
           <HealthPanel
             mode="infra"
             timeRange={timeRange}
@@ -103,7 +103,7 @@ export function RuntimePage() {
       )}
 
       {activeTab === "pipeline" && (
-        <div className="space-y-4 min-w-0">
+        <div className="flex flex-col flex-1 min-h-0 gap-4 min-w-0">
           {isBiz && (
             <>
               <BillingPipelinePanel

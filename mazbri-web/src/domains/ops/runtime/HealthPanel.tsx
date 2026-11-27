@@ -337,8 +337,8 @@ export function HealthPanel({
       : t("ops.services.infraHexagonTitle");
 
   return (
-    <div className="space-y-4 min-w-0">
-      <Card className="overflow-hidden">
+    <div className="flex flex-col flex-1 min-h-0 gap-4 min-w-0">
+      <Card className="overflow-hidden shrink-0">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
           <h3 className="text-xs font-semibold text-foreground">{cardTitle}</h3>
           {filteredRows.length > 0 && (
@@ -553,8 +553,8 @@ export function HealthPanel({
       )}
 
       {mode === "apps" && filteredRows.length > 0 && (
-        <Card className="overflow-hidden">
-          <div className="border-b border-border px-4 py-3">
+        <Card className="flex flex-col flex-1 min-h-0 overflow-hidden">
+          <div className="border-b border-border px-4 py-3 shrink-0">
             <h3 className="text-xs font-semibold text-foreground">
               {t("ops.services.overviewTableTitle")}
             </h3>

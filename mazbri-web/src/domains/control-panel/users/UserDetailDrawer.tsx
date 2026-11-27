@@ -214,7 +214,7 @@ export function UserDetailDrawer({
                 {t("userManagement.detail.basicInfo")}
               </h3>
               <dl className="grid grid-cols-1 sm:grid-cols-2 border border-border rounded-lg overflow-hidden divide-y sm:divide-y-0 text-xs">
-                <div className="sm:col-span-2 flex flex-col gap-1 p-3 border-b border-border bg-muted/20">
+                <div className="sm:col-span-2 flex flex-col gap-1 p-3 border-b border-border bg-transparent">
                   <dt className="text-[11px] text-muted-foreground">
                     {t("userManagement.detail.labels.id")}
                   </dt>

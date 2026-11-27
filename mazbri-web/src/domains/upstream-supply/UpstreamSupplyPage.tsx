@@ -59,11 +59,22 @@ export function UpstreamSupplyPage() {
   ];
 
   return (
-    <div className="space-y-4 min-w-0" data-testid="upstream-supply-page">
-      <Tabs items={tabItems} value={activeTab} onChange={handleTabChange} />
+    <div
+      className="flex flex-col flex-1 min-h-0 gap-4 min-w-0"
+      data-testid="upstream-supply-page"
+    >
+      <div className="shrink-0">
+        <Tabs items={tabItems} value={activeTab} onChange={handleTabChange} />
+      </div>
 
       {loadedTabs.has("suppliers") && (
-        <div className={activeTab === "suppliers" ? "min-w-0" : "hidden"}>
+        <div
+          className={
+            activeTab === "suppliers"
+              ? "flex flex-col flex-1 min-h-0 min-w-0"
+              : "hidden"
+          }
+        >
           <SupplierListTab
             refreshToken={refreshToken}
             onOpenAccess={() => setAccessOpen(true)}
@@ -72,7 +83,13 @@ export function UpstreamSupplyPage() {
       )}
 
       {loadedTabs.has("channels") && (
-        <div className={activeTab === "channels" ? "min-w-0" : "hidden"}>
+        <div
+          className={
+            activeTab === "channels"
+              ? "flex flex-col flex-1 min-h-0 min-w-0"
+              : "hidden"
+          }
+        >
           <ChannelListTab
             active={activeTab === "channels"}
             refreshToken={refreshToken}
@@ -81,7 +98,13 @@ export function UpstreamSupplyPage() {
       )}
 
       {loadedTabs.has("drafts") && (
-        <div className={activeTab === "drafts" ? "min-w-0" : "hidden"}>
+        <div
+          className={
+            activeTab === "drafts"
+              ? "flex flex-col flex-1 min-h-0 min-w-0"
+              : "hidden"
+          }
+        >
           <ConnectorDraftsTab />
         </div>
       )}

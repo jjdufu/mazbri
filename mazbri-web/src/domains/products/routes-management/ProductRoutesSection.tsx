@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Plus,
   RefreshCw,
-  Search,
   Trash2,
   Upload,
   Zap,
@@ -34,6 +33,7 @@ import {
   FormField,
   FormModal,
   Input,
+  ListQueryBar,
   Modal,
   NumberInput,
   SegmentedControl,
@@ -44,6 +44,7 @@ import {
   type DataTableColumn,
   type SelectOptionItem,
 } from "@/components/ui";
+import { routesCatalog } from "@/list-catalog/common-resources";
 import { useT } from "@/locales";
 import { useAuthStore } from "@/stores/auth";
 import type { AuthorizationDetail, Product } from "@/types/api/product";
@@ -55,6 +56,7 @@ import {
 } from "@/utils/format";
 import { getUserFacingErrorMessage } from "@/utils/http/error";
 import { isMfaStepUpCancelled } from "@/utils/http/mfa-cancelled";
+import { encodeFilters } from "@/utils/list-query/serialize";
 import { isBizRole } from "@/utils/ops/roles";
 import {
   exportResourceCsv,
@@ -167,9 +169,9 @@ export function ProductRoutesSection({
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [total, setTotal] = useState(0);
-  const [keywordInput, setKeywordInput] = useState("");
-  const [appliedKeyword, setAppliedKeyword] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
+  const [qInput, setQInput] = useState("");
+  const [appliedQ, setAppliedQ] = useState("");
+  const [listFilters, setListFilters] = useState<ListFilter[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const [channelRows, setChannelRows] = useState<Channel[]>([]);
@@ -346,16 +348,12 @@ export function ProductRoutesSection({
     }
     setLoading(true);
     try {
-      const filters: ListFilter[] = [];
-      if (statusFilter) {
-        filters.push({ field: "status", op: "eq", value: statusFilter });
-      }
       const [routes] = await Promise.all([
         fetchRouteRules({
           page,
           page_size: pageSize,
-          q: appliedKeyword || undefined,
-          filters: filters.length ? JSON.stringify(filters) : undefined,
+          q: appliedQ || undefined,
+          filters: encodeFilters(listFilters).filters,
           product_id: initialProductId || undefined,
         }),
         loadChannels(),
@@ -376,8 +374,8 @@ export function ProductRoutesSection({
     initialProductId,
     page,
     pageSize,
-    appliedKeyword,
-    statusFilter,
+    appliedQ,
+    listFilters,
     loadChannels,
     loadReferenceData,
     t,
@@ -1239,13 +1237,21 @@ export function ProductRoutesSection({
     routeProductName,
   ]);
 
-  const handleSearch = () => {
+  const handleSearch = useCallback(() => {
     setPage(1);
-    setAppliedKeyword(keywordInput.trim());
-  };
+    setAppliedQ(qInput.trim());
+  }, [qInput]);
+
+  const handleFiltersChange = useCallback((next: ListFilter[]) => {
+    setPage(1);
+    setListFilters(next);
+  }, []);
 
   return (
-    <div data-testid="product-routes-section">
+    <div
+      className="flex flex-col flex-1 min-h-0 min-w-0"
+      data-testid="product-routes-section"
+    >
       <DataTablePage
         title={!embedded ? t("menus.mazbri.advancedRouteConfig") : undefined}
         columns={columns}
@@ -1270,55 +1276,14 @@ export function ProductRoutesSection({
             : undefined
         }
         filters={
-          <>
-            <div className="flex items-center gap-1.5">
-              <Input
-                value={keywordInput}
-                onChange={(e) => setKeywordInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleSearch();
-                }}
-                placeholder={t("common.search")}
-                className="w-56"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="md"
-                onClick={handleSearch}
-              >
-                <Search className="h-3.5 w-3.5" />
-                {t("common.fields.search")}
-              </Button>
-            </div>
-            <Select
-              value={statusFilter}
-              onChange={(e) => {
-                setStatusFilter(e.target.value);
-                setPage(1);
-              }}
-              aria-label={t("routes.columns.status")}
-              className="w-32"
-              options={[
-                { value: "", label: t("common.all"), text: t("common.all") },
-                {
-                  value: "active",
-                  label: t("routes.status.active"),
-                  text: t("routes.status.active"),
-                },
-                {
-                  value: "inactive",
-                  label: t("routes.status.inactive"),
-                  text: t("routes.status.inactive"),
-                },
-                {
-                  value: "suspended",
-                  label: t("routes.status.suspended"),
-                  text: t("routes.status.suspended"),
-                },
-              ]}
-            />
-          </>
+          <ListQueryBar
+            q={qInput}
+            onQChange={setQInput}
+            filters={listFilters}
+            onFiltersChange={handleFiltersChange}
+            catalog={routesCatalog}
+            onSearch={handleSearch}
+          />
         }
         batchActions={
           canWrite
@@ -1339,11 +1304,14 @@ export function ProductRoutesSection({
           <>
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               size="md"
               onClick={() => void loadData()}
+              disabled={loading}
             >
-              <RefreshCw className="h-3.5 w-3.5" />
+              <RefreshCw
+                className={loading ? "h-3.5 w-3.5 animate-spin" : "h-3.5 w-3.5"}
+              />
               {t("common.actions.refresh")}
             </Button>
             {canWrite && (
@@ -1413,7 +1381,7 @@ export function ProductRoutesSection({
         <div className="overflow-x-auto rounded-lg border border-border">
           <table className="w-full border-collapse text-xs">
             <thead>
-              <tr className="border-b border-border bg-muted/45 text-muted-foreground">
+              <tr className="border-b border-border bg-card text-muted-foreground">
                 <th className="h-9 px-3 text-left font-medium w-16">
                   {t("routes.bindingColumns.order")}
                 </th>

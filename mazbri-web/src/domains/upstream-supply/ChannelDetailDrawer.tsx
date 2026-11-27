@@ -143,7 +143,7 @@ export function ChannelDetailDrawer({
             </h3>
             <dl className="grid grid-cols-1 sm:grid-cols-2 border border-border rounded-lg overflow-hidden">
               <div className="grid grid-cols-[110px_1fr] border-b border-border">
-                <dt className="bg-muted/45 px-2.5 py-2 text-muted-foreground border-r border-border">
+                <dt className="bg-card px-2.5 py-2 text-muted-foreground border-r border-border">
                   {t("channels.fields.channelCode")}
                 </dt>
                 <dd className="px-2.5 py-2 min-w-0">
@@ -151,7 +151,7 @@ export function ChannelDetailDrawer({
                 </dd>
               </div>
               <div className="grid grid-cols-[110px_1fr] border-b border-border sm:border-l">
-                <dt className="bg-muted/45 px-2.5 py-2 text-muted-foreground border-r border-border">
+                <dt className="bg-card px-2.5 py-2 text-muted-foreground border-r border-border">
                   {t("common.fields.status")}
                 </dt>
                 <dd className="px-2.5 py-2">
@@ -162,13 +162,13 @@ export function ChannelDetailDrawer({
                 </dd>
               </div>
               <div className="grid grid-cols-[110px_1fr] border-b border-border">
-                <dt className="bg-muted/45 px-2.5 py-2 text-muted-foreground border-r border-border">
+                <dt className="bg-card px-2.5 py-2 text-muted-foreground border-r border-border">
                   {t("channels.fields.name")}
                 </dt>
                 <dd className="px-2.5 py-2">{channel.name || EMPTY_PLACEHOLDER}</dd>
               </div>
               <div className="grid grid-cols-[110px_1fr] border-b border-border sm:border-l">
-                <dt className="bg-muted/45 px-2.5 py-2 text-muted-foreground border-r border-border">
+                <dt className="bg-card px-2.5 py-2 text-muted-foreground border-r border-border">
                   {t("channels.fields.pathPrefix")}
                 </dt>
                 <dd className="px-2.5 py-2 font-mono-tech">
@@ -176,7 +176,7 @@ export function ChannelDetailDrawer({
                 </dd>
               </div>
               <div className="grid grid-cols-[110px_1fr] border-b border-border">
-                <dt className="bg-muted/45 px-2.5 py-2 text-muted-foreground border-r border-border">
+                <dt className="bg-card px-2.5 py-2 text-muted-foreground border-r border-border">
                   {t("channels.fields.costPrice")}
                 </dt>
                 <dd className="px-2.5 py-2 font-mono-tech tabular-nums">
@@ -184,7 +184,7 @@ export function ChannelDetailDrawer({
                 </dd>
               </div>
               <div className="grid grid-cols-[110px_1fr] border-b border-border sm:border-l">
-                <dt className="bg-muted/45 px-2.5 py-2 text-muted-foreground border-r border-border">
+                <dt className="bg-card px-2.5 py-2 text-muted-foreground border-r border-border">
                   {t("channels.fields.id")}
                 </dt>
                 <dd className="px-2.5 py-2 min-w-0">
@@ -192,7 +192,7 @@ export function ChannelDetailDrawer({
                 </dd>
               </div>
               <div className="grid grid-cols-[110px_1fr]">
-                <dt className="bg-muted/45 px-2.5 py-2 text-muted-foreground border-r border-border">
+                <dt className="bg-card px-2.5 py-2 text-muted-foreground border-r border-border">
                   {t("common.fields.createdAt")}
                 </dt>
                 <dd className="px-2.5 py-2 font-mono-tech">
@@ -200,7 +200,7 @@ export function ChannelDetailDrawer({
                 </dd>
               </div>
               <div className="grid grid-cols-[110px_1fr] border-t sm:border-t-0 border-border sm:border-l">
-                <dt className="bg-muted/45 px-2.5 py-2 text-muted-foreground border-r border-border">
+                <dt className="bg-card px-2.5 py-2 text-muted-foreground border-r border-border">
                   {t("common.fields.updatedAt")}
                 </dt>
                 <dd className="px-2.5 py-2 font-mono-tech">
@@ -217,7 +217,7 @@ export function ChannelDetailDrawer({
             </h3>
             <dl className="grid grid-cols-1 sm:grid-cols-2 border border-border rounded-lg overflow-hidden">
               <div className="grid grid-cols-[110px_1fr]">
-                <dt className="bg-muted/45 px-2.5 py-2 text-muted-foreground border-r border-border">
+                <dt className="bg-card px-2.5 py-2 text-muted-foreground border-r border-border">
                   {t("channels.fields.supplier")}
                 </dt>
                 <dd className="px-2.5 py-2 flex items-center gap-2 flex-wrap">
@@ -240,7 +240,7 @@ export function ChannelDetailDrawer({
                 </dd>
               </div>
               <div className="grid grid-cols-[110px_1fr] border-t sm:border-t-0 border-border sm:border-l">
-                <dt className="bg-muted/45 px-2.5 py-2 text-muted-foreground border-r border-border">
+                <dt className="bg-card px-2.5 py-2 text-muted-foreground border-r border-border">
                   {t("supplier.fields.code")}
                 </dt>
                 <dd className="px-2.5 py-2 min-w-0">
@@ -257,7 +257,7 @@ export function ChannelDetailDrawer({
             </h3>
             <dl className="grid grid-cols-1 sm:grid-cols-2 border border-border rounded-lg overflow-hidden">
               <div className="grid grid-cols-[110px_1fr]">
-                <dt className="bg-muted/45 px-2.5 py-2 text-muted-foreground border-r border-border">
+                <dt className="bg-card px-2.5 py-2 text-muted-foreground border-r border-border">
                   {t("channels.fields.qpsLimit")}
                 </dt>
                 <dd className="px-2.5 py-2">
@@ -273,7 +273,7 @@ export function ChannelDetailDrawer({
                 </dd>
               </div>
               <div className="grid grid-cols-[110px_1fr] border-t sm:border-t-0 border-border sm:border-l">
-                <dt className="bg-muted/45 px-2.5 py-2 text-muted-foreground border-r border-border">
+                <dt className="bg-card px-2.5 py-2 text-muted-foreground border-r border-border">
                   {t("channels.detail.egressMode")}
                 </dt>
                 <dd className="px-2.5 py-2">
@@ -294,7 +294,7 @@ export function ChannelDetailDrawer({
               <div className="overflow-x-auto rounded-lg border border-border">
                 <table className="w-full border-collapse text-xs">
                   <thead>
-                    <tr className="border-b border-border bg-muted/45 text-muted-foreground">
+                    <tr className="border-b border-border bg-card text-muted-foreground">
                       <th className="h-8 px-2.5 text-left font-medium">
                         {t("channels.detail.routeProduct")}
                       </th>

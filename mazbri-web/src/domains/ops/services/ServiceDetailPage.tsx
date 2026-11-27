@@ -333,7 +333,6 @@ export function ServiceDetailPage() {
         <StatCard
           label={t("ops.services.detail.lastRestart")}
           value={restartLabel}
-          hint="UTC+8"
           icon={<RotateCw className="h-3.5 w-3.5 text-muted-foreground" />}
         />
       </div>

@@ -407,17 +407,18 @@ export function OverviewPage() {
 
       {/* Window KPI section */}
       <section className="space-y-2.5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-baseline gap-2.5 min-w-0">
-            <h2 className="text-sm font-semibold text-foreground">
+        <div className="flex items-center justify-between gap-3 flex-wrap xl:flex-nowrap">
+          <div className="flex items-baseline gap-2.5 min-w-0">
+            <h2 className="text-sm font-semibold text-foreground shrink-0 whitespace-nowrap">
               {t("ops.overview.sections.kpi")}
             </h2>
-            <span className="text-xs text-muted-foreground font-mono-tech">
+            <span className="text-xs text-muted-foreground font-mono-tech truncate">
               {windowSemantics}
             </span>
           </div>
 
           <OpsTimeBar
+            className="xl:flex-nowrap"
             value={timeRange}
             onChange={setTimeRange}
             refreshInterval={refreshInterval}

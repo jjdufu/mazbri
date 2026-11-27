@@ -320,7 +320,7 @@ export function SecurityPolicyTab({ onDirtyChange }: SecurityPolicyTabProps) {
           ).map(([field, labelKey]) => (
             <div
               key={field}
-              className="flex items-center justify-between gap-2 rounded-md border border-border bg-muted/20 px-3 py-2"
+              className="flex items-center justify-between gap-2 rounded-md border border-border bg-card px-3 py-2"
             >
               <span className="text-xs text-foreground">{t(labelKey)}</span>
               <Switch

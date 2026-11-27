@@ -511,7 +511,7 @@ function WorkbenchEnvDrawerBody() {
           </div>
 
           {capturedEntries.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-border px-3 py-3 text-center text-xs text-muted-foreground">
+            <div className="px-3 py-3 text-center text-xs text-muted-foreground">
               {t("upstreamConnector.capturedEmpty")}
             </div>
           ) : (

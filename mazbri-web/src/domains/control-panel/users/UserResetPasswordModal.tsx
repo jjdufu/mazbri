@@ -129,7 +129,7 @@ export function UserResetPasswordModal({
       testId="user-reset-password-modal"
     >
       {admin && (
-        <div className="rounded-md border border-border bg-muted/45 px-3 py-2 text-xs text-foreground">
+        <div className="rounded-md border border-border bg-card px-3 py-2 text-xs text-foreground">
           {t("userManagement.resetPasswordDialog.alert", {
             username: admin.username,
           })}
@@ -191,7 +191,7 @@ export function UserResetPasswordModal({
         </div>
       </FormField>
 
-      <div className="flex items-center justify-between gap-4 rounded-lg border border-border bg-muted/25 px-3.5 py-2.5">
+      <div className="flex items-center justify-between gap-4 rounded-lg border border-border bg-card px-3.5 py-2.5">
         <span className="text-xs font-medium text-foreground">
           {t("userManagement.resetPasswordDialog.forceReset")}
         </span>

@@ -302,7 +302,7 @@ export function AuditDetailDrawer({
       ) : log ? (
         <div className="space-y-5">
           {relatedChainRecords.length > 1 && (
-            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-muted/35 px-3 py-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-card px-3 py-2">
               <span className="text-xs font-medium text-muted-foreground">
                 {t("auditLogs.chain.detailTitle")}
               </span>
@@ -546,7 +546,7 @@ export function AuditDetailDrawer({
               <div className="overflow-x-auto rounded-lg border border-border">
                 <table className="w-full border-collapse text-xs">
                   <thead>
-                    <tr className="border-b border-border bg-muted/45 text-muted-foreground">
+                    <tr className="border-b border-border bg-transparent text-muted-foreground">
                       <th className="px-3 py-2 text-left font-medium">
                         {t("auditLogs.detail.changesField")}
                       </th>
@@ -597,7 +597,7 @@ export function AuditDetailDrawer({
               <button
                 type="button"
                 onClick={() => setRawExpanded((v) => !v)}
-                className="flex w-full items-center justify-between gap-2 bg-muted/35 px-3 py-2 text-xs font-medium text-foreground hover:bg-hover-bg transition-colors cursor-pointer"
+                className="flex w-full items-center justify-between gap-2 bg-card px-3 py-2 text-xs font-medium text-foreground hover:bg-hover-bg transition-colors cursor-pointer"
               >
                 <span className="inline-flex items-center gap-1.5">
                   {rawExpanded ? (
@@ -609,7 +609,7 @@ export function AuditDetailDrawer({
                 </span>
               </button>
               {rawExpanded && (
-                <pre className="max-h-72 overflow-auto border-t border-border bg-muted/20 p-3 font-mono-tech text-[11px] leading-relaxed text-foreground whitespace-pre-wrap break-all">
+                <pre className="max-h-72 overflow-auto border-t border-border bg-muted/30 p-3 font-mono-tech text-[11px] leading-relaxed text-foreground whitespace-pre-wrap break-all">
                   {rawJsonText}
                 </pre>
               )}

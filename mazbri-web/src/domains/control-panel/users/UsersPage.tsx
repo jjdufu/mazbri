@@ -1,30 +1,25 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  Download,
-  Plus,
-  RefreshCw,
-  RotateCcw,
-  Search,
-  Trash2,
-} from "lucide-react";
+import { Download, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { deleteAdmin, fetchAdminList } from "@/api/admin";
 import {
   Badge,
   Button,
   ConfirmDialog,
   DataTablePage,
-  Input,
-  Select,
+  ListQueryBar,
   StatusBadge,
   type DataTableColumn,
 } from "@/components/ui";
+import { usersCatalog } from "@/list-catalog/common-resources";
 import { useT } from "@/locales";
 import { useAuthStore } from "@/stores/auth";
-import type { AdminRole, AdminStatus, AdminUser } from "@/types/api/admin";
+import type { AdminUser } from "@/types/api/admin";
+import type { ListFilter } from "@/types/list-query";
 import { downloadCsv, generateCsv } from "@/utils/csv";
 import { getRoleLabel } from "@/utils/display-labels";
 import { EMPTY_PLACEHOLDER, formatDateTime } from "@/utils/format";
 import { isMfaStepUpCancelled } from "@/utils/http/mfa-cancelled";
+import { encodeFilters } from "@/utils/list-query/serialize";
 import { logger } from "@/utils/sys/logger";
 import {
   showSuccessToast,
@@ -49,10 +44,9 @@ export function UsersPage() {
   const [pageSize, setPageSize] = useState(10);
   const [loading, setLoading] = useState(false);
 
-  const [keywordInput, setKeywordInput] = useState("");
-  const [appliedKeyword, setAppliedKeyword] = useState("");
-  const [roleFilter, setRoleFilter] = useState<"" | AdminRole>("");
-  const [statusFilter, setStatusFilter] = useState<"" | AdminStatus>("");
+  const [qInput, setQInput] = useState("");
+  const [appliedQ, setAppliedQ] = useState("");
+  const [listFilters, setListFilters] = useState<ListFilter[]>([]);
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
@@ -69,9 +63,11 @@ export function UsersPage() {
       const res = await fetchAdminList({
         page,
         page_size: pageSize,
-        q: appliedKeyword || undefined,
-        role: roleFilter || undefined,
-        status: statusFilter || undefined,
+        q: appliedQ || undefined,
+        filters:
+          listFilters.length > 0
+            ? encodeFilters(listFilters).filters
+            : undefined,
       });
       setRows(res.items ?? []);
       setTotal(res.total ?? 0);
@@ -81,24 +77,21 @@ export function UsersPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, appliedKeyword, roleFilter, statusFilter]);
+  }, [page, pageSize, appliedQ, listFilters]);
 
   useEffect(() => {
     void loadData();
   }, [loadData]);
 
-  const handleSearchSubmit = () => {
+  const handleSearch = useCallback(() => {
     setPage(1);
-    setAppliedKeyword(keywordInput.trim());
-  };
+    setAppliedQ(qInput.trim());
+  }, [qInput]);
 
-  const handleResetFilters = () => {
-    setKeywordInput("");
-    setAppliedKeyword("");
-    setRoleFilter("");
-    setStatusFilter("");
+  const handleFiltersChange = useCallback((next: ListFilter[]) => {
     setPage(1);
-  };
+    setListFilters(next);
+  }, []);
 
   const handleExportCsv = () => {
     const targetRows =
@@ -360,7 +353,7 @@ export function UsersPage() {
                 type="button"
                 variant="link"
                 size="xs"
-                className="text-danger-fg hover:text-danger-fg hover:bg-danger-fg/10"
+                className="text-muted-foreground hover:text-danger-fg hover:bg-danger-fg/10"
                 onClick={() => setDeleteTarget(row)}
               >
                 {t("common.actions.delete")}
@@ -373,10 +366,10 @@ export function UsersPage() {
     [t, currentUserId],
   );
 
-  const hasFilters = Boolean(appliedKeyword || roleFilter || statusFilter);
+  const hasFilters = Boolean(appliedQ) || listFilters.length > 0;
 
   return (
-    <>
+    <div className="flex flex-col flex-1 min-h-0 min-w-0">
       <DataTablePage<AdminUser>
         testId="users-page"
         columns={columns}
@@ -405,102 +398,14 @@ export function UsersPage() {
           setDetailOpen(true);
         }}
         filters={
-          <>
-            <div className="relative w-56">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-              <Input
-                value={keywordInput}
-                onChange={(e) => setKeywordInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleSearchSubmit();
-                }}
-                placeholder={t("common.search")}
-                aria-label={t("common.search")}
-                className="pl-8"
-                data-testid="users-search-input"
-              />
-            </div>
-
-            <Select
-              value={roleFilter}
-              onChange={(e) => {
-                setRoleFilter(e.target.value as "" | AdminRole);
-                setPage(1);
-              }}
-              aria-label={t("userManagement.list.columns.role")}
-              className="w-36"
-              options={[
-                {
-                  value: "",
-                  label: `${t("userManagement.list.columns.role")}: ${t("common.all")}`,
-                  text: t("common.all"),
-                },
-                {
-                  value: "R_ADMIN",
-                  label: t("common.roleLabels.admin"),
-                  text: t("common.roleLabels.admin"),
-                },
-                {
-                  value: "R_FINANCE",
-                  label: t("common.roleLabels.finance"),
-                  text: t("common.roleLabels.finance"),
-                },
-                {
-                  value: "R_VIEWER",
-                  label: t("common.roleLabels.viewer"),
-                  text: t("common.roleLabels.viewer"),
-                },
-              ]}
-            />
-
-            <Select
-              value={statusFilter}
-              onChange={(e) => {
-                setStatusFilter(e.target.value as "" | AdminStatus);
-                setPage(1);
-              }}
-              aria-label={t("userManagement.list.columns.status")}
-              className="w-32"
-              options={[
-                {
-                  value: "",
-                  label: `${t("userManagement.list.columns.status")}: ${t("common.all")}`,
-                  text: t("common.all"),
-                },
-                {
-                  value: "active",
-                  label: t("userManagement.status.active"),
-                  text: t("userManagement.status.active"),
-                },
-                {
-                  value: "inactive",
-                  label: t("userManagement.status.inactive"),
-                  text: t("userManagement.status.inactive"),
-                },
-              ]}
-            />
-
-            <Button
-              type="button"
-              variant="outline"
-              size="md"
-              onClick={handleSearchSubmit}
-            >
-              {t("common.search")}
-            </Button>
-
-            {hasFilters && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="md"
-                onClick={handleResetFilters}
-              >
-                <RotateCcw className="h-3.5 w-3.5" />
-                {t("common.reset")}
-              </Button>
-            )}
-          </>
+          <ListQueryBar
+            q={qInput}
+            onQChange={setQInput}
+            filters={listFilters}
+            onFiltersChange={handleFiltersChange}
+            catalog={usersCatalog}
+            onSearch={handleSearch}
+          />
         }
         batchActions={(ids) => (
           <Button
@@ -528,12 +433,15 @@ export function UsersPage() {
             </Button>
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               size="md"
+              disabled={loading}
               onClick={() => void loadData()}
               aria-label={t("common.actions.refresh")}
             >
-              <RefreshCw className="h-3.5 w-3.5" />
+              <RefreshCw
+                className={loading ? "h-3.5 w-3.5 animate-spin" : "h-3.5 w-3.5"}
+              />
               {t("common.actions.refresh")}
             </Button>
             <Button
@@ -590,6 +498,6 @@ export function UsersPage() {
         danger
         loading={deleting}
       />
-    </>
+    </div>
   );
 }

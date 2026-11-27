@@ -718,7 +718,7 @@ export function BillListPanel({ active: _active = true }: BillListPanelProps) {
                 type="button"
                 variant="link"
                 size="xs"
-                className="text-warning-fg hover:text-warning-fg"
+                className="text-muted-foreground hover:text-warning-fg hover:bg-warning-bg"
                 onClick={() => setStatusConfirm({ row, status: "overdue" })}
               >
                 {t("billing.actions.markOverdue")}
@@ -729,7 +729,7 @@ export function BillListPanel({ active: _active = true }: BillListPanelProps) {
                 type="button"
                 variant="link"
                 size="xs"
-                className="text-danger-fg hover:text-danger-fg"
+                className="text-muted-foreground hover:text-danger-fg hover:bg-danger-fg/10"
                 onClick={() => setDeleteTarget(row)}
               >
                 {t("common.actions.delete")}
@@ -743,7 +743,10 @@ export function BillListPanel({ active: _active = true }: BillListPanelProps) {
   );
 
   return (
-    <div className="space-y-4 min-w-0" data-testid="billing-bills-panel">
+    <div
+      className="flex flex-col flex-1 min-h-0 gap-4 min-w-0"
+      data-testid="billing-bills-panel"
+    >
       <DataTablePage<Bill>
         columns={columns}
         data={bills}
@@ -798,7 +801,7 @@ export function BillListPanel({ active: _active = true }: BillListPanelProps) {
           <>
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               size="md"
               onClick={() => void loadData()}
               disabled={loading}
@@ -1068,7 +1071,7 @@ export function BillListPanel({ active: _active = true }: BillListPanelProps) {
                                 type="button"
                                 variant="link"
                                 size="xs"
-                                className="text-danger-fg hover:text-danger-fg"
+                                className="text-muted-foreground hover:text-danger-fg hover:bg-danger-fg/10"
                                 onClick={() => setVoidTarget(adj)}
                               >
                                 {t("billing.adjustments.void")}

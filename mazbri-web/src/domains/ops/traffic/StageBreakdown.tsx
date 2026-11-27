@@ -87,7 +87,7 @@ export function StageBreakdown({
       ) : (
         <div className="space-y-1.5">
           {model.summaryBar && (
-            <div className="grid grid-cols-1 gap-2 border-b border-dashed border-border pb-2 sm:grid-cols-[minmax(200px,260px)_1fr_110px] sm:items-center">
+            <div className="grid grid-cols-1 gap-2 border-b border-border-subtle pb-2 sm:grid-cols-[minmax(200px,260px)_1fr_110px] sm:items-center">
               <div className="flex items-center gap-1.5 min-w-0">
                 <span
                   className="truncate font-semibold text-foreground"

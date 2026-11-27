@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, RefreshCw, Search, Trash2, Upload } from "lucide-react";
+import { Plus, RefreshCw, Trash2, Upload } from "lucide-react";
 import {
   createChannel,
   deleteChannel,
@@ -17,16 +17,17 @@ import {
   ConfirmDialog,
   CopyableText,
   DataTablePage,
-  Input,
-  Select,
+  ListQueryBar,
   StatusBadge,
   type DataTableColumn,
 } from "@/components/ui";
+import { channelsCatalog } from "@/list-catalog/common-resources";
 import { useT } from "@/locales";
 import { useAuthStore } from "@/stores/auth";
 import type { ListFilter } from "@/types/list-query";
 import { EMPTY_PLACEHOLDER } from "@/utils/format";
 import { isMfaStepUpCancelled } from "@/utils/http/mfa-cancelled";
+import { encodeFilters } from "@/utils/list-query/serialize";
 import { isBizRole } from "@/utils/ops/roles";
 import {
   exportResourceCsv,
@@ -91,9 +92,9 @@ export function ChannelListTab({
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [total, setTotal] = useState(0);
-  const [keywordInput, setKeywordInput] = useState("");
-  const [appliedKeyword, setAppliedKeyword] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
+  const [qInput, setQInput] = useState("");
+  const [appliedQ, setAppliedQ] = useState("");
+  const [listFilters, setListFilters] = useState<ListFilter[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [hasActiveSupplier, setHasActiveSupplier] = useState(false);
 
@@ -131,13 +132,9 @@ export function ChannelListTab({
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const filters: ListFilter[] = [];
-      if (statusFilter) {
-        filters.push({ field: "status", op: "eq", value: statusFilter });
-      }
       const res = await fetchChannels({
-        q: appliedKeyword || undefined,
-        filters: filters.length ? JSON.stringify(filters) : undefined,
+        q: appliedQ || undefined,
+        filters: encodeFilters(listFilters).filters,
         page,
         page_size: pageSize,
       });
@@ -149,7 +146,7 @@ export function ChannelListTab({
     } finally {
       setLoading(false);
     }
-  }, [appliedKeyword, statusFilter, page, pageSize]);
+  }, [appliedQ, listFilters, page, pageSize]);
 
   useEffect(() => {
     void loadData();
@@ -547,7 +544,7 @@ export function ChannelListTab({
                   type="button"
                   variant="link"
                   size="xs"
-                  className="text-danger-fg hover:text-danger-fg hover:bg-danger-fg/10"
+                  className="text-muted-foreground hover:text-danger-fg hover:bg-danger-fg/10"
                   onClick={() => setDeleteTarget(row)}
                 >
                   {t("common.actions.delete")}
@@ -561,15 +558,20 @@ export function ChannelListTab({
     [t, canWrite, channelStatusLabel],
   );
 
-  const handleSearch = () => {
+  const handleSearch = useCallback(() => {
     setPage(1);
-    setAppliedKeyword(keywordInput.trim());
-  };
+    setAppliedQ(qInput.trim());
+  }, [qInput]);
 
-  const hasActiveSearch = Boolean(appliedKeyword || statusFilter);
+  const handleFiltersChange = useCallback((next: ListFilter[]) => {
+    setPage(1);
+    setListFilters(next);
+  }, []);
+
+  const hasActiveSearch = Boolean(appliedQ) || listFilters.length > 0;
 
   return (
-    <>
+    <div className="flex flex-col flex-1 min-h-0 min-w-0">
       <DataTablePage
         columns={columns}
         data={rows}
@@ -594,51 +596,14 @@ export function ChannelListTab({
         }}
         testId="channel-list-table"
         filters={
-          <>
-            <div className="flex items-center gap-1.5">
-              <Input
-                value={keywordInput}
-                onChange={(e) => setKeywordInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleSearch();
-                }}
-                placeholder={t("common.search")}
-                className="w-56"
-                data-testid="channel-search-input"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="md"
-                onClick={handleSearch}
-              >
-                <Search className="h-3.5 w-3.5" />
-                {t("common.fields.search")}
-              </Button>
-            </div>
-            <Select
-              value={statusFilter}
-              onChange={(e) => {
-                setStatusFilter(e.target.value);
-                setPage(1);
-              }}
-              aria-label={t("common.fields.status")}
-              className="w-28"
-              options={[
-                { value: "", label: t("common.all"), text: t("common.all") },
-                {
-                  value: "active",
-                  label: t("channels.status.active"),
-                  text: t("channels.status.active"),
-                },
-                {
-                  value: "disabled",
-                  label: t("channels.status.inactive"),
-                  text: t("channels.status.inactive"),
-                },
-              ]}
-            />
-          </>
+          <ListQueryBar
+            q={qInput}
+            onQChange={setQInput}
+            filters={listFilters}
+            onFiltersChange={handleFiltersChange}
+            catalog={channelsCatalog}
+            onSearch={handleSearch}
+          />
         }
         batchActions={
           canWrite
@@ -660,11 +625,14 @@ export function ChannelListTab({
           <>
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               size="md"
               onClick={() => void loadData()}
+              disabled={loading}
             >
-              <RefreshCw className="h-3.5 w-3.5" />
+              <RefreshCw
+                className={loading ? "h-3.5 w-3.5 animate-spin" : "h-3.5 w-3.5"}
+              />
               {t("common.actions.refresh")}
             </Button>
             {canWrite && (
@@ -761,6 +729,6 @@ export function ChannelListTab({
         cancelLabel={t("common.cancel")}
         loading={deleting}
       />
-    </>
+    </div>
   );
 }
