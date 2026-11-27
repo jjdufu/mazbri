@@ -100,7 +100,7 @@ jobs:
             web:
               - 'mazbri-web/**'
             audit_labels:
-              - 'mazbri-web/src/views/mazbri/control-panel/audit-logs/labels.ts'
+              - 'mazbri-web/src/domains/control-panel/audit-logs/labels.ts'
             libs:
               - 'mazbri-libs/**'
             bin:
@@ -315,8 +315,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # `pnpm build` = vite build && vue-tsc --noEmit (typecheck is part of it)
-      - name: Build (vite + vue-tsc)
+      # `pnpm build` = tsc --noEmit && vite build (typecheck is part of it)
+      - name: Build (tsc + vite)
         run: pnpm build
 
       - name: Unit tests (tsx)

@@ -137,8 +137,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # `pnpm build` = vite build && vue-tsc --noEmit (same as the gate)
-      - name: Build (vite + vue-tsc)
+      # `pnpm build` = tsc --noEmit && vite build (same as the gate)
+      - name: Build (tsc + vite)
         run: pnpm build
 
       - name: Upload dist for mgmt embed
