@@ -1,20 +1,12 @@
-import { type ReactNode, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Navigate,
   Outlet,
   createBrowserRouter,
   useLocation,
 } from "react-router";
-import { RefreshCw, ShieldCheck } from "lucide-react";
 import { fetchGetUserInfo } from "@/api/auth";
 import { AppShell, resolveDefaultHomePath } from "@/components/layout";
-import {
-  AuthorizationTooltipButton,
-  Button,
-  Card,
-  Input,
-  StatusBadge,
-} from "@/components/ui";
 import { NotFoundPage } from "@/domains/auth/ExceptionPage";
 import { authRoutes } from "@/domains/auth/routes";
 import { billingRoutes } from "@/domains/billing/routes";
@@ -24,17 +16,9 @@ import { opsRoutes } from "@/domains/ops/routes";
 import { productsRoutes } from "@/domains/products/routes";
 import { tenantsRoutes } from "@/domains/tenants/routes";
 import { upstreamSupplyRoutes } from "@/domains/upstream-supply/routes";
-import { LanguageEnum } from "@/enums/appEnum";
+import { workbenchRoutes } from "@/domains/workbench/routes";
 import { useT } from "@/locales";
 import { registerAuthLogoutRedirect, useAuthStore } from "@/stores/auth";
-import { usePersonalSecurityStore } from "@/stores/personal-security";
-import type { AdminRole } from "@/types/api";
-import {
-  ROLES_ALL,
-  canAccessRoles,
-  isBizRole,
-} from "@/utils/ops/roles";
-import { showSuccessToast } from "@/utils/ui/message-guard";
 
 function RequireAuth() {
   const location = useLocation();
@@ -84,82 +68,9 @@ function RequireAuth() {
   return <Outlet />;
 }
 
-function RequireRole({
-  allowedRoles,
-  children,
-}: {
-  allowedRoles: readonly AdminRole[];
-  children: ReactNode;
-}) {
-  const role = useAuthStore((s) => s.info.role);
-  if (role && !canAccessRoles(role, allowedRoles)) {
-    return <Navigate to="/403" replace />;
-  }
-  return <>{children}</>;
-}
-
 function IndexRedirect() {
   const role = useAuthStore((s) => s.info.role);
   return <Navigate to={resolveDefaultHomePath(role)} replace />;
-}
-
-function DomainPlaceholder({ titleKey }: { titleKey: string }) {
-  const { t, locale } = useT();
-  const role = useAuthStore((s) => s.info.role);
-  const openSecurityDrawer = usePersonalSecurityStore((s) => s.openDrawer);
-  const [keyword, setKeyword] = useState("");
-  const canWrite = isBizRole(role);
-
-  return (
-    <Card className="overflow-hidden" data-testid="domain-placeholder-card">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <Input
-            id="placeholder-search-input"
-            name="search"
-            value={keyword}
-            onChange={(e) => setKeyword(e.target.value)}
-            placeholder={t("common.search")}
-            aria-label={t("common.search")}
-            data-testid="placeholder-search-input"
-            className="w-60"
-          />
-          <StatusBadge
-            status="READY"
-            label={locale === LanguageEnum.ZH ? "就绪" : "Ready"}
-          />
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <Button
-            type="button"
-            variant="outline"
-            size="md"
-            onClick={() => showSuccessToast(t("common.actions.refresh"))}
-            data-testid="placeholder-refresh-btn"
-          >
-            <RefreshCw className="h-3.5 w-3.5" />
-            {t("common.actions.refresh")}
-          </Button>
-          <AuthorizationTooltipButton
-            type="button"
-            variant="primary"
-            size="md"
-            disabled={!canWrite}
-            disabledReason={t("layout.forbidden.description")}
-            onClick={() => openSecurityDrawer("mfa")}
-            data-testid="placeholder-security-btn"
-          >
-            <ShieldCheck className="h-3.5 w-3.5" />
-            {t("accountSecurity.drawer.title")}
-          </AuthorizationTooltipButton>
-        </div>
-      </div>
-      <div className="p-6 flex items-center justify-between gap-4 text-xs text-muted-foreground">
-        <span>{t(titleKey)}</span>
-        <code className="font-mono-tech text-[11px]">v{__APP_VERSION__}</code>
-      </div>
-    </Card>
-  );
 }
 
 export const router = createBrowserRouter([
@@ -167,6 +78,7 @@ export const router = createBrowserRouter([
   {
     element: <RequireAuth />,
     children: [
+      ...workbenchRoutes,
       {
         element: <AppShell />,
         children: [
@@ -177,14 +89,6 @@ export const router = createBrowserRouter([
           ...tenantsRoutes,
           ...productsRoutes,
           ...upstreamSupplyRoutes,
-          {
-            path: "/operations/upstream-supply/workbench",
-            element: (
-              <RequireRole allowedRoles={ROLES_ALL}>
-                <DomainPlaceholder titleKey="upstreamConnector.workbenchTitle" />
-              </RequireRole>
-            ),
-          },
           ...callbacksRoutes,
           ...billingRoutes,
           ...opsRoutes,
