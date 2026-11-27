@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.6.7](https://github.com/jjdufu/mazbri/compare/v0.6.6...v0.6.7) (2026-11-27)
+
+
+### Features
+
+* Step 07 免代码工作台紧凑屏自适应、WCAG AA 校准与安全策略单事务保存 ([1e527bd](https://github.com/jjdufu/mazbri/commit/1e527bd07fc1fb6a91b38fc48e0ca42b81d65ad7))
+* **web:** Step 05 航空暗舱态势首屏降噪、基数感知 KPI 栅格与告警语义收敛 ([936acc0](https://github.com/jjdufu/mazbri/commit/936acc029eeb1f485386c2f333cdbd4da654a752))
+* **web:** Step 06 轻量实体身份顶栏、状态圆点统一、草稿箱 RBAC 门控与租户详情精修 ([a01fb95](https://github.com/jjdufu/mazbri/commit/a01fb95a1e9f3b30479f34021b19c5b7be0e39a6))
+* **web:** Step 08 无损双语热切、顶栏身份角色胶囊、异常页自愈与架构适应度门禁 ([546c1b6](https://github.com/jjdufu/mazbri/commit/546c1b62fb872cd0297b5f5c077a7b1022661178))
+
+
+### Bug Fixes
+
+* **auth,config-center,audit:** [Step 01/08] 收敛 Step-up MFA 前置门卫、多阶段登录审计与配置中心分页版本 ([cd57767](https://github.com/jjdufu/mazbri/commit/cd57767bfe7ae9efbccd20c933206638b3e2dc73))
+* **billing,ops,format:** [Step 03/08] 修复租户充退分元量纲错位、升级微元格式化原语与校准 SLO/柱图/运行指标 ([7d218e2](https://github.com/jjdufu/mazbri/commit/7d218e294de49c0ff145ca980f275d0f0e3f2221))
+* **ops,analytics,traces:** [Step 02/08] 统一全链路东八区墙钟、修复 ClickHouse 列别名遮蔽与链路瀑布图对齐 ([9353c5d](https://github.com/jjdufu/mazbri/commit/9353c5dafe88746b97487b557af889b6482da524))
+* **table,theme,ui:** [Step 04/08] 解锁自适应列宽钳制、打通分页总数透传、收敛唯一同步主题内核与行内降噪 ([a9c3cf4](https://github.com/jjdufu/mazbri/commit/a9c3cf4639e963b2a85533ac63440d4b9321a9a4))
+
 ## [0.6.6](https://github.com/jjdufu/mazbri/compare/v0.6.5...v0.6.6) (2026-11-26)
 
 
