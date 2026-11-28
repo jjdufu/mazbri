@@ -1,18 +1,19 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Info, Plus, RefreshCw } from "lucide-react";
+import { Plus, RefreshCw, Search, X } from "lucide-react";
 import {
   Button,
-  Card,
   ConfirmDialog,
   DataTablePage,
+  DateRangePicker,
   FormField,
   FormModal,
   Input,
+  SegmentedControl,
   StatusBadge,
   Switch,
   Textarea,
-  Tooltip,
   type DataTableColumn,
+  type DateRangeValue,
 } from "@/components/ui";
 import {
   createAlertInhibit,
@@ -35,17 +36,7 @@ import {
 import { showErrorToast, showSuccessToast } from "@/utils/ui/message-guard";
 import { useOpsRole } from "../shared/opsHelpers";
 
-function toDatetimeLocal(wallClock: string): string {
-  return wallClock.slice(0, 16).replace(" ", "T");
-}
-
-function fromDatetimeLocal(localVal: string): string {
-  const normalized = localVal.trim().replace("T", " ");
-  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(normalized)) {
-    return `${normalized}:00`;
-  }
-  return normalized;
-}
+type SilenceSubMode = "silences" | "inhibits";
 
 function parseMatchersJson(text: string): Record<string, string> {
   const v = JSON.parse(text || "{}") as unknown;
@@ -59,6 +50,11 @@ export function AlertSilencesPanel() {
   const { t } = useT();
   const { isAdmin } = useOpsRole();
 
+  const [subMode, setSubMode] = useState<SilenceSubMode>("silences");
+  const [keyword, setKeyword] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+
   const [loadingSilences, setLoadingSilences] = useState(false);
   const [loadingInhibits, setLoadingInhibits] = useState(false);
   const [silences, setSilences] = useState<AlertSilence[]>([]);
@@ -66,8 +62,10 @@ export function AlertSilencesPanel() {
 
   const [silenceModalOpen, setSilenceModalOpen] = useState(false);
   const [silenceMatchers, setSilenceMatchers] = useState('{"product_id":"A"}');
-  const [silenceStartsAt, setSilenceStartsAt] = useState("");
-  const [silenceEndsAt, setSilenceEndsAt] = useState("");
+  const [silenceWindow, setSilenceWindow] = useState<DateRangeValue>({
+    start: "",
+    end: "",
+  });
   const [silenceComment, setSilenceComment] = useState("");
   const [savingSilence, setSavingSilence] = useState(false);
 
@@ -111,10 +109,12 @@ export function AlertSilencesPanel() {
 
   const openCreateSilence = () => {
     const now = Date.now();
-    const end = now + 10 * 60 * 1000;
+    const end = now + 30 * 60 * 1000;
     setSilenceMatchers('{"product_id":"A"}');
-    setSilenceStartsAt(toDatetimeLocal(formatDateTime(now)));
-    setSilenceEndsAt(toDatetimeLocal(formatDateTime(end)));
+    setSilenceWindow({
+      start: formatDateTime(now),
+      end: formatDateTime(end),
+    });
     setSilenceComment("");
     setSilenceModalOpen(true);
   };
@@ -142,8 +142,8 @@ export function AlertSilencesPanel() {
   const handleSaveSilence = async () => {
     setSavingSilence(true);
     try {
-      const startMs = parseDisplayWallClockMs(fromDatetimeLocal(silenceStartsAt));
-      const endMs = parseDisplayWallClockMs(fromDatetimeLocal(silenceEndsAt));
+      const startMs = parseDisplayWallClockMs(silenceWindow.start);
+      const endMs = parseDisplayWallClockMs(silenceWindow.end);
       if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
         throw new Error(t("ops.alerts.silences.window"));
       }
@@ -240,6 +240,38 @@ export function AlertSilencesPanel() {
       setDeleting(false);
     }
   };
+
+  const filteredSilences = useMemo(() => {
+    const q = keyword.trim().toLowerCase();
+    if (!q) return silences;
+    return silences.filter(
+      (r) =>
+        formatAlertMatchers(r.matchers, "").toLowerCase().includes(q) ||
+        (r.comment ?? "").toLowerCase().includes(q) ||
+        (r.created_by ?? "").toLowerCase().includes(q),
+    );
+  }, [silences, keyword]);
+
+  const filteredInhibits = useMemo(() => {
+    const q = keyword.trim().toLowerCase();
+    if (!q) return inhibits;
+    return inhibits.filter(
+      (r) =>
+        r.name.toLowerCase().includes(q) ||
+        formatAlertMatchers(r.source_matchers, "").toLowerCase().includes(q) ||
+        formatAlertMatchers(r.target_matchers, "").toLowerCase().includes(q),
+    );
+  }, [inhibits, keyword]);
+
+  const pagedSilences = useMemo(
+    () => filteredSilences.slice((page - 1) * pageSize, page * pageSize),
+    [filteredSilences, page, pageSize],
+  );
+
+  const pagedInhibits = useMemo(
+    () => filteredInhibits.slice((page - 1) * pageSize, page * pageSize),
+    [filteredInhibits, page, pageSize],
+  );
 
   const silenceColumns = useMemo<DataTableColumn<AlertSilence>[]>(() => {
     const cols: DataTableColumn<AlertSilence>[] = [
@@ -374,100 +406,133 @@ export function AlertSilencesPanel() {
     return cols;
   }, [t, isAdmin]);
 
+  const filterBarNode = (
+    <div className="flex flex-wrap items-center gap-2">
+      <SegmentedControl<SilenceSubMode>
+        value={subMode}
+        onChange={(next) => {
+          setSubMode(next);
+          setPage(1);
+        }}
+        items={[
+          {
+            key: "silences",
+            label: t("menus.mazbri.alertSilences"),
+            count: silences.length,
+          },
+          {
+            key: "inhibits",
+            label: t("ops.alerts.inhibits.title"),
+            count: inhibits.length,
+          },
+        ]}
+      />
+
+      <div className="relative flex items-center w-60">
+        <Search className="pointer-events-none absolute left-2.5 h-3.5 w-3.5 text-muted-foreground" />
+        <Input
+          value={keyword}
+          onChange={(e) => {
+            setKeyword(e.target.value);
+            setPage(1);
+          }}
+          placeholder={t("common.search")}
+          className="pl-8 pr-7"
+        />
+        {keyword && (
+          <button
+            type="button"
+            onClick={() => {
+              setKeyword("");
+              setPage(1);
+            }}
+            aria-label={t("common.reset")}
+            className="absolute right-2 inline-flex h-4 w-4 items-center justify-center rounded text-muted-foreground hover:text-foreground cursor-pointer"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+
+  const actionsNode = (
+    <>
+      <Button
+        type="button"
+        variant="ghost"
+        size="md"
+        loading={subMode === "silences" ? loadingSilences : loadingInhibits}
+        onClick={() =>
+          void (subMode === "silences" ? reloadSilences() : reloadInhibits())
+        }
+      >
+        <RefreshCw className="h-3.5 w-3.5" />
+        <span>{t("common.refresh")}</span>
+      </Button>
+      {isAdmin && (
+        <Button
+          type="button"
+          variant="primary"
+          size="md"
+          onClick={
+            subMode === "silences" ? openCreateSilence : openCreateInhibit
+          }
+        >
+          <Plus className="h-3.5 w-3.5" />
+          <span>
+            {subMode === "silences"
+              ? t("ops.alerts.silences.create")
+              : t("ops.alerts.inhibits.create")}
+          </span>
+        </Button>
+      )}
+    </>
+  );
+
   return (
     <div className="flex flex-col flex-1 min-h-0 gap-4 min-w-0">
-      {/* Silences Card: unified Card Header (fixes A-09 external floating Refresh) */}
-      <Card className="flex flex-col flex-1 min-h-0 overflow-hidden">
-        <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-border px-4 py-3 shrink-0">
-          <div className="flex items-center gap-1.5 min-w-0">
-            <h3 className="text-xs font-semibold text-foreground">
-              {t("menus.mazbri.alertSilences")}
-            </h3>
-            <Tooltip content={t("ops.alerts.silences.hint")}>
-              <span className="inline-flex text-muted-foreground hover:text-foreground cursor-help">
-                <Info className="h-3.5 w-3.5" />
-              </span>
-            </Tooltip>
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            <Button
-              type="button"
-              variant="ghost"
-              size="md"
-              loading={loadingSilences}
-              onClick={() => void reloadSilences()}
-            >
-              <RefreshCw className="h-3.5 w-3.5" />
-              <span>{t("common.refresh")}</span>
-            </Button>
-            {isAdmin && (
-              <Button
-                type="button"
-                variant="primary"
-                size="md"
-                onClick={openCreateSilence}
-              >
-                <Plus className="h-3.5 w-3.5" />
-                <span>{t("ops.alerts.silences.create")}</span>
-              </Button>
-            )}
-          </div>
-        </div>
-
+      {subMode === "silences" ? (
         <DataTablePage
           columns={silenceColumns}
-          data={silences}
+          data={pagedSilences}
           getRowId={(r) => r.id}
           loading={loadingSilences}
           emptyText={t("ops.charts.empty")}
-          className="[&>div]:border-0 [&>div]:rounded-none"
+          page={page}
+          pageSize={pageSize}
+          total={filteredSilences.length}
+          pageSizeOptions={[10, 20, 50]}
+          onPageChange={setPage}
+          onPageSizeChange={(next) => {
+            setPageSize(next);
+            setPage(1);
+          }}
+          filters={filterBarNode}
+          actions={actionsNode}
         />
-      </Card>
-
-      {/* Inhibits Card: unified Card Header */}
-      <Card className="flex flex-col flex-1 min-h-0 overflow-hidden">
-        <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-border px-4 py-3 shrink-0">
-          <h3 className="text-xs font-semibold text-foreground">
-            {t("ops.alerts.inhibits.title")}
-          </h3>
-
-          <div className="flex items-center gap-2 shrink-0">
-            <Button
-              type="button"
-              variant="ghost"
-              size="md"
-              loading={loadingInhibits}
-              onClick={() => void reloadInhibits()}
-            >
-              <RefreshCw className="h-3.5 w-3.5" />
-              <span>{t("common.refresh")}</span>
-            </Button>
-            {isAdmin && (
-              <Button
-                type="button"
-                variant="primary"
-                size="md"
-                onClick={openCreateInhibit}
-              >
-                <Plus className="h-3.5 w-3.5" />
-                <span>{t("ops.alerts.inhibits.create")}</span>
-              </Button>
-            )}
-          </div>
-        </div>
-
+      ) : (
         <DataTablePage
           columns={inhibitColumns}
-          data={inhibits}
+          data={pagedInhibits}
           getRowId={(r) => r.id}
           loading={loadingInhibits}
           emptyText={t("ops.charts.empty")}
-          className="[&>div]:border-0 [&>div]:rounded-none"
+          page={page}
+          pageSize={pageSize}
+          total={filteredInhibits.length}
+          pageSizeOptions={[10, 20, 50]}
+          onPageChange={setPage}
+          onPageSizeChange={(next) => {
+            setPageSize(next);
+            setPage(1);
+          }}
+          filters={filterBarNode}
+          actions={actionsNode}
         />
-      </Card>
+      )}
 
-      {/* Create Silence Modal (strict UTC+8 wall-clock binding - U2) */}
+      {/* Create Silence Modal */}
       <FormModal
         open={silenceModalOpen}
         onClose={() => setSilenceModalOpen(false)}
@@ -486,30 +551,14 @@ export function AlertSilencesPanel() {
           />
         </FormField>
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <FormField
-            label={t("ops.alerts.silences.startsAt")}
-            required
-          >
-            <input
-              type="datetime-local"
-              value={silenceStartsAt}
-              onChange={(e) => setSilenceStartsAt(e.target.value)}
-              className="flex h-8 w-full rounded-md border border-input bg-card px-2.5 text-xs font-mono-tech text-foreground hover:border-border-hover focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/30"
-            />
-          </FormField>
-          <FormField
-            label={t("ops.alerts.silences.endsAt")}
-            required
-          >
-            <input
-              type="datetime-local"
-              value={silenceEndsAt}
-              onChange={(e) => setSilenceEndsAt(e.target.value)}
-              className="flex h-8 w-full rounded-md border border-input bg-card px-2.5 text-xs font-mono-tech text-foreground hover:border-border-hover focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/30"
-            />
-          </FormField>
-        </div>
+        <FormField label={t("ops.alerts.silences.window")} required>
+          <DateRangePicker
+            value={silenceWindow}
+            onChange={setSilenceWindow}
+            showPresets={false}
+            className="w-full justify-between"
+          />
+        </FormField>
 
         <FormField label={t("ops.alerts.silences.comment")}>
           <Input

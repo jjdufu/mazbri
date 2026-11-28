@@ -565,3 +565,81 @@ export const auditLogsCatalog: ResourceFilterCatalog = {
     },
   ],
 };
+
+export const alertEventsCatalog: ResourceFilterCatalog = {
+  resource: "alert_events",
+  max_filters: 8,
+  fields: [
+    {
+      field: "rule_name",
+      value_type: "string",
+      ops: STRING_OPS,
+      in_q: true,
+      label_key: "ops.alerts.columns.rule",
+    },
+    {
+      field: "status",
+      value_type: "enum",
+      ops: ["eq"],
+      label_key: "ops.alerts.columns.status",
+      enum_values: ["firing", "resolved"],
+      enum_label_keys: [
+        "ops.alerts.status.firing",
+        "ops.alerts.status.resolved",
+      ],
+    },
+    {
+      field: "severity",
+      value_type: "enum",
+      ops: ["eq"],
+      label_key: "ops.alerts.columns.severity",
+      enum_values: ["critical", "warning", "info"],
+      enum_label_keys: [
+        "ops.alerts.severity.critical",
+        "ops.alerts.severity.warning",
+        "ops.alerts.severity.info",
+      ],
+    },
+  ],
+};
+
+export const alertRulesCatalog: ResourceFilterCatalog = {
+  resource: "alert_rules",
+  max_filters: 8,
+  fields: [
+    {
+      field: "name",
+      value_type: "string",
+      ops: STRING_OPS,
+      in_q: true,
+      label_key: "ops.alerts.rules.columns.name",
+    },
+    {
+      field: "severity",
+      value_type: "enum",
+      ops: ["eq"],
+      label_key: "ops.alerts.rules.columns.severity",
+      enum_values: ["critical", "warning", "info"],
+      enum_label_keys: [
+        "ops.alerts.severity.critical",
+        "ops.alerts.severity.warning",
+        "ops.alerts.severity.info",
+      ],
+    },
+    {
+      field: "kind",
+      value_type: "enum",
+      ops: ["eq"],
+      label_key: "ops.alerts.rules.form.kind",
+      enum_values: ["promql", "olap"],
+    },
+    {
+      field: "enabled",
+      value_type: "enum",
+      ops: ["eq"],
+      label_key: "ops.alerts.columns.status",
+      enum_values: ["enabled", "disabled"],
+      enum_label_keys: ["common.status.enabled", "common.status.disabled"],
+    },
+  ],
+};

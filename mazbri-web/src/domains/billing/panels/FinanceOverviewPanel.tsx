@@ -6,7 +6,6 @@ import {
   CircleDollarSign,
   HelpCircle,
   Percent,
-  RefreshCw,
   TrendingUp,
   Wallet,
 } from "lucide-react";
@@ -25,17 +24,13 @@ import {
   type ChartThemeTokens,
 } from "@/components/charts";
 import {
-  Button,
   EmptyState,
   EntityDetailCard,
-  Select,
   StatCard,
   StatusBadge,
   Tooltip,
   cn,
-  type SelectOptionItem,
 } from "@/components/ui";
-import { LanguageEnum } from "@/enums/appEnum";
 import { useT } from "@/locales";
 import { getStatusLabel } from "@/utils/display-labels";
 import { EMPTY_PLACEHOLDER, formatDays, formatMoney } from "@/utils/format";
@@ -44,17 +39,22 @@ import { buildUniformCurrencyYAxisFormatter } from "../helpers/financeChartHelpe
 
 export interface FinanceOverviewPanelProps {
   active?: boolean;
+  days?: number;
+  refreshSeconds?: number;
+  reloadTick?: number;
+  onLoadingChange?: (loading: boolean) => void;
 }
 
 export function FinanceOverviewPanel({
   active = true,
+  days = 30,
+  refreshSeconds = 60,
+  reloadTick = 0,
+  onLoadingChange,
 }: FinanceOverviewPanelProps) {
-  const { t, locale } = useT();
-  const isZh = locale === LanguageEnum.ZH;
+  const { t } = useT();
   const navigate = useNavigate();
 
-  const [days, setDays] = useState<number>(30);
-  const [refreshSeconds, setRefreshSeconds] = useState<number>(60);
   const [loading, setLoading] = useState(false);
 
   const [overview, setOverview] = useState<FinanceOverview | null>(null);
@@ -68,6 +68,7 @@ export function FinanceOverviewPanel({
     const controller = new AbortController();
     abortRef.current = controller;
     setLoading(true);
+    onLoadingChange?.(true);
     try {
       const [ov, rk, bal] = await Promise.all([
         fetchFinanceOverview(days, controller.signal),
@@ -85,14 +86,15 @@ export function FinanceOverviewPanel({
     } finally {
       if (!controller.signal.aborted) {
         setLoading(false);
+        onLoadingChange?.(false);
       }
     }
-  }, [days, t]);
+  }, [days, onLoadingChange, t]);
 
   useEffect(() => {
     void reload();
     return () => abortRef.current?.abort();
-  }, [reload]);
+  }, [reload, reloadTick]);
 
   useEffect(() => {
     if (!active || refreshSeconds <= 0) return;
@@ -112,52 +114,7 @@ export function FinanceOverviewPanel({
     ? `${windowHint} · ${t("ops.finance.partialBadge")}`
     : windowHint;
 
-  const daysOptions = useMemo<SelectOptionItem[]>(
-    () => [
-      {
-        value: "7",
-        label: t("ops.timeRange.presets.7d"),
-        text: t("ops.timeRange.presets.7d"),
-      },
-      {
-        value: "30",
-        label: t("ops.timeRange.presets.30d"),
-        text: t("ops.timeRange.presets.30d"),
-      },
-      {
-        value: "90",
-        label: `90 ${t("ops.units.days")}`,
-        text: `90 ${t("ops.units.days")}`,
-      },
-    ],
-    [t],
-  );
 
-  const refreshOptions = useMemo<SelectOptionItem[]>(
-    () => [
-      {
-        value: "0",
-        label: isZh ? "自动刷新：关闭" : "Auto-refresh: Off",
-        text: isZh ? "自动刷新：关闭" : "Auto-refresh: Off",
-      },
-      {
-        value: "30",
-        label: isZh ? "每 30 秒" : "Every 30s",
-        text: isZh ? "每 30 秒" : "Every 30s",
-      },
-      {
-        value: "60",
-        label: isZh ? "每 60 秒" : "Every 60s",
-        text: isZh ? "每 60 秒" : "Every 60s",
-      },
-      {
-        value: "300",
-        label: isZh ? "每 5 分钟" : "Every 5m",
-        text: isZh ? "每 5 分钟" : "Every 5m",
-      },
-    ],
-    [isZh],
-  );
 
   const dayList = useMemo(() => overview?.days ?? [], [overview?.days]);
 
@@ -294,34 +251,6 @@ export function FinanceOverviewPanel({
       className="space-y-4 min-w-0"
       data-testid="billing-finance-overview-panel"
     >
-      {/* Toolbar */}
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <Select
-          value={String(days)}
-          options={daysOptions}
-          onChange={(e) => setDays(Number(e.target.value) || 30)}
-          className="w-32"
-          aria-label={t("ops.timeRange.presets.30d")}
-        />
-        <Select
-          value={String(refreshSeconds)}
-          options={refreshOptions}
-          onChange={(e) => setRefreshSeconds(Number(e.target.value) || 0)}
-          className="w-36"
-        />
-        <Button
-          type="button"
-          variant="outline"
-          size="md"
-          onClick={() => void reload()}
-          disabled={loading}
-        >
-          <RefreshCw
-            className={loading ? "h-3.5 w-3.5 animate-spin" : "h-3.5 w-3.5"}
-          />
-          {t("common.actions.refresh")}
-        </Button>
-      </div>
 
       {/* Cost Unavailable Alert */}
       {costUnavailable && (

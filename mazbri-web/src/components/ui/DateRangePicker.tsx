@@ -165,21 +165,21 @@ export function DateRangePicker({
   const effectivePresets = useMemo<readonly DateRangePreset[]>(
     () =>
       presets ?? [
+        {
+          key: "15m",
+          label: tx("近 15 分钟", "Last 15m"),
+          durationMs: 15 * 60_000,
+        },
         { key: "1h", label: tx("近 1 小时", "Last 1h"), durationMs: 3_600_000 },
+        {
+          key: "6h",
+          label: tx("近 6 小时", "Last 6h"),
+          durationMs: 6 * 3_600_000,
+        },
         {
           key: "24h",
           label: tx("近 24 小时", "Last 24h"),
           durationMs: 86_400_000,
-        },
-        {
-          key: "7d",
-          label: tx("近 7 天", "Last 7d"),
-          durationMs: 7 * 86_400_000,
-        },
-        {
-          key: "30d",
-          label: tx("近 30 天", "Last 30d"),
-          durationMs: 30 * 86_400_000,
         },
       ],
     [presets, tx],

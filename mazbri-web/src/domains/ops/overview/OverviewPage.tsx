@@ -21,6 +21,7 @@ import {
   isMetricSeriesZeroOrEmpty,
   type MetricPointClick,
 } from "@/components/charts";
+import { PageHeaderActions } from "@/components/layout";
 import { Button, Card, cn } from "@/components/ui";
 import { fetchAlertSummary } from "@/api/alerts";
 import { fetchPlatformInventory } from "@/api/analytics";
@@ -405,41 +406,41 @@ export function OverviewPage() {
         </div>
       )}
 
+      <PageHeaderActions>
+        <OpsTimeBar
+          className="xl:flex-nowrap"
+          value={timeRange}
+          onChange={setTimeRange}
+          refreshInterval={refreshInterval}
+          onRefreshIntervalChange={setRefreshInterval}
+          onRefresh={() => void reload()}
+          loading={loading}
+          extra={
+            isBiz ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  void navigate("/operations/bills?tab=overview")
+                }
+              >
+                <span>{t("ops.overview.financeShortcut")}</span>
+              </Button>
+            ) : undefined
+          }
+        />
+      </PageHeaderActions>
+
       {/* Window KPI section */}
       <section className="space-y-2.5">
-        <div className="flex items-center justify-between gap-3 flex-wrap xl:flex-nowrap">
-          <div className="flex items-baseline gap-2.5 min-w-0">
-            <h2 className="text-sm font-semibold text-foreground shrink-0 whitespace-nowrap">
-              {t("ops.overview.sections.kpi")}
-            </h2>
-            <span className="text-xs text-muted-foreground font-mono-tech truncate">
-              {windowSemantics}
-            </span>
-          </div>
-
-          <OpsTimeBar
-            className="xl:flex-nowrap"
-            value={timeRange}
-            onChange={setTimeRange}
-            refreshInterval={refreshInterval}
-            onRefreshIntervalChange={setRefreshInterval}
-            onRefresh={() => void reload()}
-            loading={loading}
-            extra={
-              isBiz ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="md"
-                  onClick={() =>
-                    void navigate("/operations/bills?tab=overview")
-                  }
-                >
-                  <span>{t("ops.overview.financeShortcut")}</span>
-                </Button>
-              ) : undefined
-            }
-          />
+        <div className="flex items-baseline gap-2.5 min-w-0">
+          <h2 className="text-sm font-semibold text-foreground shrink-0 whitespace-nowrap">
+            {t("ops.overview.sections.kpi")}
+          </h2>
+          <span className="text-xs text-muted-foreground font-mono-tech truncate">
+            {windowSemantics}
+          </span>
         </div>
 
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">

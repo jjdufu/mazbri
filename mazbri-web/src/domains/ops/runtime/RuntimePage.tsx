@@ -59,25 +59,31 @@ export function RuntimePage() {
 
   return (
     <div className="flex flex-col flex-1 min-h-0 gap-4 min-w-0">
-      {tabOptions.length > 1 && (
-        <PageHeaderActions>
-          <Tabs
-            variant="inline"
-            items={tabOptions}
-            value={activeTab}
-            onChange={setActiveTab}
+      <PageHeaderActions>
+        <div className="flex flex-wrap items-center justify-end gap-2.5">
+          <OpsTimeBar
+            value={timeRange}
+            onChange={setTimeRange}
+            refreshInterval={refreshInterval}
+            onRefreshIntervalChange={setRefreshInterval}
+            onRefresh={() => setReloadTick((v) => v + 1)}
           />
-        </PageHeaderActions>
-      )}
-      <div className="flex flex-wrap items-center justify-end gap-2 shrink-0">
-        <OpsTimeBar
-          value={timeRange}
-          onChange={setTimeRange}
-          refreshInterval={refreshInterval}
-          onRefreshIntervalChange={setRefreshInterval}
-          onRefresh={() => setReloadTick((v) => v + 1)}
-        />
-      </div>
+          {tabOptions.length > 1 && (
+            <>
+              <span
+                className="hidden sm:inline-block h-4 w-px bg-border-subtle"
+                aria-hidden="true"
+              />
+              <Tabs
+                variant="inline"
+                items={tabOptions}
+                value={activeTab}
+                onChange={setActiveTab}
+              />
+            </>
+          )}
+        </div>
+      </PageHeaderActions>
 
       {activeTab === "apps" && (
         <HealthPanel
@@ -88,7 +94,7 @@ export function RuntimePage() {
       )}
 
       {activeTab === "middleware" && (
-        <div className="flex flex-col flex-1 min-h-0 gap-4 min-w-0">
+        <div className="space-y-4 min-w-0">
           <HealthPanel
             mode="infra"
             timeRange={timeRange}
@@ -104,7 +110,7 @@ export function RuntimePage() {
       )}
 
       {activeTab === "pipeline" && (
-        <div className="flex flex-col flex-1 min-h-0 gap-4 min-w-0">
+        <div className="space-y-4 min-w-0">
           {isBiz && (
             <>
               <BillingPipelinePanel

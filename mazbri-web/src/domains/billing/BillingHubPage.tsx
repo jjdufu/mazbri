@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { BarChart3, CheckSquare, FileText } from "lucide-react";
 import { PageHeaderActions } from "@/components/layout";
-import { Tabs, type TabOption } from "@/components/ui";
+import { Select, Tabs, type SelectOptionItem, type TabOption } from "@/components/ui";
+import { AutoRefreshControl } from "@/domains/ops/shared/OpsTimeBar";
 import { useT } from "@/locales";
 import { BillListPanel } from "./panels/BillListPanel";
 import { FinanceOverviewPanel } from "./panels/FinanceOverviewPanel";
@@ -22,6 +23,11 @@ export function BillingHubPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const rawTab = searchParams.get("tab");
   const activeTab = resolveTab(rawTab);
+
+  const [overviewDays, setOverviewDays] = useState<number>(30);
+  const [overviewRefresh, setOverviewRefresh] = useState<number>(60);
+  const [overviewReloadTick, setOverviewReloadTick] = useState<number>(0);
+  const [overviewLoading, setOverviewLoading] = useState<boolean>(false);
 
   const [visited, setVisited] = useState<Set<BillingHubTab>>(
     () => new Set([activeTab]),
@@ -48,6 +54,27 @@ export function BillingHubPage() {
       );
     },
     [setSearchParams],
+  );
+
+  const daysOptions = useMemo<SelectOptionItem[]>(
+    () => [
+      {
+        value: "7",
+        label: `7 ${t("ops.units.days")}`,
+        text: `7 ${t("ops.units.days")}`,
+      },
+      {
+        value: "30",
+        label: `30 ${t("ops.units.days")}`,
+        text: `30 ${t("ops.units.days")}`,
+      },
+      {
+        value: "90",
+        label: `90 ${t("ops.units.days")}`,
+        text: `90 ${t("ops.units.days")}`,
+      },
+    ],
+    [t],
   );
 
   const tabs = useMemo<TabOption<BillingHubTab>[]>(
@@ -80,12 +107,38 @@ export function BillingHubPage() {
       data-testid="billing-hub-page"
     >
       <PageHeaderActions>
-        <Tabs
-          variant="inline"
-          items={tabs}
-          value={activeTab}
-          onChange={handleTabChange}
-        />
+        <div className="flex flex-wrap items-center justify-end gap-2.5">
+          {activeTab === "overview" && (
+            <>
+              <div className="flex items-center gap-1.5">
+                <Select
+                  value={String(overviewDays)}
+                  options={daysOptions}
+                  onChange={(e) => setOverviewDays(Number(e.target.value) || 30)}
+                  className="w-24"
+                  aria-label={t("ops.units.days")}
+                />
+                <AutoRefreshControl
+                  refreshInterval={overviewRefresh}
+                  onRefreshIntervalChange={setOverviewRefresh}
+                  onRefresh={() => setOverviewReloadTick((n) => n + 1)}
+                  loading={overviewLoading}
+                  includeFiveMinutes
+                />
+              </div>
+              <span
+                className="hidden sm:inline-block h-4 w-px bg-border-subtle"
+                aria-hidden="true"
+              />
+            </>
+          )}
+          <Tabs
+            variant="inline"
+            items={tabs}
+            value={activeTab}
+            onChange={handleTabChange}
+          />
+        </div>
       </PageHeaderActions>
 
       {visited.has("overview") && (
@@ -94,7 +147,13 @@ export function BillingHubPage() {
             activeTab === "overview" ? "flex flex-col flex-1 min-h-0" : "hidden"
           }
         >
-          <FinanceOverviewPanel active={activeTab === "overview"} />
+          <FinanceOverviewPanel
+            active={activeTab === "overview"}
+            days={overviewDays}
+            refreshSeconds={overviewRefresh}
+            reloadTick={overviewReloadTick}
+            onLoadingChange={setOverviewLoading}
+          />
         </div>
       )}
 

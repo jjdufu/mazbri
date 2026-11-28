@@ -1,23 +1,26 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
-import { Info, Plus, RefreshCw, Search } from "lucide-react";
+import { Info, Plus, RefreshCw } from "lucide-react";
 import {
-  Badge,
+  ActionChip,
   Button,
   ConfirmDialog,
   DataTablePage,
   FormDrawer,
   FormField,
   Input,
+  ListQueryBar,
   NumberInput,
   SegmentedControl,
   Select,
+  StatusBadge,
   Switch,
   Textarea,
   Tooltip,
   type DataTableColumn,
-  type SelectOptionItem,
 } from "@/components/ui";
+import { alertRulesCatalog } from "@/list-catalog/common-resources";
+import type { ListFilter } from "@/types/list-query";
 import {
   createAlertRule,
   deleteAlertRule,
@@ -87,12 +90,10 @@ const emptyForm = (): RuleFormState => ({
   enabled: true,
 });
 
-function severityBadgeVariant(
-  severity: AlertSeverity,
-): "danger" | "warning" | "neutral" {
-  if (severity === "critical") return "danger";
-  if (severity === "warning") return "warning";
-  return "neutral";
+function severityStatusKey(severity: AlertSeverity): string {
+  if (severity === "critical") return "ERROR";
+  if (severity === "warning") return "WARNING";
+  return "DRAFT";
 }
 
 function LabelWithHint({ label, hint }: { label: string; hint: string }) {
@@ -116,11 +117,9 @@ export function AlertRulesPanel() {
   const [loading, setLoading] = useState(false);
   const [rules, setRules] = useState<AlertRule[]>([]);
   const [keyword, setKeyword] = useState("");
-  const [severityFilter, setSeverityFilter] = useState<AlertSeverity | "">("");
-  const [kindFilter, setKindFilter] = useState<AlertRuleKind | "">("");
-  const [enabledFilter, setEnabledFilter] = useState<"" | "enabled" | "disabled">(
-    "",
-  );
+  const [listFilters, setListFilters] = useState<ListFilter[]>([]);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -147,13 +146,38 @@ export function AlertRulesPanel() {
     void reload();
   }, [reload]);
 
+  const onlyEnabledActive = useMemo(
+    () => listFilters.some((f) => f.field === "enabled" && f.value === "enabled"),
+    [listFilters],
+  );
+
+  const toggleOnlyEnabled = () => {
+    setListFilters((prev) => {
+      const rest = prev.filter((f) => f.field !== "enabled");
+      return onlyEnabledActive
+        ? rest
+        : [...rest, { field: "enabled", op: "eq", value: "enabled" }];
+    });
+    setPage(1);
+  };
+
   const filteredRules = useMemo(() => {
     const q = keyword.trim().toLowerCase();
     return rules.filter((r) => {
-      if (severityFilter && r.severity !== severityFilter) return false;
-      if (kindFilter && r.kind !== kindFilter) return false;
-      if (enabledFilter === "enabled" && !r.enabled) return false;
-      if (enabledFilter === "disabled" && r.enabled) return false;
+      for (const f of listFilters) {
+        const val = String(f.value ?? "");
+        if (f.field === "severity" && r.severity !== val) return false;
+        if (f.field === "kind" && r.kind !== val) return false;
+        if (f.field === "enabled") {
+          if (val === "enabled" && !r.enabled) return false;
+          if (val === "disabled" && r.enabled) return false;
+        }
+        if (f.field === "name") {
+          const needle = val.toLowerCase();
+          if (f.op === "eq" && r.name.toLowerCase() !== needle) return false;
+          if (!r.name.toLowerCase().includes(needle)) return false;
+        }
+      }
       if (
         q &&
         !r.name.toLowerCase().includes(q) &&
@@ -163,7 +187,12 @@ export function AlertRulesPanel() {
       }
       return true;
     });
-  }, [rules, keyword, severityFilter, kindFilter, enabledFilter]);
+  }, [rules, keyword, listFilters]);
+
+  const pagedRules = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filteredRules.slice(start, start + pageSize);
+  }, [filteredRules, page, pageSize]);
 
   const drillRouteOf = useCallback(
     (rule: AlertRule) =>
@@ -283,55 +312,7 @@ export function AlertRulesPanel() {
     }
   };
 
-  const severityFilterOptions = useMemo<SelectOptionItem[]>(
-    () => [
-      {
-        value: "",
-        label: `${t("ops.alerts.filters.severity")}: ${t("common.all")}`,
-        text: t("common.all"),
-      },
-      ...ALERT_SEVERITIES.map((s) => ({
-        value: s,
-        label: t(`ops.alerts.severity.${s}`),
-        text: t(`ops.alerts.severity.${s}`),
-      })),
-    ],
-    [t],
-  );
 
-  const kindFilterOptions = useMemo<SelectOptionItem[]>(
-    () => [
-      {
-        value: "",
-        label: `${t("ops.alerts.rules.form.kind")}: ${t("common.all")}`,
-        text: t("common.all"),
-      },
-      { value: "promql", label: "PromQL", text: "PromQL" },
-      { value: "olap", label: "OLAP", text: "OLAP" },
-    ],
-    [t],
-  );
-
-  const enabledFilterOptions = useMemo<SelectOptionItem[]>(
-    () => [
-      {
-        value: "",
-        label: `${t("ops.alerts.columns.status")}: ${t("common.all")}`,
-        text: t("common.all"),
-      },
-      {
-        value: "enabled",
-        label: t("common.status.enabled"),
-        text: t("common.status.enabled"),
-      },
-      {
-        value: "disabled",
-        label: t("common.status.disabled"),
-        text: t("common.status.disabled"),
-      },
-    ],
-    [t],
-  );
 
   const columns = useMemo<DataTableColumn<AlertRule>[]>(() => {
     const cols: DataTableColumn<AlertRule>[] = [
@@ -359,11 +340,12 @@ export function AlertRulesPanel() {
       {
         id: "severity",
         header: t("ops.alerts.rules.columns.severity"),
-        width: 80,
+        width: 84,
         cell: (row) => (
-          <Badge variant={severityBadgeVariant(row.severity)}>
-            {t(`ops.alerts.severity.${row.severity}`)}
-          </Badge>
+          <StatusBadge
+            status={severityStatusKey(row.severity)}
+            label={t(`ops.alerts.severity.${row.severity}`)}
+          />
         ),
       },
       {
@@ -482,54 +464,43 @@ export function AlertRulesPanel() {
     <div className="flex flex-col flex-1 min-h-0 gap-4 min-w-0">
       <DataTablePage
         columns={columns}
-        data={filteredRules}
+        data={pagedRules}
         getRowId={(r) => r.id}
         loading={loading}
         emptyText={t("ops.charts.empty")}
+        page={page}
+        pageSize={pageSize}
+        total={filteredRules.length}
+        pageSizeOptions={[10, 20, 50]}
+        onPageChange={setPage}
+        onPageSizeChange={(next) => {
+          setPageSize(next);
+          setPage(1);
+        }}
         filters={
-          <>
-            <div className="relative flex items-center w-56">
-              <Search className="pointer-events-none absolute left-2.5 h-3.5 w-3.5 text-muted-foreground" />
-              <Input
-                value={keyword}
-                onChange={(e) => setKeyword(e.target.value)}
-                placeholder={t("common.search")}
-                className="pl-8"
-              />
-            </div>
-
-            <Select
-              value={severityFilter}
-              options={severityFilterOptions}
-              placeholder={t("ops.alerts.filters.severity")}
-              onChange={(e) =>
-                setSeverityFilter(e.target.value as AlertSeverity | "")
-              }
-              className="w-36"
+          <div className="flex flex-wrap items-center gap-2">
+            <ListQueryBar
+              q={keyword}
+              onQChange={(next) => {
+                setKeyword(next);
+                setPage(1);
+              }}
+              filters={listFilters}
+              onFiltersChange={(next) => {
+                setListFilters(next);
+                setPage(1);
+              }}
+              catalog={alertRulesCatalog}
+              onSearch={() => setPage(1)}
             />
-
-            <Select
-              value={kindFilter}
-              options={kindFilterOptions}
-              placeholder={t("ops.alerts.rules.form.kind")}
-              onChange={(e) =>
-                setKindFilter(e.target.value as AlertRuleKind | "")
-              }
-              className="w-36"
-            />
-
-            <Select
-              value={enabledFilter}
-              options={enabledFilterOptions}
-              placeholder={t("ops.alerts.columns.status")}
-              onChange={(e) =>
-                setEnabledFilter(
-                  e.target.value as "" | "enabled" | "disabled",
-                )
-              }
-              className="w-36"
-            />
-          </>
+            <ActionChip
+              size="sm"
+              active={onlyEnabledActive}
+              onClick={toggleOnlyEnabled}
+            >
+              {t("common.status.enabled")}
+            </ActionChip>
+          </div>
         }
         actions={
           <>

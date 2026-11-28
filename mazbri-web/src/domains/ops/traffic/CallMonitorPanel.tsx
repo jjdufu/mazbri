@@ -848,82 +848,79 @@ export function CallMonitorPanel({
         />
       </ChartCard>
 
-      {/* Unified Data Table Card: all quick filters, search, advanced filters, export & reset inside Card Header (A-08) */}
+      {/* Unified Single-Row Data Table Card Header */}
       <Card className="flex flex-col flex-1 min-h-0 overflow-hidden">
-        <div className="space-y-2.5 border-b border-border px-4 py-3 shrink-0">
-          <div className="flex flex-wrap items-center justify-between gap-2.5">
-            <div className="flex flex-wrap items-center gap-2 min-w-0">
-              {quickFilters.map((qf) => (
-                <ActionChip
-                  key={qf.id}
-                  size="sm"
-                  active={isQuickFilterActive(qf)}
-                  onClick={() => toggleQuickFilter(qf)}
-                >
-                  {t(qf.label_key)}
-                </ActionChip>
-              ))}
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2 shrink-0">
-              <Popover
-                open={exportOpen}
-                onOpenChange={setExportOpen}
-                align="right"
-                contentClassName="w-44 p-1 space-y-0.5"
-                trigger={
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="md"
-                    loading={exporting}
-                    disabled={exporting || tableData.length === 0}
-                    onClick={() => setExportOpen((v) => !v)}
-                  >
-                    <Download className="h-3.5 w-3.5" />
-                    <span>{t("operations.monitoring.actions.export")}</span>
-                  </Button>
-                }
+        <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-border-subtle px-4 py-3 shrink-0">
+          <div className="flex flex-wrap items-center gap-2 min-w-0 flex-1">
+            <StructuredFilterBar
+              q={q}
+              onQChange={setQ}
+              filters={filters}
+              onFiltersChange={setFilters}
+              catalog={listCatalog}
+              placeholder={queryPlaceholder}
+              onSearch={() => triggerSearch()}
+            />
+            {quickFilters.map((qf) => (
+              <ActionChip
+                key={qf.id}
+                size="sm"
+                active={isQuickFilterActive(qf)}
+                onClick={() => toggleQuickFilter(qf)}
               >
-                <button
-                  type="button"
-                  disabled={tableData.length === 0}
-                  onClick={() => void handleExportCommand("page")}
-                  className="w-full rounded-md px-2.5 py-1.5 text-left text-xs text-foreground hover:bg-hover-bg disabled:opacity-40 cursor-pointer"
-                >
-                  {t("operations.monitoring.actions.exportPage")}
-                </button>
-                <button
-                  type="button"
-                  disabled={total === 0 && tableData.length === 0}
-                  onClick={() => void handleExportCommand("filtered")}
-                  className="w-full rounded-md px-2.5 py-1.5 text-left text-xs text-foreground hover:bg-hover-bg disabled:opacity-40 cursor-pointer"
-                >
-                  {t("operations.monitoring.actions.exportFiltered")}
-                </button>
-              </Popover>
-
-              <Button
-                type="button"
-                variant="outline"
-                size="md"
-                onClick={handleReset}
-              >
-                <RotateCcw className="h-3.5 w-3.5" />
-                <span>{t("common.reset")}</span>
-              </Button>
-            </div>
+                {t(qf.label_key)}
+              </ActionChip>
+            ))}
           </div>
 
-          <StructuredFilterBar
-            q={q}
-            onQChange={setQ}
-            filters={filters}
-            onFiltersChange={setFilters}
-            catalog={listCatalog}
-            placeholder={queryPlaceholder}
-            onSearch={() => triggerSearch()}
-          />
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <Popover
+              open={exportOpen}
+              onOpenChange={setExportOpen}
+              align="right"
+              contentClassName="w-44 p-1 space-y-0.5"
+              trigger={
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="md"
+                  loading={exporting}
+                  disabled={exporting || tableData.length === 0}
+                  onClick={() => setExportOpen((v) => !v)}
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  <span>{t("operations.monitoring.actions.export")}</span>
+                </Button>
+              }
+            >
+              <button
+                type="button"
+                disabled={tableData.length === 0}
+                onClick={() => void handleExportCommand("page")}
+                className="w-full rounded-md px-2.5 py-1.5 text-left text-xs text-foreground hover:bg-hover-bg disabled:opacity-40 cursor-pointer"
+              >
+                {t("operations.monitoring.actions.exportPage")}
+              </button>
+              <button
+                type="button"
+                disabled={total === 0 && tableData.length === 0}
+                onClick={() => void handleExportCommand("filtered")}
+                className="w-full rounded-md px-2.5 py-1.5 text-left text-xs text-foreground hover:bg-hover-bg disabled:opacity-40 cursor-pointer"
+              >
+                {t("operations.monitoring.actions.exportFiltered")}
+              </button>
+            </Popover>
+
+            <Button
+              type="button"
+              variant="outline"
+              size="md"
+              onClick={handleReset}
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              <span>{t("common.reset")}</span>
+            </Button>
+          </div>
         </div>
 
         <div className="relative flex-1 min-h-0 overflow-auto">

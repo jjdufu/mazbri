@@ -31,9 +31,9 @@ import {
 import {
   Badge,
   Button,
-  Card,
   ConfirmDialog,
   DataTablePage,
+  DateRangePicker,
   Drawer,
   EntityDetailCard,
   FormField,
@@ -825,26 +825,8 @@ export function UsageReconciliationPanel({
       className="flex flex-col flex-1 min-h-0 gap-4 min-w-0"
       data-testid="billing-reconciliation-panel"
     >
-      {/* Calendar Bar / Card */}
-      {total === 0 ? (
-        <Card className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-          <div className="flex flex-wrap items-center gap-2 min-w-0">
-            <CalendarCheck className="h-4 w-4 shrink-0 text-primary" />
-            <span className="text-xs font-semibold text-foreground">
-              {t("ops.reconcile.calendar")}
-            </span>
-            <span className="text-xs text-muted-foreground">
-              {settingsSummaryLine}
-            </span>
-          </div>
-          <Select
-            value={String(calendarDays)}
-            options={calendarDaysOptions}
-            onChange={(e) => setCalendarDays(Number(e.target.value) || 30)}
-            className="w-28"
-          />
-        </Card>
-      ) : (
+      {/* Calendar Heatmap Card (only rendered when records exist to avoid sparse empty banner) */}
+      {calendar.length > 0 && (
         <EntityDetailCard
           title={t("ops.reconcile.calendar")}
           icon={<CalendarCheck className="h-4 w-4" />}
@@ -929,29 +911,26 @@ export function UsageReconciliationPanel({
                 setPage(1);
               }}
             />
-            <div className="inline-flex items-center gap-1.5">
-              <Input
-                type="date"
-                value={filterFrom}
-                onChange={(e) => {
-                  setFilterFrom(e.target.value);
-                  setPage(1);
-                }}
-                aria-label={t("billing.reconciliation.from")}
-                className="w-36 font-mono-tech"
-              />
-              <span className="text-xs text-muted-foreground">~</span>
-              <Input
-                type="date"
-                value={filterTo}
-                onChange={(e) => {
-                  setFilterTo(e.target.value);
-                  setPage(1);
-                }}
-                aria-label={t("billing.reconciliation.to")}
-                className="w-36 font-mono-tech"
-              />
-            </div>
+            <DateRangePicker
+              value={{
+                start: filterFrom ? `${filterFrom} 00:00:00` : "",
+                end: filterTo ? `${filterTo} 23:59:59` : "",
+              }}
+              onChange={(next) => {
+                setFilterFrom(next.start ? next.start.slice(0, 10) : "");
+                setFilterTo(next.end ? next.end.slice(0, 10) : "");
+                setPage(1);
+              }}
+              showPresets={false}
+              clearable={Boolean(filterFrom || filterTo)}
+              placeholder={t("billing.reconciliation.columns.date")}
+            />
+            {calendar.length === 0 && (
+              <span className="hidden xl:inline-flex items-center gap-1.5 rounded-md bg-muted/65 px-2.5 py-1 text-[11px] text-muted-foreground">
+                <CalendarCheck className="h-3.5 w-3.5 text-xblue shrink-0" />
+                <span className="truncate">{settingsSummaryLine}</span>
+              </span>
+            )}
           </div>
         }
         batchActions={

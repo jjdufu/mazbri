@@ -331,26 +331,25 @@ export function ConnectorDraftsTab() {
         }}
         testId="connector-drafts-table"
         filters={
-          <div className="flex items-center gap-1.5">
+          <div className="relative flex items-center w-64">
+            <Search className="pointer-events-none absolute left-2.5 h-3.5 w-3.5 text-muted-foreground" />
             <Input
               value={keywordInput}
-              onChange={(e) => setKeywordInput(e.target.value)}
+              onChange={(e) => {
+                const next = e.target.value;
+                setKeywordInput(next);
+                if (!next.trim() && appliedKeyword) {
+                  setPage(1);
+                  setAppliedKeyword("");
+                }
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter") handleSearch();
               }}
               placeholder={t("supplier.list.searchPlaceholder")}
-              className="w-56"
+              className="pl-8"
               data-testid="draft-search-input"
             />
-            <Button
-              type="button"
-              variant="outline"
-              size="md"
-              onClick={handleSearch}
-            >
-              <Search className="h-3.5 w-3.5" />
-              {t("common.fields.search")}
-            </Button>
           </div>
         }
         batchActions={

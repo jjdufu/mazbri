@@ -21,7 +21,7 @@ export interface InfraMetricsPanelProps {
 
 export function InfraMetricsPanel({
   tab,
-  noteKey,
+  noteKey: _noteKey,
   timeRange,
   reloadTick,
 }: InfraMetricsPanelProps) {
@@ -81,9 +81,7 @@ export function InfraMetricsPanel({
   }, [charts, timeRange.start, timeRange.end, reloadTick]);
 
   return (
-    <div className="space-y-3 min-w-0">
-      <div className="text-xs text-muted-foreground">{t(noteKey)}</div>
-
+    <div className="min-w-0">
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {charts.map((chart) => {
           const data = seriesMap[chart.metric] ?? null;

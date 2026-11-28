@@ -337,7 +337,14 @@ export function HealthPanel({
       : t("ops.services.infraHexagonTitle");
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 gap-4 min-w-0">
+    <div
+      className={cn(
+        "min-w-0",
+        mode === "apps"
+          ? "flex flex-col flex-1 min-h-0 gap-4"
+          : "space-y-4 shrink-0",
+      )}
+    >
       <Card className="overflow-hidden shrink-0">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
           <h3 className="text-xs font-semibold text-foreground">{cardTitle}</h3>

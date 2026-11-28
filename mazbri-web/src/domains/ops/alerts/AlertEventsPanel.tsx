@@ -1,33 +1,37 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
-import { BellOff, RefreshCw, Search, X } from "lucide-react";
+import { BellOff, X } from "lucide-react";
 import {
+  ActionChip,
   Badge,
   Button,
   CopyableText,
   DataTablePage,
+  DateRangePicker,
   Drawer,
   EmptyState,
   FormField,
   FormModal,
   IconButton,
   Input,
-  Select,
+  ListQueryBar,
+  StatusBadge,
   Textarea,
   Tooltip,
-  cn,
   type DataTableColumn,
-  type SelectOptionItem,
+  type DateRangeValue,
 } from "@/components/ui";
 import { createAlertSilence, fetchAlertEvents } from "@/api/alerts";
 import { fetchOpsChanges, type ChangeEvent } from "@/api/opsChanges";
 import { LanguageEnum } from "@/enums/appEnum";
+import { alertEventsCatalog } from "@/list-catalog/common-resources";
 import { useT } from "@/locales";
 import type {
   AlertEvent,
   AlertSeverity,
   AlertStatus,
 } from "@/types/api/alerts";
+import type { ListFilter } from "@/types/list-query";
 import { getSeverityLabel, getStatusLabel } from "@/utils/display-labels";
 import { formatDateTime, parseDisplayWallClockMs } from "@/utils/format";
 import { isMfaStepUpCancelled } from "@/utils/http/mfa-dialog-service";
@@ -46,34 +50,19 @@ import {
   isTraceExpired,
 } from "@/utils/ops/trace-link";
 import { showErrorToast, showSuccessToast } from "@/utils/ui/message-guard";
+import { AutoRefreshControl } from "../shared/OpsTimeBar";
 import { toLocationHref, useOpsRole } from "../shared/opsHelpers";
 
-function severityBadgeVariant(
-  severity: string,
-): "danger" | "warning" | "neutral" {
-  if (severity === "critical") return "danger";
-  if (severity === "warning") return "warning";
-  return "neutral";
+function severityStatusKey(severity: string): string {
+  if (severity === "critical") return "ERROR";
+  if (severity === "warning") return "WARNING";
+  return "DRAFT";
 }
 
-function statusBadgeVariant(
-  status: string,
-): "danger" | "success" | "neutral" {
-  if (status === "firing") return "danger";
-  if (status === "resolved") return "success";
-  return "neutral";
-}
-
-function toDatetimeLocal(wallClock: string): string {
-  return wallClock.slice(0, 16).replace(" ", "T");
-}
-
-function fromDatetimeLocal(localVal: string): string {
-  const normalized = localVal.trim().replace("T", " ");
-  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(normalized)) {
-    return `${normalized}:00`;
-  }
-  return normalized;
+function eventStatusKey(status: string): string {
+  if (status === "firing") return "ERROR";
+  if (status === "resolved") return "ACTIVE";
+  return "DRAFT";
 }
 
 export function AlertEventsPanel() {
@@ -82,9 +71,8 @@ export function AlertEventsPanel() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { isAdmin, isBiz, isViewer } = useOpsRole();
 
-  const [statusFilter, setStatusFilter] = useState<AlertStatus | "">("");
-  const [severityFilter, setSeverityFilter] = useState<AlertSeverity | "">("");
   const [keyword, setKeyword] = useState("");
+  const [listFilters, setListFilters] = useState<ListFilter[]>([]);
   const [refreshInterval, setRefreshInterval] = useState(30);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
@@ -98,13 +86,41 @@ export function AlertEventsPanel() {
 
   const [silenceTarget, setSilenceTarget] = useState<AlertEvent | null>(null);
   const [silenceMatchers, setSilenceMatchers] = useState("");
-  const [silenceStart, setSilenceStart] = useState("");
-  const [silenceEnd, setSilenceEnd] = useState("");
+  const [silenceWindow, setSilenceWindow] = useState<DateRangeValue>({
+    start: "",
+    end: "",
+  });
   const [silenceComment, setSilenceComment] = useState("");
   const [silenceSaving, setSilenceSaving] = useState(false);
 
   const eventIdFilter = searchParams.get("event_id")?.trim() ?? "";
   const seqRef = useRef(0);
+
+  const statusFilter = useMemo<AlertStatus | "">(() => {
+    const f = listFilters.find((item) => item.field === "status" && item.op === "eq");
+    return f && (f.value === "firing" || f.value === "resolved") ? f.value : "";
+  }, [listFilters]);
+
+  const severityFilter = useMemo<AlertSeverity | "">(() => {
+    const f = listFilters.find((item) => item.field === "severity" && item.op === "eq");
+    return f && (f.value === "critical" || f.value === "warning" || f.value === "info")
+      ? f.value
+      : "";
+  }, [listFilters]);
+
+  const ruleNameFilters = useMemo(
+    () => listFilters.filter((item) => item.field === "rule_name"),
+    [listFilters],
+  );
+
+  const toggleEnumFilter = (field: "status" | "severity", val: string) => {
+    setListFilters((prev) => {
+      const exists = prev.some((f) => f.field === field && f.value === val);
+      const rest = prev.filter((f) => f.field !== field);
+      return exists ? rest : [...rest, { field, op: "eq", value: val }];
+    });
+    setPage(1);
+  };
 
   const load = useCallback(async () => {
     const mine = ++seqRef.current;
@@ -142,8 +158,13 @@ export function AlertEventsPanel() {
 
   const filteredRows = useMemo(() => {
     const q = keyword.trim().toLowerCase();
-    if (!q) return rows;
     return rows.filter((row) => {
+      for (const rf of ruleNameFilters) {
+        const needle = String(rf.value ?? "").toLowerCase();
+        if (rf.op === "eq" && row.rule_name.toLowerCase() !== needle) return false;
+        if (!row.rule_name.toLowerCase().includes(needle)) return false;
+      }
+      if (!q) return true;
       const labelsText = formatAlertLabels(row.labels, "").toLowerCase();
       return (
         row.rule_name.toLowerCase().includes(q) ||
@@ -151,7 +172,7 @@ export function AlertEventsPanel() {
         row.fingerprint.toLowerCase().includes(q)
       );
     });
-  }, [rows, keyword]);
+  }, [rows, keyword, ruleNameFilters]);
 
   const openDetailDrawer = (row: AlertEvent) => {
     setSelected(row);
@@ -183,8 +204,10 @@ export function AlertEventsPanel() {
         Object.keys(matchers).length > 0 ? matchers : row.labels ?? {},
       ),
     );
-    setSilenceStart(toDatetimeLocal(formatDateTime(now)));
-    setSilenceEnd(toDatetimeLocal(formatDateTime(end)));
+    setSilenceWindow({
+      start: formatDateTime(now),
+      end: formatDateTime(end),
+    });
     setSilenceComment(row.rule_name);
     setSilenceTarget(row);
   };
@@ -196,8 +219,8 @@ export function AlertEventsPanel() {
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
         throw new Error(t("ops.alerts.rules.form.labelsInvalid"));
       }
-      const startMs = parseDisplayWallClockMs(fromDatetimeLocal(silenceStart));
-      const endMs = parseDisplayWallClockMs(fromDatetimeLocal(silenceEnd));
+      const startMs = parseDisplayWallClockMs(silenceWindow.start);
+      const endMs = parseDisplayWallClockMs(silenceWindow.end);
       if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
         throw new Error(t("ops.alerts.silences.window"));
       }
@@ -253,99 +276,29 @@ export function AlertEventsPanel() {
     [t],
   );
 
-  const statusOptions = useMemo<SelectOptionItem[]>(
-    () => [
-      {
-        value: "",
-        label: `${t("ops.alerts.filters.status")}: ${t("common.all")}`,
-        text: t("common.all"),
-      },
-      {
-        value: "firing",
-        label: t("ops.alerts.status.firing"),
-        text: t("ops.alerts.status.firing"),
-      },
-      {
-        value: "resolved",
-        label: t("ops.alerts.status.resolved"),
-        text: t("ops.alerts.status.resolved"),
-      },
-    ],
-    [t],
-  );
-
-  const severityOptions = useMemo<SelectOptionItem[]>(
-    () => [
-      {
-        value: "",
-        label: `${t("ops.alerts.filters.severity")}: ${t("common.all")}`,
-        text: t("common.all"),
-      },
-      {
-        value: "critical",
-        label: t("ops.alerts.severity.critical"),
-        text: t("ops.alerts.severity.critical"),
-      },
-      {
-        value: "warning",
-        label: t("ops.alerts.severity.warning"),
-        text: t("ops.alerts.severity.warning"),
-      },
-      {
-        value: "info",
-        label: t("ops.alerts.severity.info"),
-        text: t("ops.alerts.severity.info"),
-      },
-    ],
-    [t],
-  );
-
-  const refreshOptions = useMemo<SelectOptionItem[]>(
-    () => [
-      {
-        value: "0",
-        label: t("ops.autoRefresh.off"),
-        text: t("ops.autoRefresh.off"),
-      },
-      {
-        value: "30",
-        label: t("ops.autoRefresh.thirtySeconds"),
-        text: t("ops.autoRefresh.thirtySeconds"),
-      },
-      {
-        value: "60",
-        label: t("ops.autoRefresh.oneMinute"),
-        text: t("ops.autoRefresh.oneMinute"),
-      },
-    ],
-    [t],
-  );
-
   const columns = useMemo<DataTableColumn<AlertEvent>[]>(
     () => [
       {
         id: "severity",
         header: t("ops.alerts.columns.severity"),
-        width: 68,
-        className: "px-2",
-        headerClassName: "px-2",
+        width: 84,
         cell: (row) => (
-          <Badge variant={severityBadgeVariant(row.severity)}>
-            {severityText(row.severity)}
-          </Badge>
+          <StatusBadge
+            status={severityStatusKey(row.severity)}
+            label={severityText(row.severity)}
+          />
         ),
       },
       {
         id: "status",
         header: t("ops.alerts.columns.status"),
-        minWidth: 84,
-        className: "px-2",
-        headerClassName: "px-2",
+        minWidth: 100,
         cell: (row) => (
           <div className="flex flex-wrap items-center gap-1">
-            <Badge variant={statusBadgeVariant(row.status)}>
-              {statusText(row.status)}
-            </Badge>
+            <StatusBadge
+              status={eventStatusKey(row.status)}
+              label={statusText(row.status)}
+            />
             {row.silenced && (
               <Badge variant="neutral">{t("ops.alerts.silenced")}</Badge>
             )}
@@ -358,9 +311,7 @@ export function AlertEventsPanel() {
       {
         id: "rule_name",
         header: t("ops.alerts.columns.rule"),
-        minWidth: 112,
-        className: "px-2",
-        headerClassName: "px-2",
+        minWidth: 128,
         cell: (row) => (
           <span className="font-medium text-foreground">{row.rule_name}</span>
         ),
@@ -368,12 +319,10 @@ export function AlertEventsPanel() {
       {
         id: "labels",
         header: t("ops.alerts.columns.labels"),
-        minWidth: 130,
-        className: "px-2",
-        headerClassName: "px-2",
+        minWidth: 150,
         cell: (row) => (
           <span
-            className="block max-w-[155px] truncate font-mono-tech text-muted-foreground"
+            className="block max-w-[180px] truncate font-mono-tech text-muted-foreground"
             title={formatAlertLabels(row.labels)}
           >
             {formatAlertLabels(row.labels)}
@@ -383,9 +332,7 @@ export function AlertEventsPanel() {
       {
         id: "trace_ids",
         header: t("ops.traces.traceIds"),
-        minWidth: 124,
-        className: "px-2",
-        headerClassName: "px-2",
+        minWidth: 128,
         cell: (row) => {
           if (!row.trace_ids?.length) return "—";
           return (
@@ -455,39 +402,35 @@ export function AlertEventsPanel() {
       {
         id: "value",
         header: t("ops.alerts.columns.value"),
-        minWidth: 88,
+        minWidth: 96,
         align: "right",
         mono: true,
-        className: "px-2 pr-4 whitespace-nowrap",
-        headerClassName: "px-2 pr-4",
+        className: "whitespace-nowrap",
         cell: (row) =>
           `${formatAlertValue(row.value)} ${row.op} ${formatAlertValue(row.threshold)}`,
       },
       {
         id: "started_at",
         header: t("ops.alerts.columns.startedAt"),
-        width: 136,
+        width: 152,
         mono: true,
-        className: "whitespace-nowrap text-[11px] px-2",
-        headerClassName: "px-2",
+        className: "whitespace-nowrap",
         cell: (row) => formatAlertTime(row.started_at),
       },
       {
         id: "resolved_at",
         header: t("ops.alerts.columns.resolvedAt"),
-        width: 136,
+        width: 152,
         mono: true,
-        className: "whitespace-nowrap text-[11px] px-2",
-        headerClassName: "px-2",
+        className: "whitespace-nowrap",
         cell: (row) => (row.resolved_at ? formatAlertTime(row.resolved_at) : "—"),
       },
       {
         id: "actions",
         header: t("ops.alerts.columns.actions"),
-        width: 132,
+        width: 140,
         align: "right",
-        className: "px-2 whitespace-nowrap",
-        headerClassName: "px-2",
+        className: "whitespace-nowrap",
         cell: (row) => {
           const drillTarget = drillRouteOf(row);
           return (
@@ -563,38 +506,34 @@ export function AlertEventsPanel() {
           setPage(1);
         }}
         filters={
-          <>
-            <div className="relative flex items-center w-52">
-              <Search className="pointer-events-none absolute left-2.5 h-3.5 w-3.5 text-muted-foreground" />
-              <Input
-                value={keyword}
-                onChange={(e) => setKeyword(e.target.value)}
-                placeholder={t("common.search")}
-                className="pl-8"
-              />
-            </div>
-
-            <Select
-              value={statusFilter}
-              options={statusOptions}
-              placeholder={t("ops.alerts.filters.status")}
-              onChange={(e) => {
-                setStatusFilter(e.target.value as AlertStatus | "");
+          <div className="flex flex-wrap items-center gap-2">
+            <ListQueryBar
+              q={keyword}
+              onQChange={setKeyword}
+              filters={listFilters}
+              onFiltersChange={(next) => {
+                setListFilters(next);
                 setPage(1);
               }}
-              className="w-36"
+              catalog={alertEventsCatalog}
+              onSearch={() => setPage(1)}
             />
 
-            <Select
-              value={severityFilter}
-              options={severityOptions}
-              placeholder={t("ops.alerts.filters.severity")}
-              onChange={(e) => {
-                setSeverityFilter(e.target.value as AlertSeverity | "");
-                setPage(1);
-              }}
-              className="w-36"
-            />
+            <ActionChip
+              size="sm"
+              active={statusFilter === "firing"}
+              onClick={() => toggleEnumFilter("status", "firing")}
+            >
+              {t("ops.alerts.status.firing")}
+            </ActionChip>
+
+            <ActionChip
+              size="sm"
+              active={severityFilter === "critical"}
+              onClick={() => toggleEnumFilter("severity", "critical")}
+            >
+              {t("ops.alerts.severity.critical")}
+            </ActionChip>
 
             {eventIdFilter && (
               <span className="inline-flex h-8 items-center gap-1.5 rounded-md border border-primary/35 bg-primary-soft px-2.5 text-xs text-primary font-mono-tech">
@@ -611,28 +550,15 @@ export function AlertEventsPanel() {
                 </button>
               </span>
             )}
-          </>
+          </div>
         }
         actions={
-          <>
-            <Select
-              value={String(refreshInterval)}
-              options={refreshOptions}
-              onChange={(e) => setRefreshInterval(Number(e.target.value))}
-              aria-label={t("ops.autoRefresh.label")}
-              className="w-32"
-            />
-            <Button
-              type="button"
-              variant="outline"
-              size="md"
-              loading={loading}
-              onClick={() => void load()}
-            >
-              <RefreshCw className="h-3.5 w-3.5" />
-              <span>{t("common.actions.refresh")}</span>
-            </Button>
-          </>
+          <AutoRefreshControl
+            refreshInterval={refreshInterval}
+            onRefreshIntervalChange={setRefreshInterval}
+            onRefresh={() => void load()}
+            loading={loading}
+          />
         }
       />
 
@@ -686,9 +612,10 @@ export function AlertEventsPanel() {
                   {t("ops.alerts.columns.severity")}
                 </dt>
                 <dd className="col-span-8">
-                  <Badge variant={severityBadgeVariant(selected.severity)}>
-                    {severityText(selected.severity)}
-                  </Badge>
+                  <StatusBadge
+                    status={severityStatusKey(selected.severity)}
+                    label={severityText(selected.severity)}
+                  />
                 </dd>
               </div>
               <div className="grid grid-cols-12 gap-2 px-3 py-2">
@@ -696,9 +623,10 @@ export function AlertEventsPanel() {
                   {t("ops.alerts.columns.status")}
                 </dt>
                 <dd className="col-span-8 flex flex-wrap gap-1">
-                  <Badge variant={statusBadgeVariant(selected.status)}>
-                    {statusText(selected.status)}
-                  </Badge>
+                  <StatusBadge
+                    status={eventStatusKey(selected.status)}
+                    label={statusText(selected.status)}
+                  />
                   {selected.silenced && (
                     <Badge variant="neutral">{t("ops.alerts.silenced")}</Badge>
                   )}
@@ -799,30 +727,14 @@ export function AlertEventsPanel() {
             placeholder='{"product_id":"A"}'
           />
         </FormField>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <FormField
-            label={t("ops.alerts.silences.startsAt")}
-            required
-          >
-            <input
-              type="datetime-local"
-              value={silenceStart}
-              onChange={(e) => setSilenceStart(e.target.value)}
-              className="flex h-8 w-full rounded-md border border-input bg-card px-2.5 text-xs font-mono-tech text-foreground hover:border-border-hover focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/30"
-            />
-          </FormField>
-          <FormField
-            label={t("ops.alerts.silences.endsAt")}
-            required
-          >
-            <input
-              type="datetime-local"
-              value={silenceEnd}
-              onChange={(e) => setSilenceEnd(e.target.value)}
-              className="flex h-8 w-full rounded-md border border-input bg-card px-2.5 text-xs font-mono-tech text-foreground hover:border-border-hover focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/30"
-            />
-          </FormField>
-        </div>
+        <FormField label={t("ops.alerts.silences.window")} required>
+          <DateRangePicker
+            value={silenceWindow}
+            onChange={setSilenceWindow}
+            showPresets={false}
+            className="w-full justify-between"
+          />
+        </FormField>
         <FormField label={t("ops.alerts.silences.comment")}>
           <Input
             value={silenceComment}

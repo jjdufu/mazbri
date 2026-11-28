@@ -545,6 +545,25 @@ export function TrafficTracesPanel({
         }}
         filters={
           <div className="flex flex-wrap items-center gap-2">
+            <StructuredFilterBar
+              q={keyword}
+              onQChange={setKeyword}
+              filters={listFilters}
+              onFiltersChange={setListFilters}
+              catalog={tracesCatalog}
+              onSearch={() => {
+                setPage(1);
+                void runSearch({
+                  reqPage: 1,
+                  reqPageSize: pageSize,
+                  reqKeyword: keyword,
+                  reqFilters: listFilters,
+                  reqErrorsOnly: errorsOnly,
+                  reqIncludeInternal: includeInternal,
+                });
+              }}
+            />
+
             <ActionChip
               size="sm"
               active={errorsOnly}
@@ -565,7 +584,7 @@ export function TrafficTracesPanel({
               {t("ops.traces.form.errorsOnly")}
             </ActionChip>
 
-            <label className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-xs text-foreground cursor-pointer select-none">
+            <label className="inline-flex h-8 items-center gap-1.5 rounded-md border border-control-border bg-control-bg hover:bg-control-hover hover:border-border-hover px-2.5 text-xs text-foreground cursor-pointer select-none transition-colors">
               <input
                 type="checkbox"
                 checked={includeInternal}
@@ -585,25 +604,6 @@ export function TrafficTracesPanel({
               />
               <span>{t("ops.traces.form.includeInternal")}</span>
             </label>
-
-            <StructuredFilterBar
-              q={keyword}
-              onQChange={setKeyword}
-              filters={listFilters}
-              onFiltersChange={setListFilters}
-              catalog={tracesCatalog}
-              onSearch={() => {
-                setPage(1);
-                void runSearch({
-                  reqPage: 1,
-                  reqPageSize: pageSize,
-                  reqKeyword: keyword,
-                  reqFilters: listFilters,
-                  reqErrorsOnly: errorsOnly,
-                  reqIncludeInternal: includeInternal,
-                });
-              }}
-            />
           </div>
         }
         actions={
