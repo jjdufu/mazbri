@@ -469,8 +469,7 @@ export function LoginPage() {
 
   const themeTooltip = formatThemeTooltip(theme, locale === LanguageEnum.ZH);
 
-  const localeTooltip =
-    locale === LanguageEnum.ZH ? "Switch to English" : "切换为中文";
+  const localeTooltip = locale === LanguageEnum.ZH ? "English" : "中文";
 
   return (
     <div className="min-h-screen w-full flex bg-canvas-bg text-foreground">
@@ -488,9 +487,6 @@ export function LoginPage() {
           <h1 className="text-2xl font-semibold tracking-tight text-white leading-snug">
             {t("login.leftView.title")}
           </h1>
-          <p className="text-sm text-slate-300 leading-relaxed">
-            {t("login.leftView.subTitle")}
-          </p>
         </div>
 
         <div className="text-xs text-slate-400 font-mono-tech">
@@ -510,19 +506,17 @@ export function LoginPage() {
           </div>
 
           <div className="flex items-center gap-1.5">
-            <Tooltip content={localeTooltip} side="bottom">
-              <Button
-                type="button"
-                variant="ghost"
-                size="md"
-                onClick={toggleLocale}
-                aria-label={localeTooltip}
-                data-testid="login-locale-btn"
-                className="px-2 font-mono-tech text-xs"
-              >
-                {locale === LanguageEnum.ZH ? "中/EN" : "EN/中"}
-              </Button>
-            </Tooltip>
+            <Button
+              type="button"
+              variant="ghost"
+              size="md"
+              onClick={toggleLocale}
+              aria-label={localeTooltip}
+              data-testid="login-locale-btn"
+              className="px-2 font-mono-tech text-xs"
+            >
+              {locale === LanguageEnum.ZH ? "中/EN" : "EN/中"}
+            </Button>
 
             <Tooltip content={themeTooltip} side="bottom">
               <IconButton
@@ -550,13 +544,10 @@ export function LoginPage() {
                 onSubmit={(e) => void handleLoginSubmit(e)}
                 className="space-y-4"
               >
-                <div className="space-y-1">
+                <div>
                   <h2 className="text-lg font-semibold text-foreground">
                     {t("login.title")}
                   </h2>
-                  <p className="text-xs text-muted-foreground">
-                    {t("login.subTitle")}
-                  </p>
                 </div>
 
                 <FormField
@@ -742,13 +733,10 @@ export function LoginPage() {
                 onSubmit={(e) => void handleMfaSetupEnable(e)}
                 className="space-y-4"
               >
-                <div className="space-y-1 text-center">
+                <div className="text-center">
                   <h2 className="text-lg font-semibold text-foreground">
                     {t("login.mfaSetup.title")}
                   </h2>
-                  <p className="text-xs text-muted-foreground">
-                    {t("login.mfaSetup.subTitle")}
-                  </p>
                 </div>
 
                 <div className="flex justify-center">
@@ -793,11 +781,6 @@ export function LoginPage() {
 
                 <FormField
                   label={t("login.mfaSetup.codePlaceholder")}
-                  hint={
-                    mfaSetupData.secret
-                      ? t("login.mfaSetup.codeHint", { digits: totpDigits })
-                      : undefined
-                  }
                   required
                 >
                   <Input
@@ -884,16 +867,11 @@ export function LoginPage() {
                 onSubmit={(e) => void handleMfaVerifySubmit(e)}
                 className="space-y-4"
               >
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <KeyRound className="h-4 w-4 text-xblue" />
-                    <h2 className="text-lg font-semibold text-foreground">
-                      {t("login.mfa.title")}
-                    </h2>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {t("login.mfa.subTitle")}
-                  </p>
+                <div className="flex items-center gap-2">
+                  <KeyRound className="h-4 w-4 text-xblue" />
+                  <h2 className="text-lg font-semibold text-foreground">
+                    {t("login.mfa.title")}
+                  </h2>
                 </div>
 
                 <FormField

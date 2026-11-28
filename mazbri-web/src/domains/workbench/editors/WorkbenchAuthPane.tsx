@@ -692,35 +692,6 @@ export function WorkbenchAuthPane({
   const isCredRequired = (key: string): boolean =>
     requiredCredKeys.includes(key) && !cred(key).trim();
 
-  const hintText = useMemo(() => {
-    switch (picker) {
-      case "basic":
-        return t("upstreamConnector.authHintBasic");
-      case "api_key":
-        return t("upstreamConnector.authHintApiKey");
-      case "oauth_cc_form":
-        return t("upstreamConnector.authHintOauth");
-      case "gettoken":
-        return t("upstreamConnector.authHintGettoken");
-      case "sign_form":
-        return t("upstreamConnector.authHintSign");
-      case "grpc_metadata":
-        return t("upstreamConnector.authHintGrpc");
-      case "bearer":
-        return t("upstreamConnector.authHintBearer");
-      case "jwt":
-        return t("upstreamConnector.authHintJwt");
-      case "digest":
-        return t("upstreamConnector.authHintDigest");
-      case "aws_sigv4":
-        return t("upstreamConnector.authHintAws");
-      case "hawk":
-        return t("upstreamConnector.authHintHawk");
-      default:
-        return "";
-    }
-  }, [picker, t]);
-
   const methodOptions: SelectOptionItem[] = [
     { value: "GET", label: "GET", text: "GET" },
     { value: "POST", label: "POST", text: "POST" },
@@ -839,11 +810,7 @@ export function WorkbenchAuthPane({
         </div>
       ) : (
         <div className="rounded-lg border border-border bg-card overflow-hidden">
-          {hintText && (
-            <p className="border-b border-border-subtle bg-muted/35 px-3 py-2 text-xs text-muted-foreground">
-              {hintText}
-            </p>
-          )}
+
 
           {(group === "basic" || group === "digest") && (
             <>

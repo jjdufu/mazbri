@@ -222,9 +222,6 @@ export function UserEditModal({
                 <div className="text-xs font-medium text-foreground">
                   {t("userManagement.detail.labels.mfaRequired")}
                 </div>
-                <div className="text-[11px] text-muted-foreground">
-                  {t("userManagement.createDialog.tips.mfaRequired")}
-                </div>
               </div>
               <Switch
                 checked={form.mfa_required}

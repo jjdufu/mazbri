@@ -612,13 +612,8 @@ export function CertificateDetailDrawer({
             {/* 2. Auto-renewal Policy */}
             <section className="rounded-lg border border-border bg-card overflow-hidden">
               <div className="flex items-center justify-between gap-4 border-b border-border px-3.5 py-3">
-                <div className="min-w-0 space-y-0.5">
-                  <div className="text-xs font-semibold text-foreground">
-                    {t("certificate.detail.autoRenewal.title")}
-                  </div>
-                  <div className="text-[11px] text-muted-foreground">
-                    {t("certificate.detail.autoRenewal.subtitle")}
-                  </div>
+                <div className="text-xs font-semibold text-foreground">
+                  {t("certificate.detail.autoRenewal.title")}
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <Badge variant={autoRenew.enabled ? "success" : "neutral"}>
@@ -641,7 +636,6 @@ export function CertificateDetailDrawer({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 p-3.5 border-b border-border">
                   <FormField
                     label={t("certificate.detail.autoRenewal.thresholdDays")}
-                    hint={t("certificate.autoRenewalDialog.hints.thresholdDays")}
                   >
                     <NumberInput
                       value={autoRenew.threshold_days}
@@ -663,7 +657,6 @@ export function CertificateDetailDrawer({
 
                   <FormField
                     label={t("certificate.detail.autoRenewal.validityDays")}
-                    hint={t("certificate.autoRenewalDialog.hints.validityDays")}
                   >
                     <Select
                       value={String(autoRenew.validity_days)}
@@ -725,10 +718,7 @@ export function CertificateDetailDrawer({
 
               {activePemTab === "cert" && (
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-[11px] text-muted-foreground">
-                      {t("certificate.detail.pem.publicCertHint")}
-                    </span>
+                  <div className="flex items-center justify-end gap-2">
                     <div className="flex items-center gap-1.5">
                       <Button
                         type="button"
@@ -760,10 +750,7 @@ export function CertificateDetailDrawer({
 
               {activePemTab === "ca" && (
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-[11px] text-muted-foreground">
-                      {t("certificate.detail.pem.caCertHint")}
-                    </span>
+                  <div className="flex items-center justify-end gap-2">
                     <Button
                       type="button"
                       variant="outline"
@@ -863,13 +850,7 @@ export function CertificateDetailDrawer({
         cancelLabel={t("common.cancel")}
         submitting={renewing}
       >
-        <p className="text-xs text-muted-foreground">
-          {t("certificate.messages.renewPromptMessage")}
-        </p>
-        <FormField
-          label={t("certificate.issueDialog.validity")}
-          hint={t("certificate.messages.renewPromptPlaceholder")}
-        >
+        <FormField label={t("certificate.issueDialog.validity")}>
           <NumberInput
             value={renewDays}
             min={1}

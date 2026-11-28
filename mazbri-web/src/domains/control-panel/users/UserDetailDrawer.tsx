@@ -155,7 +155,7 @@ export function UserDetailDrawer({
     ? t("userManagement.detail.controls.mfaProtectedHint")
     : !user?.mfa_enabled
       ? t("userManagement.detail.controls.mfaUnboundHint")
-      : t("userManagement.detail.controls.mfaHint");
+      : "";
 
   return (
     <>
@@ -372,13 +372,11 @@ export function UserDetailDrawer({
                     <div className="text-xs font-medium text-foreground">
                       {t("userManagement.detail.controls.statusTitle")}
                     </div>
-                    <div className="text-[11px] text-muted-foreground leading-relaxed">
-                      {isSuperAdminTarget || isSelf
-                        ? t(
-                            "userManagement.detail.controls.statusProtectedHint",
-                          )
-                        : t("userManagement.detail.controls.statusHint")}
-                    </div>
+                    {(isSuperAdminTarget || isSelf) && (
+                      <div className="text-[11px] text-muted-foreground leading-relaxed">
+                        {t("userManagement.detail.controls.statusProtectedHint")}
+                      </div>
+                    )}
                   </div>
                   <Switch
                     checked={user.is_active}
@@ -395,13 +393,11 @@ export function UserDetailDrawer({
                     <div className="text-xs font-medium text-foreground">
                       {t("userManagement.detail.controls.passwordTitle")}
                     </div>
-                    <div className="text-[11px] text-muted-foreground leading-relaxed">
-                      {isSuperAdminTarget
-                        ? t(
-                            "userManagement.detail.controls.passwordProtectedHint",
-                          )
-                        : t("userManagement.detail.controls.passwordHint")}
-                    </div>
+                    {isSuperAdminTarget && (
+                      <div className="text-[11px] text-muted-foreground leading-relaxed">
+                        {t("userManagement.detail.controls.passwordProtectedHint")}
+                      </div>
+                    )}
                   </div>
                   <Button
                     type="button"
@@ -420,9 +416,11 @@ export function UserDetailDrawer({
                     <div className="text-xs font-medium text-foreground">
                       {t("userManagement.detail.controls.mfaTitle")}
                     </div>
-                    <div className="text-[11px] text-muted-foreground leading-relaxed">
-                      {mfaControlHint}
-                    </div>
+                    {mfaControlHint && (
+                      <div className="text-[11px] text-muted-foreground leading-relaxed">
+                        {mfaControlHint}
+                      </div>
+                    )}
                   </div>
                   <Button
                     type="button"
@@ -439,13 +437,8 @@ export function UserDetailDrawer({
 
                 {!isSuperAdminTarget && !isSelf && (
                   <div className="flex items-center justify-between gap-4 px-3.5 py-3">
-                    <div className="min-w-0 space-y-0.5">
-                      <div className="text-xs font-medium text-danger-fg">
-                        {t("userManagement.detail.controls.dangerTitle")}
-                      </div>
-                      <div className="text-[11px] text-muted-foreground leading-relaxed">
-                        {t("userManagement.detail.controls.dangerHint")}
-                      </div>
+                    <div className="text-xs font-medium text-danger-fg">
+                      {t("userManagement.detail.controls.dangerTitle")}
                     </div>
                     <Button
                       type="button"
@@ -505,7 +498,7 @@ export function UserDetailDrawer({
         open={confirmDeleteOpen}
         onClose={() => setConfirmDeleteOpen(false)}
         onConfirm={() => void handleConfirmDelete()}
-        title={t("common.tips")}
+        title={t("userManagement.detail.deleteUser")}
         description={t("userManagement.messages.deleteUserConfirm", {
           username: user?.username ?? "",
         })}

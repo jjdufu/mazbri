@@ -191,7 +191,6 @@ export function BasicSettingsTab({ onDirtyChange }: BasicSettingsTabProps) {
         <SettingRow
           label={t("systemSettings.form.tenantGatewayUrl")}
           htmlFor="setting-gateway-url"
-          hint={t("systemSettings.form.tenantGatewayUrlHint")}
         >
           <Input
             id="setting-gateway-url"

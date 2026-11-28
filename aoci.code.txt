@@ -1216,7 +1216,6 @@ storage-key-manager.ts[CD5T]: F:管理Pinia持久化Store的版本化localStorag
 
 ===/<repository>/mazbri-web/src/utils/sys/===
 chunk-load-error.ts[CR5T]: F:通过错误文本正则与vite:preloadError事件特征识别前端动态chunk加载失败，并提供基于sessionStorage的单会话提示防抖读写函数 | R:code:mazbri-web/src/utils/sys/chunk-hard-refresh.ts,code:mazbri-web/src/utils/__tests__/chunk-hard-refresh.test.ts | A:CHUNK_HARD_REFRESH_SESSION_KEY,isChunkLoadError,hasPromptedChunkHardRefresh,markChunkHardRefreshPrompted | S:storage读写均静默吞没异常以兼容隐私模式禁用sessionStorage场景，调用方须叠加内存态布尔锁兜底防重入
-console.ts[CG2T]: F:在应用启动导入时向浏览器控制台输出带ANSI色彩转义与i18n多语种文案的欢迎横幅 | R:code:mazbri-web/src/main.ts,code:mazbri-web/src/locales/index.ts | A:- | S:模块顶层导入即立即调用i18n翻译并打印，须在locales初始化就绪后引入
 index.ts[CG2T]: F:前端系统工具桶导出入口，统一重导出动态chunk加载错误识别工具与分级控制台日志器logger | R:code:mazbri-web/src/utils/sys/chunk-load-error.ts,code:mazbri-web/src/utils/sys/logger.ts | A:CHUNK_HARD_REFRESH_SESSION_KEY,isChunkLoadError,hasPromptedChunkHardRefresh,markChunkHardRefreshPrompted,logger,LogPayload | S:-
 logger.ts[CO5T]: F:定义前端结构化日志载荷契约LogPayload与分级控制台日志器logger，提供debug、info、warn、error四级格式化输出 | R:code:mazbri-web/src/utils/sys/index.ts,code:mazbri-web/src/views/auth/login/composables/useLoginFlow.ts,code:mazbri-web/src/hooks/core/useTable.ts | A:logger,LogPayload,Logger,LogLevel | S:debug与info仅在import.meta.env.DEV下输出，生产构建仅保留warn与error且仅写浏览器console不上报远端
 
@@ -1377,7 +1376,7 @@ useLicenseGate.ts[CI6T]: F:平台许可证门禁Hook，拉取许可证状态并�
 
 ===/<repository>/mazbri-web/src/domains/control-panel/system/===
 BasicSettingsTab.tsx[AC5M]: F:系统基础设置页签，管理站点名称/URL、租户网关地址、会话超时、上传上限、审计与水印开关 | R:code:mazbri-web/src/api/settings.ts,code:mazbri-web/src/stores/watermark.ts | A:BasicSettingsTab,BasicSettingsTabProps | S:表单按分钟/MB编辑，与后端毫秒/字节互转且下限为1；保存成功后强制刷新useWatermarkStore；卸载时通知父级清除dirty标记
-PlatformLicenseTab.tsx[AC6L]: F:平台许可证管理页签，支持拖拽/粘贴JWS导入许可证、导出申请文件及展示当前许可证状态与到期详情（隐藏内部sequence与keyVersion元数据） | R:code:mazbri-web/src/api/authorizations.ts | A:PlatformLicenseTab | S:仅接受.jws/.txt文件；未选文件但粘贴文本时在前端封装为license.jws上传；仅当summary.sequence非空才判定已安装并渲染详情
+PlatformLicenseTab.tsx[AC6M]: F:平台许可证管理页签，支持拖拽/粘贴JWS导入许可证、导出申请文件及展示当前许可证状态与到期详情（隐藏内部sequence与keyVersion元数据） | R:code:mazbri-web/src/api/authorizations.ts | A:PlatformLicenseTab | S:仅接受.jws/.txt文件；未选文件但粘贴文本时在前端封装为license.jws上传；仅当summary.sequence非空才判定已安装并渲染详情
 SecurityPolicyTab.tsx[AS7L]: F:平台安全策略页签，集中配置密码复杂度/过期复用/登录锁定策略及全局TOTP MFA发行方 | R:code:mazbri-web/src/api/audit.ts,code:mazbri-web/src/utils/password/index.ts | A:SecurityPolicyTab,SecurityPolicyTabProps | S:U4独立鉴权边界：全局MFA卡片独立保存，严禁与密码策略合并提交；底部保存栏仅控制密码策略，但任一域脏都会触发页面离开拦截
 SystemSettingsPage.tsx[EC6S]: F:系统设置主页面，将基础设置、安全策略与平台许可证紧凑内联Tabs右置于一级标题同行，基于URL参数tab切换并拦截未保存离开 | R:code:mazbri-web/src/components/layout/PageHeaderActions.tsx,code:mazbri-web/src/domains/control-panel/system/BasicSettingsTab.tsx,code:mazbri-web/src/domains/control-panel/system/PlatformLicenseTab.tsx | A:SystemSettingsPage | S:非法tab参数回退为basic；子页签dirty时同时监听beforeunload并拦截页签切换弹确认框，切换时以replace更新URL
 
@@ -1385,7 +1384,7 @@ SystemSettingsPage.tsx[EC6S]: F:系统设置主页面，将基础设置、安全
 UserCreateModal.tsx[AI5M]: F:新建管理员弹窗，按后端密码策略自动生成初始密码并校验用户名、邮箱、密码及角色后创建账号 | R:code:mazbri-web/src/api/admin.ts,code:mazbri-web/src/api/audit.ts,code:mazbri-web/src/utils/password/index.ts | A:UserCreateModal,UserCreateModalProps | S:角色下拉仅允许创建R_FINANCE与R_VIEWER，不允许创建R_ADMIN；拉取密码策略失败时回退至generatePasswordWithFetch
 UserDetailDrawer.tsx[AI6L]: F:管理员详情抽屉，展示账号资料与安全状态，编排启停切换、编辑资料、重置密码、重置MFA及删除操作 | R:code:mazbri-web/src/api/admin.ts,code:mazbri-web/src/domains/control-panel/users/UserEditModal.tsx,code:mazbri-web/src/domains/control-panel/users/UserResetPasswordModal.tsx | A:UserDetailDrawer,UserDetailDrawerProps | S:R_ADMIN目标禁止启停、重置密码、重置MFA及删除；当前登录本人禁止启停与删除；打开先渲染initialAdmin再异步拉取最新详情
 UserEditModal.tsx[AI5M]: F:编辑管理员信息弹窗，支持修改显示名、邮箱，以及非超管账号的角色、强制改密与MFA策略开关 | R:code:mazbri-web/src/api/admin.ts | A:UserEditModal,UserEditModalProps | S:目标为R_ADMIN时隐藏且不提交role、mfa_required与force_password_reset字段；可选角色仅限R_FINANCE与R_VIEWER
-UserResetPasswordModal.tsx[AI5M]: F:管理员重置密码弹窗，打开时按密码策略生成新密码、支持重新生成与复制并配置首次登录强制改密 | R:code:mazbri-web/src/api/admin.ts,code:mazbri-web/src/api/audit.ts,code:mazbri-web/src/utils/password/index.ts | A:UserResetPasswordModal,UserResetPasswordModalProps | S:每次打开默认勾选forceReset=true并重新生成密码；关闭清空密码态；提交前按最新拉取的passwordPolicy本地校验
+UserResetPasswordModal.tsx[AI5S]: F:管理员重置密码弹窗，副标题展示目标用户名，打开时按密码策略生成新密码、支持重新生成复制并配置首次强制改密 | R:code:mazbri-web/src/api/admin.ts,code:mazbri-web/src/api/audit.ts,code:mazbri-web/src/utils/password/index.ts | A:UserResetPasswordModal,UserResetPasswordModalProps | S:每次打开默认勾选forceReset=true并重新生成密码；关闭清空密码态；提交前按最新passwordPolicy本地校验
 UsersPage.tsx[EI6L]: F:管理员列表主页面，提供分页搜索筛选、CSV导出、新建与详情抽屉联动以及单条与批量删除 | R:code:mazbri-web/src/api/admin.ts,code:mazbri-web/src/domains/control-panel/users/UserCreateModal.tsx,code:mazbri-web/src/domains/control-panel/users/UserDetailDrawer.tsx | A:UsersPage | S:单删与批删均屏蔽R_ADMIN和本人；批删串行执行，遇MFA取消立即中止；CSV导出优先选中行否则当前页
 
 ===/<repository>/mazbri-web/src/domains/ops/alerts/===
@@ -1457,7 +1456,7 @@ TenantListPage.tsx[AB6L]: F:租户管理列表页，提供结构化筛选、真�
 routes.tsx[EU5T]: F:注册租户运维列表与详情页路由，并通过内部角色守卫限制未授权角色重定向至403页面。 | R:code:mazbri-web/src/domains/tenants/TenantListPage.tsx,code:mazbri-web/src/domains/tenants/TenantDetailPage.tsx,code:mazbri-web/src/utils/ops/roles.ts | A:tenantsRoutes | S:列表与详情路由均放行ROLES_ALL，具体写权限由各子标签页自行按角色拦截。
 
 ===/<repository>/mazbri-web/src/domains/tenants/components/===
-MfaRequiredHint.tsx[CU4T]: F:受MFA保护操作前置提示条，读取当前管理员MFA绑定状态并在未绑定时提供直达个人安全抽屉MFA页签的入口 | R:code:mazbri-web/src/stores/mfa-step-up.ts,code:mazbri-web/src/stores/personal-security.ts | A:MfaRequiredHint,MfaRequiredHintProps | S:mfaStepUpStore未加载前返回null防闪烁，首次挂载自动触发refresh
+MfaRequiredHint.tsx[CU4T]: F:受MFA保护操作前置告警条，仅在当前管理员未绑定MFA时展示直达个人安全抽屉绑定页签的提示入口 | R:code:mazbri-web/src/stores/mfa-step-up.ts,code:mazbri-web/src/stores/personal-security.ts | A:MfaRequiredHint,MfaRequiredHintProps | S:mfaStepUpStore未加载或mfaEnabled为true时均返回null免常驻干扰，首次挂载自动触发refresh
 
 ===/<repository>/mazbri-web/src/domains/upstream-supply/components/===
 InjectPreviewCard.tsx[CU4S]: F:根据鉴权注入位置(header/query/body)、字段名与值格式模板，实时渲染模拟HTTP请求的动态Token注入预览卡片。 | R:- | A:InjectPreviewCard, InjectPreviewCardProps | S:header模板缺{}时自动空格拼接，query/body模式忽略值模板。
@@ -1494,7 +1493,7 @@ index.ts[CU2T]: F:聚合导出工作台全部弹窗、抽屉与确认宿主组�
 
 ===/<repository>/mazbri-web/src/domains/workbench/editors/===
 CryptoProfileEditor.tsx[AS6L]: F:提供上游业务体加签与加解密配置表单，涵盖模板导入、算法、编码、槽位、响应验签解密与客户端校验 | R:code:mazbri-web/src/domains/workbench/engine/cryptoProfileHelpers.ts | A:CryptoProfileEditor,CryptoProfileEditorProps | S:无权切不安全开关时导入模板强置allow_insecure=false，关闭时遗留算法回退hmac-sha256/aes-256；选响应算法自开decrypt_response，关闭则清空response_crypt
-WorkbenchAssertEditor.tsx[AU4M]: F:编辑端点响应断言列表，支持按类型切换参数输入、拖拽排序及帮助提示 | R:code:mazbri-web/src/domains/workbench/engine/workbenchHelpers.ts | A:WorkbenchAssertEditor,WorkbenchAssertEditorProps | S:尾行空类型不可拖拽落位；jsonpath_equals优先JSON.parse否则存字符串
+WorkbenchAssertEditor.tsx[AU4M]: F:编辑端点响应断言列表，支持按类型切换参数输入、拖拽排序、批量清空与新增断言 | R:code:mazbri-web/src/domains/workbench/engine/workbenchHelpers.ts | A:WorkbenchAssertEditor,WorkbenchAssertEditorProps | S:尾行空类型不可拖拽落位；jsonpath_equals优先JSON.parse否则存字符串
 WorkbenchAuthPane.tsx[AI6L]: F:编排端点与会话级多协议上游鉴权配置面板，涵盖凭证输入、注入预览、认证失效规则、原始凭据库与测试执行 | R:code:mazbri-web/src/domains/workbench/engine/authMatrix.ts,code:mazbri-web/src/domains/workbench/engine/authInvalidation.ts,code:mazbri-web/src/domains/workbench/editors/WorkbenchKvRows.tsx | A:WorkbenchAuthPane,WorkbenchAuthPaneProps | S:仅ticket与jwt分组渲染认证失效规则；开启会话鉴权且profile为空时回退当前picker或bearer并填默认项；HS*读jwt_secret，RS*读jwt_private_key
 WorkbenchBodyPane.tsx[AU6L]: F:编辑端点请求体与多协议出站适配器专用参数（GraphQL、JobPoll、gRPC、Envelope、JSON-RPC、SOAP、WS） | R:code:mazbri-web/src/domains/workbench/engine/workbenchHelpers.ts,code:mazbri-web/src/domains/workbench/editors/WorkbenchKvRows.tsx | A:WorkbenchBodyPane,WorkbenchBodyPaneProps | S:soap_xml下<开头body切XML编辑器并存原串，其余按JSON对象校验并提示非对象错；SOAPAction双向同步headers与header_entries
 WorkbenchCapturesEditor.tsx[AU4M]: F:管理端点响应JSONPath捕获规则列表与运行时已捕获变量池，支持一键复制占位符 | R:code:mazbri-web/src/domains/workbench/engine/workbenchHelpers.ts | A:WorkbenchCapturesEditor,WorkbenchCapturesEditorProps | S:编辑尾行非空后自动追加空白捕获行；占位符按{{captures.<name>}}格式复制
@@ -1570,7 +1569,7 @@ locale.ts[CD5T]: F:全局多语言Zustand Store，同步读写mazbri-locale与ht
 lockscreen.ts[DS5M]: F:全屏锁屏Zustand持久化Store及纯TS FIPS 180-4 SHA-256哈希实现，支撑无HTTPS内网环境下锁屏口令摘要校验与状态重置 | R:- | A:sha256FallbackHex,sha256Hex,useLockScreenStore | S:明文HTTP内网部署下crypto.subtle不可用时自动无缝降级到纯TS sha256FallbackHex，避免锁屏加密报错
 mfa-step-up.ts[DS7M]: F:MFA提权窗口全局Zustand状态机，管理多安全类别倒计时、10秒节流刷新、BroadcastChannel跨标签同步、主动锁定与会话重置 | R:code:mazbri-web/src/utils/http/mfa-step-up-state.ts,code:mazbri-web/src/constants/error-codes.ts,code:mazbri-web/src/utils/sys/logger.ts | A:CategoryWindow,MfaStepUpState,useMfaStepUpStore | S:倒计时归零触发单飞refresh(true)，失败则本地按deadline兜底置expired防界面假活；无BroadcastChannel时回退localStorage同步；lock校验返回scope必须为all
 personal-security.ts[CD3T]: F:个人安全抽屉开关与焦点分区(mfa/password)轻量级Zustand Store | R:- | A:PersonalSecuritySection,PersonalSecurityState,usePersonalSecurityStore | S:-
-theme.ts[CU6S]: F:全局亮/暗/跟随系统三态主题Zustand Store，提供xBlue同款auto至系统反色再至另一显式色最后回auto的一键循环切换，原子同步html.dark、style.colorScheme与两帧禁过渡无闪烁切换 | R:code:mazbri-web/index.html | A:ThemeMode,ThemeState,useThemeStore | S:优先读取mazbri-theme并兼容旧sys-theme与system值；切换时注入两帧全局禁transition样式防闪烁并同步documentElement.style.colorScheme；仅auto模式响应系统配色变化
+theme.ts[CD6S]: F:全局明暗主题Zustand状态库，实现auto/light/dark三态循环切换、系统prefers-color-scheme实时联动、无闪烁DOM同步及极简模式提示文案 | R:- | A:useThemeStore,formatThemeTooltip,ThemeMode,ThemeState | S:auto模式跟随系统动态切亮暗；切换时临时冻结CSS过渡两帧防闪烁并兼容迁移旧sys-theme存储键
 watermark.ts[CD4T]: F:全局防泄密水印与站点基础信息Zustand Store，缓存服务端系统设置并控制水印显隐 | R:code:mazbri-web/src/api/settings.ts,code:mazbri-web/src/types/api/index.ts | A:WatermarkState,useWatermarkStore | S:loaded为真且force=false时跳过重复请求fetchSystemSettings，登出时reset清零
 
 ===/<repository>/mazbri-web/src/styles/===

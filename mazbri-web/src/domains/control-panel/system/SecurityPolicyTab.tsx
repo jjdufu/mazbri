@@ -284,7 +284,6 @@ export function SecurityPolicyTab({ onDirtyChange }: SecurityPolicyTabProps) {
         <SettingRow
           label={t("securityPolicy.fields.specialChars")}
           htmlFor="policy-special-chars"
-          hint={t("securityPolicy.hints.specialChars")}
         >
           <Input
             id="policy-special-chars"
@@ -375,7 +374,6 @@ export function SecurityPolicyTab({ onDirtyChange }: SecurityPolicyTabProps) {
         <SettingRow
           label={t("securityPolicy.fields.historyCheck")}
           layout="inline"
-          hint={t("securityPolicy.hints.expiration")}
         >
           <NumberInput
             value={policyForm.prevent_reuse_count}
@@ -414,7 +412,6 @@ export function SecurityPolicyTab({ onDirtyChange }: SecurityPolicyTabProps) {
         <SettingRow
           label={t("securityPolicy.fields.lockDuration")}
           layout="inline"
-          hint={t("securityPolicy.hints.lockThreshold")}
         >
           <NumberInput
             value={policyForm.lockout_duration_minutes}
@@ -455,7 +452,6 @@ export function SecurityPolicyTab({ onDirtyChange }: SecurityPolicyTabProps) {
         <SettingRow
           label={t("securityPolicy.fields.issuerName")}
           htmlFor="global-mfa-issuer"
-          hint={t("securityPolicy.hints.totpIssuer")}
         >
           <Input
             id="global-mfa-issuer"

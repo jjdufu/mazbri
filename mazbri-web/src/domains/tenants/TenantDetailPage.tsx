@@ -517,7 +517,7 @@ export function TenantDetailPage() {
         onConfirm={() => void handleConfirmToggle()}
         loading={toggling}
         danger={Boolean(tenant?.enabled)}
-        title={t("common.tips")}
+        title={tenant?.enabled ? t("common.actions.disable") : t("common.actions.enable")}
         confirmLabel={t("common.confirm")}
         description={
           tenant

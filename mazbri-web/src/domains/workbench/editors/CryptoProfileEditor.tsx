@@ -3,7 +3,6 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronRight,
-  Info,
   Plus,
   Trash2,
 } from "lucide-react";
@@ -11,7 +10,6 @@ import {
   Button,
   IconButton,
   Input,
-  Popover,
   Select,
   Switch,
   cn,
@@ -74,7 +72,6 @@ export function CryptoProfileEditor({
   credentialKeys = [],
 }: CryptoProfileEditorProps) {
   const { t } = useT();
-  const [infoOpen, setInfoOpen] = useState(false);
   const [responseOpen, setResponseOpen] = useState(false);
 
   const local = useMemo(() => parseCryptoProfile(value), [value]);
@@ -307,26 +304,6 @@ export function CryptoProfileEditor({
         <span className="text-xs font-medium text-foreground">
           {t("upstreamConnector.cryptoEnable")}
         </span>
-        <Popover
-          open={infoOpen}
-          onOpenChange={setInfoOpen}
-          align="left"
-          contentClassName="w-72 p-2.5"
-          trigger={
-            <button
-              type="button"
-              aria-label={t("upstreamConnector.cryptoAuthBoundaryHint")}
-              onClick={() => setInfoOpen((v) => !v)}
-              className="inline-flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground hover:bg-hover-bg hover:text-primary cursor-pointer"
-            >
-              <Info className="h-3.5 w-3.5" />
-            </button>
-          }
-        >
-          <p className="text-xs leading-relaxed text-foreground">
-            {t("upstreamConnector.cryptoAuthBoundaryHint")}
-          </p>
-        </Popover>
       </div>
 
       {enabled && local && (

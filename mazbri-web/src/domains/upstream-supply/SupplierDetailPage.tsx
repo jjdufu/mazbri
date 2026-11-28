@@ -1174,7 +1174,7 @@ export function SupplierDetailPage() {
         open={deleteOpen}
         onClose={() => setDeleteOpen(false)}
         onConfirm={() => void handleConfirmDelete()}
-        title={t("common.tips")}
+        title={t("common.actions.delete")}
         description={t("supplier.messages.deleteConfirm", {
           name: supplier?.name ?? "",
         })}

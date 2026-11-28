@@ -606,7 +606,7 @@ export function AuthorizationListTab() {
         open={Boolean(revokeTarget)}
         onClose={() => setRevokeTarget(null)}
         onConfirm={() => void handleConfirmRevoke()}
-        title={t("common.tips")}
+        title={t("authorization.list.actions.revoke")}
         description={t("authorization.list.revokeConfirm")}
         confirmLabel={t("authorization.list.actions.revoke")}
         cancelLabel={t("common.cancel")}
@@ -617,7 +617,7 @@ export function AuthorizationListTab() {
         open={Boolean(batchRevokeIds)}
         onClose={() => setBatchRevokeIds(null)}
         onConfirm={() => void handleConfirmBatchRevoke()}
-        title={t("common.tips")}
+        title={t("authorization.list.actions.batchRevoke")}
         description={t("authorization.list.revokeConfirm")}
         confirmLabel={t("authorization.list.actions.batchRevoke")}
         cancelLabel={t("common.cancel")}

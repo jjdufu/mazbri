@@ -105,12 +105,12 @@ function persistTheme(theme: ThemeMode): void {
 
 export function formatThemeTooltip(theme: ThemeMode, isZh: boolean): string {
   if (theme === "auto") {
-    return isZh ? "主题：跟随系统（点击切换）" : "Theme: Auto (click to switch)";
+    return isZh ? "跟随系统" : "Auto";
   }
   if (theme === "dark") {
-    return isZh ? "主题：暗色（点击切换）" : "Theme: Dark (click to switch)";
+    return isZh ? "暗色" : "Dark";
   }
-  return isZh ? "主题：亮色（点击切换）" : "Theme: Light (click to switch)";
+  return isZh ? "亮色" : "Light";
 }
 
 export interface ThemeState {

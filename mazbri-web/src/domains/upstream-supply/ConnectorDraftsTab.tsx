@@ -431,7 +431,7 @@ export function ConnectorDraftsTab() {
         open={Boolean(deleteTarget)}
         onClose={() => setDeleteTarget(null)}
         onConfirm={() => void handleConfirmSingleDelete()}
-        title={t("common.tips")}
+        title={t("common.actions.delete")}
         description={
           deleteTarget
             ? t("upstreamConnector.deleteDraftConfirm", {
@@ -448,7 +448,7 @@ export function ConnectorDraftsTab() {
         open={Boolean(batchDeleteIds)}
         onClose={() => setBatchDeleteIds(null)}
         onConfirm={() => void handleConfirmBatchDelete()}
-        title={t("common.tips")}
+        title={t("common.actions.delete")}
         description={t("upstreamConnector.deleteDraftConfirm", {
           name: `${batchDeleteIds?.length ?? 0}`,
         })}

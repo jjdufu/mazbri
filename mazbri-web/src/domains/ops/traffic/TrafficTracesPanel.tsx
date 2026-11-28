@@ -495,8 +495,7 @@ export function TrafficTracesPanel({
         height={220}
         extra={
           <span className="font-mono-tech">
-            {t("ops.traces.scatter.summary", { count: total })} ·{" "}
-            {t("ops.traces.scatter.currentPageSubtitle")}
+            {t("ops.traces.scatter.summary", { count: total })}
             {resolvedFromLogs !== null
               ? ` · ${t("ops.traces.resolved", { count: resolvedFromLogs })}`
               : ""}

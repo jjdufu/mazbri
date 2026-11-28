@@ -504,8 +504,8 @@ export function WorkbenchTopBar({
           <IconButton
             size="sm"
             onClick={toggleLocale}
-            title={t("config.headerBar.language")}
-            aria-label={t("config.headerBar.language")}
+            title={locale === LanguageEnum.ZH ? "English" : "中文"}
+            aria-label={locale === LanguageEnum.ZH ? "语言" : "Language"}
             data-testid="wb-topbar-locale"
           >
             <Languages className="h-3.5 w-3.5" />

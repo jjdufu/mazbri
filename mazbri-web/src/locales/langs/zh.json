@@ -333,7 +333,7 @@
     "last7Days": "最近7天",
     "last30Days": "最近30天",
     "importDialog": {
-      "dragToUpload": "拖拽 {type} 文件到此处，或点击上传",
+      "dragToUpload": "选择或拖拽 {type} 文件",
       "fileTip": "仅 .{ext}，≤{size}",
       "newItems": "新增: {count} 条",
       "duplicateItems": "重复: {count} 条 (将被跳过)",
@@ -500,7 +500,7 @@
       },
       "empty": {
         "noMatch": "未找到符合筛选条件的调用记录",
-        "noMatchLatest": "未在最近 {size} 条调用中找到匹配，可添加时间范围后重试",
+        "noMatchLatest": "未找到匹配的调用记录",
         "noData": "暂无调用记录"
       },
       "messages": {
@@ -1343,8 +1343,8 @@
       "includeSelfAudit": "显示审计查阅记录"
     },
     "chain": {
-      "expandTooltip": "{flow}（共 {count} 条跨服务关联审计，点击展开底层镜像）",
-      "collapseTooltip": "{flow}（点击收起底层镜像记录）",
+      "expandTooltip": "{flow} · {count} 条关联记录",
+      "collapseTooltip": "{flow}",
       "mirrorPrefix": "↳ 镜像",
       "detailTitle": "同流水跨服务关联记录",
       "switchToService": "切换查看",
@@ -2002,7 +2002,7 @@
         "updatedBy": "操作人",
         "createdAt": "时间"
       },
-      "initialVersionNotice": "当前为初始生效版本（修改保存后将自动记录历史变更快照）",
+      "initialVersionNotice": "当前为初始版本，暂无历史变更记录",
       "activeConfigTitle": "当前生效配置",
       "confirmTitle": "确认回滚",
       "confirmMessage": "确定要回滚到版本 {version} 吗？",
@@ -2034,7 +2034,7 @@
       "sections": {
         "import": "许可证导入与申请导出",
         "detail": "当前许可证详情",
-        "emptyDetail": "尚未导入授权文件，请先在左侧完成导入。"
+        "emptyDetail": "未导入许可证"
       },
       "status": {
         "active": "已激活",
@@ -2072,7 +2072,7 @@
         }
       },
       "filePicker": {
-        "title": "点击或拖拽选择许可证文件",
+        "title": "选择或拖拽 .jws 许可证文件",
         "hint": "支持导入平台签发的 .jws 授权文件或粘贴许可证文本",
         "selectedHint": "已选择文件，点击或拖拽可重新选择。",
         "selectedSize": "文件大小：{size}",
@@ -2359,7 +2359,7 @@
         "description": "私钥属于高敏凭据，查看或复制需验证管理员 MFA，且操作将记入安全审计日志。",
         "unlockAction": "解锁查看私钥",
         "lockAction": "锁定隐藏",
-        "unlockedHint": "私钥已在当前抽屉临时解锁，关闭抽屉后将自动清空内存"
+        "unlockedHint": "已临时解锁（关闭抽屉自动清除）"
       }
     },
     "issueDialog": {
@@ -2473,7 +2473,7 @@
         "role": "请选择角色"
       },
       "actions": {
-        "regeneratePassword": "随机生成符合策略的强密码",
+        "regeneratePassword": "随机生成",
         "copyPassword": "复制密码"
       },
       "tips": {
@@ -2507,7 +2507,7 @@
         "newPassword": "请输入新密码"
       },
       "actions": {
-        "regeneratePassword": "随机生成符合策略的强密码",
+        "regeneratePassword": "随机生成",
         "copyPassword": "复制密码"
       },
       "tips": {
@@ -2609,7 +2609,7 @@
       "codePlaceholder": "SUP_A",
       "namePlaceholder": "供应商 A",
       "accessAddressPlaceholder": "127.0.0.1:8088",
-      "targetAddressPlaceholder": "例如: https://upstream.example.com",
+      "targetAddressPlaceholder": "https://upstream.example.com",
       "saveAndBack": "保存",
       "cancelBack": "取消",
       "typeLockedHint": "对接类型在接入时确定，创建后不可更改"
@@ -2725,7 +2725,7 @@
     "reconciliation": {
       "guide": "用量一致性对账：比对计费用量与分析统计数据。",
       "listTitle": "历史差异台账",
-      "empty": "当前时段暂无对账记录，可点击右上角「立即对账」触发核对",
+      "empty": "暂无对账记录",
       "emptyNoMatch": "无匹配的对账记录",
       "searchPlaceholder": "日期 / 状态 / 范围 / 备注 / ID",
       "from": "开始日期",
@@ -3028,7 +3028,7 @@
         "allowInsecureAdminOnly": "仅超级管理员可开启「允许不安全算法」",
         "legacyRisk": "已选兼容弱算法（{algorithms}），仅建议在存量系统过渡期使用",
         "keyRequiredHint": "启用请求加密或双向加密前需先生成租户传输密钥",
-        "mustCreateKeyBeforeEnable": "当前尚未生成传输密钥，请先点击上方「生成密钥」后再保存加密策略"
+        "mustCreateKeyBeforeEnable": "请先生成传输密钥"
       },
       "modes": {
         "none": "关闭",
@@ -3196,7 +3196,7 @@
       "renewDays": "续期天数",
       "createTitle": "新增 API 密钥",
       "rotateTitle": "API 密钥已轮换",
-      "secretWarning": "密钥仅展示一次，关闭后无法再次查看，请立即复制或下载妥善保存。",
+      "secretWarning": "密钥仅显示一次，关闭后无法再次查看。",
       "secretLabel": "API 密钥",
       "downloadTxt": "下载 .txt",
       "downloadJson": "下载 .json",
@@ -3224,7 +3224,7 @@
         "product": "选择产品",
         "productPlaceholder": "请选择或搜索要开通的产品",
         "unitPrice": "单价",
-        "unitPricePlaceholder": "例如 0.001",
+        "unitPricePlaceholder": "0.001",
         "cbProFallback": "高级熔断"
       }
     },
@@ -3237,7 +3237,7 @@
       "import": "导入",
       "add": "添加",
       "emptyTitle": "暂无 IP 白名单",
-      "emptyHint1": "空白名单：允许所有 IP。",
+      "emptyHint1": "未配置白名单（默认允许所有 IP）",
       "emptyHint2": "添加后仅白名单 IP 可访问。",
       "selectedCount": "已选择 {count} 项",
       "batchDelete": "批量删除",
@@ -3252,16 +3252,16 @@
         "title": "添加 IP 白名单",
         "confirm": "确定",
         "ipAddresses": "IP 地址",
-        "ipAddressesPlaceholder": "每行一个 IP 或网段，例如：\n192.168.1.100\n192.168.50.0/24\n10.0.0.0/8",
+        "ipAddressesPlaceholder": "192.168.1.100\n192.168.50.0/24\n10.0.0.0/8",
         "ipAddressesHint": "每行一个 IP 或 CIDR。",
         "description": "描述",
-        "descriptionPlaceholder": "例如: 办公网络、IDC 机房"
+        "descriptionPlaceholder": "办公网络、IDC 机房"
       },
       "importDialog": {
         "title": "导入 IP 白名单",
         "formatTitle": "CSV 文件格式",
         "formatHint": "文件需包含表头：ip_address,cidr,description",
-        "formatExample": "例如：192.168.1.100,32,办公网络",
+        "formatExample": "192.168.1.100,32,办公网络",
         "uploadText": "拖拽 CSV 文件到此处，或",
         "clickToUpload": "点击上传",
         "tip": "仅 .csv，≤100KB。",
@@ -3305,7 +3305,7 @@
       "apiOverrides": "接口差异配置",
       "warmupList": "数据预热",
       "addRule": "添加",
-      "apiPathPlaceholder": "例如: chat.completions",
+      "apiPathPlaceholder": "chat.completions",
       "newWarmupKeyPlaceholder": "添加",
       "seconds": "秒",
       "fields": {
@@ -3326,8 +3326,8 @@
       "apiKeyRevoked": "API 密钥已吊销",
       "apiKeyDownloaded": "密钥文件已下载",
       "apiKeyDownloadFailed": "密钥下载失败",
-      "rotateApiKeyConfirm": "确定要轮换此 API 密钥吗？系统将在单事务内签发新密钥并立即吊销旧密钥（旧密钥换票缓存即时失效，此前已签发的短效 Bearer 令牌按剩余有效期自然过期）。",
-      "revokeApiKeyConfirm": "确定要吊销此 API 密钥吗？吊销后旧密钥将立即无法换取新访问令牌（此前已签发的短效 Bearer 令牌按其剩余有效期自然过期），此操作不可恢复。",
+      "rotateApiKeyConfirm": "确定轮换此 API 密钥？旧密钥将立即吊销并签发新密钥。",
+      "revokeApiKeyConfirm": "确定吊销此 API 密钥？此操作不可恢复。",
       "apiKeyMissing": "密钥不存在",
       "selectProductToGrant": "请选择要开通的产品",
       "revokeProductConfirm": "确定要撤销产品 \"{name}\" 的开通吗？",
@@ -3372,7 +3372,7 @@
     "apiOverridesEmpty": "暂无覆盖",
     "fineGrainedOverrides": "接口速率覆盖",
     "addOverride": "添加",
-    "pathPlaceholder": "例如 /posts 或 product:8000000001",
+    "pathPlaceholder": "/posts 或 product:8000000001",
     "overrideExceedsPlan": "接口覆盖「{path}」的 QPS（{limit}）超过套餐速率（{planQps}），请调低后再保存",
     "overrideInvalidLimit": "接口覆盖「{path}」的上限无效",
     "clientIpHint": "",
@@ -3495,7 +3495,7 @@
       "fallbackSection": "高级熔断",
       "billingSubscription": "包月订阅",
       "unitPrice": "单价",
-      "unitPricePlaceholder": "例如 0.001",
+      "unitPricePlaceholder": "0.001",
       "cbProFallback": "高级熔断",
       "cbProEnabledHint": "",
       "cbProDisabledHint": "产品未开启高级熔断",
@@ -3514,7 +3514,7 @@
       "searchProductPlaceholder": "搜索产品名称或编码",
       "billingSubscription": "包月订阅",
       "unitPrice": "单价",
-      "unitPricePlaceholder": "例如 0.001",
+      "unitPricePlaceholder": "0.001",
       "cbProFallback": "高级熔断",
       "cbProEnabledHint": "",
       "cbProDisabledHint": "产品未开启高级熔断",
@@ -3726,8 +3726,8 @@
     },
     "useAccessWizard": "新建请使用【接入上游】统一向导",
     "placeholders": {
-      "name": "例如 ACME Partner",
-      "channelName": "例如 ACME 默认通道",
+      "name": "ACME Partner",
+      "channelName": "ACME 默认通道",
       "upstreamUrl": "host:port",
       "contractId": "填写 gateway 已登记的契约 ID",
       "productSelect": "搜索产品名称或 10 位产品编码"
@@ -3737,7 +3737,7 @@
     "workbenchTitle": "免代码接入",
     "codeFreeAccess": "免代码接入",
     "draftsTitle": "草稿箱",
-    "draftsEmpty": "暂无草稿。从供应商列表点「免代码接入」进入工作台。",
+    "draftsEmpty": "暂无草稿",
     "draftsNoMatch": "没有匹配的草稿",
     "openDraft": "继续编辑",
     "continueEdit": "继续编辑",
@@ -3825,8 +3825,8 @@
     "authInherit": "继承会话默认",
     "authNone": "无 HTTP 鉴权",
     "authSkip": "无 HTTP 鉴权（跳过会话默认）",
-    "authInheritDesc": "当前接口继承会话默认 HTTP 鉴权（{profile}）。",
-    "authSkipEmpty": "此接口显式跳过会话默认 HTTP 鉴权，不附加鉴权头或换票。",
+    "authInheritDesc": "继承会话默认鉴权（{profile}）",
+    "authSkipEmpty": "跳过会话默认鉴权",
     "authVaultSection": "会话共享凭证与密钥仓",
     "authVaultOnlyTag": "仅业务密钥仓（共 {n} 项密钥）",
     "authApiKey": "API Key",
@@ -3836,7 +3836,7 @@
     "authSignForm": "Sign form",
     "authGrpcMeta": "gRPC metadata",
     "authInheritHint": "本接口使用会话 auth_flow.profile；未设置会话鉴权类型则不能发布 inherit。",
-    "authNoneEmpty": "此接口不附加鉴权。",
+    "authNoneEmpty": "无鉴权",
     "authSessionDefault": "会话默认",
     "authSessionUnset": "未设置",
     "authSetSessionDefault": "设为会话默认",
@@ -3880,7 +3880,7 @@
     "bodyTypeNone": "无",
     "bodyTypeJson": "JSON",
     "bodyTypeForm": "Form",
-    "bodyNoneEmpty": "此接口无租户请求体。网关将不向上游发送 HTTP body。",
+    "bodyNoneEmpty": "无请求体",
     "bodyNeedsJsonObject": "请改为 JSON 对象",
     "egressContentType": "出站 Content-Type",
     "egressBodyEncoding": "出站 body 编码",
@@ -4038,7 +4038,7 @@
     "wsAuthInFirstFrame": "首帧",
     "wsAuthInHint": "握手超时与池参数见 bypass 配置（ws_handshake_timeout_secs / ws_max_concurrent*）；此处只配 path / wrap / auth_in。",
     "staticTokenHint": "鉴权流未接管的静态令牌头：{headers}（提示，不拦截）",
-    "pipelineEmpty": "转换预览或接口测试后，这里对照租户请求 / 上游请求 / 上游响应",
+    "pipelineEmpty": "暂无请求对照数据",
     "pipeTenantReq": "租户请求",
     "pipeUpstreamReq": "转换后请求",
     "pipeUpstreamRes": "上游响应",
@@ -4201,9 +4201,9 @@
     "exportPostman": "导出 Postman 集合",
     "envDrawerBtn": "环境变量（{n} 项）",
     "envUndefined": "未定义变量",
-    "sendProbeTooltip": "默认经管理探针直连上游试运行（不计入网关计费）· Ctrl+Enter",
-    "splitSideBySide": "切换为左右并排分栏",
-    "splitTopBottom": "切换为上下分栏",
+    "sendProbeTooltip": "发送 (Ctrl+Enter)",
+    "splitSideBySide": "左右分栏",
+    "splitTopBottom": "上下分栏",
     "gatewayPrefixLabel": "网关前缀",
     "pathPrefixTooltip": "租户请求网关的路由匹配前缀，区别于右侧运行栏的上游真实路径",
     "backToSupply": "返回",
@@ -4451,7 +4451,7 @@
     },
     "backupCodes": {
       "title": "备用码",
-      "hint": "备用码仅显示这一次，每个只能使用一次。格式为 8 位大写字母和数字（不含 0、1、I、O），输入时会自动转为大写。可用于登录，或打开某一类提权窗口。请立即妥善保存。",
+      "hint": "备用码仅显示一次，每码限用一次，请妥善保存。",
       "regenerateConfirm": "重新生成会使旧备用码失效。此操作属于两步验证，验证通过后这一类短期内不用再输。确定继续吗？"
     },
     "disable": {
@@ -4866,7 +4866,7 @@
       },
       "scatter": {
         "title": "耗时分布",
-        "summary": "共 {count} 条，点击散点查看详情",
+        "summary": "共 {count} 条",
         "currentPageSubtitle": "当前页链路耗时分布",
         "ok": "正常",
         "error": "含错误"
@@ -4930,7 +4930,7 @@
       },
       "fallback": {
         "title": "未找到该追踪链路",
-        "description": "该链路可能已超过保留期或未被采样，可在下方查看关联调用日志。"
+        "description": "链路已过期或未采样"
       },
       "sampleTitle": "错误样例",
       "sampleHint": "点击上方错误码加载样例，点击 trace_id 打开链路",
@@ -4994,10 +4994,10 @@
           "labels": "附加标签",
           "labelsInvalid": "每行一个 key=value",
           "emails": "邮件收件人",
-          "emailsHint": "每行一个邮箱，最多 20 个；触发与恢复时发送邮件通知。",
+          "emailsHint": "每行一个邮箱，最多 20 个",
           "emailsInvalid": "请输入 name{'@'}domain 形式的邮件地址",
           "webhooks": "Webhook",
-          "webhooksHint": "每行一个 HTTP(S) 地址，触发与恢复时推送 JSON 负载。",
+          "webhooksHint": "每行一个 HTTP(S) 地址",
           "required": "必填",
           "notifyEnabled": "通知外发",
           "notifyEnabledHint": "开启后需至少配置邮箱或 Webhook；关闭时仅记录告警事件，不外发通知。",

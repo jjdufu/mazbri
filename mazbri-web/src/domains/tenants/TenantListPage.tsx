@@ -695,7 +695,7 @@ export function TenantListPage() {
         onConfirm={() => void handleConfirmToggleStatus()}
         loading={toggling}
         danger={toggleTarget ? !toggleTarget.enable : false}
-        title={t("common.tips")}
+        title={toggleTarget?.enable ? t("common.actions.enable") : t("common.actions.disable")}
         confirmLabel={t("common.confirm")}
         description={
           toggleTarget
@@ -716,7 +716,7 @@ export function TenantListPage() {
         onConfirm={() => void handleConfirmSingleDelete()}
         loading={deleting}
         danger
-        title={t("common.tips")}
+        title={t("common.actions.delete")}
         confirmLabel={t("common.actions.delete")}
         description={
           deleteTarget
@@ -733,7 +733,7 @@ export function TenantListPage() {
         onConfirm={() => void handleConfirmBatchDelete()}
         loading={deleting}
         danger
-        title={t("common.tips")}
+        title={t("common.actions.delete")}
         confirmLabel={t("common.actions.delete")}
         description={
           batchDeleteCodes

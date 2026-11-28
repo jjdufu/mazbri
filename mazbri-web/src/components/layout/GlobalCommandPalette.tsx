@@ -398,11 +398,7 @@ export function GlobalCommandPalette({
             data-testid="global-cmdk-input"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder={
-              isZh
-                ? "搜索菜单、功能视图与快捷动作…"
-                : "Search pages, views, and quick actions…"
-            }
+            placeholder={isZh ? "搜索…" : "Search…"}
             className="flex-1 bg-transparent text-[13px] text-foreground placeholder:text-muted-foreground focus:outline-none"
           />
           <button

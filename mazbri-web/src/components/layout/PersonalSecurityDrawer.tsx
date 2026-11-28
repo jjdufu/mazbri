@@ -99,11 +99,7 @@ export function PersonalSecurityDrawer() {
     confirm_password: "",
   });
 
-  const drawerSubtitle = userInfo.username
-    ? t("accountSecurity.drawer.subtitleWithUser", {
-        username: userInfo.username,
-      })
-    : t("accountSecurity.drawer.subtitle");
+  const drawerSubtitle = userInfo.username || undefined;
 
   const mfaEnabled = Boolean(status?.enabled);
   const mfaRequired = Boolean(status?.mfa_required);
@@ -356,9 +352,7 @@ export function PersonalSecurityDrawer() {
                         : t("accountSecurity.mfa.statusDisabled")}
                     </Badge>
                   </div>
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    {t("accountSecurity.mfa.hint")}
-                  </p>
+
                 </div>
 
                 <div className="flex items-center gap-2 shrink-0">
@@ -585,16 +579,12 @@ export function PersonalSecurityDrawer() {
                     {t("accountSecurity.password.title")}
                   </h3>
                 </div>
-                {policySummaryLines.length > 0 ? (
+                {policySummaryLines.length > 0 && (
                   <ul className="space-y-0.5 text-xs text-muted-foreground">
                     {policySummaryLines.map((line) => (
                       <li key={line}>{line}</li>
                     ))}
                   </ul>
-                ) : (
-                  <p className="text-xs text-muted-foreground">
-                    {t("accountSecurity.password.policyHint")}
-                  </p>
                 )}
               </div>
 

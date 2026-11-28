@@ -477,7 +477,7 @@ export function UsersPage() {
         open={Boolean(deleteTarget)}
         onClose={() => setDeleteTarget(null)}
         onConfirm={() => void handleConfirmSingleDelete()}
-        title={t("common.tips")}
+        title={t("userManagement.detail.deleteUser")}
         description={t("userManagement.messages.deleteUserConfirm", {
           username: deleteTarget?.username ?? "",
         })}
@@ -491,7 +491,7 @@ export function UsersPage() {
         open={Boolean(batchDeleteIds && batchDeleteIds.length > 0)}
         onClose={() => setBatchDeleteIds(null)}
         onConfirm={() => void handleConfirmBatchDelete()}
-        title={t("common.tips")}
+        title={t("common.actions.delete")}
         description={t("common.confirmDelete")}
         confirmLabel={t("common.confirm")}
         cancelLabel={t("common.cancel")}

@@ -106,7 +106,7 @@ export function SystemSettingsPage() {
         onConfirm={() => {
           if (pendingTab) commitTabChange(pendingTab);
         }}
-        title={t("common.tips")}
+        title={t("systemSettings.unsavedChanges")}
         description={t("systemSettings.unsavedLeaveConfirm")}
         confirmLabel={t("common.confirm")}
         cancelLabel={t("common.cancel")}

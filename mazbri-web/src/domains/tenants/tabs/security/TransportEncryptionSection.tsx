@@ -377,7 +377,7 @@ export function TransportEncryptionSection({
                     />
                   )}
                 </div>
-                {cryptoKey ? (
+                {cryptoKey && (
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground font-mono-tech">
                     <span>
                       {t("tenant.transportEncryption.fields.digest")}:{" "}
@@ -387,10 +387,6 @@ export function TransportEncryptionSection({
                       {t("common.fields.updatedAt")}:{" "}
                       {formatDateTime(cryptoKey.updated_at)}
                     </span>
-                  </div>
-                ) : (
-                  <div className="text-[11px] text-muted-foreground">
-                    {t("tenant.transportEncryption.hints.keyRequiredHint")}
                   </div>
                 )}
               </div>
@@ -467,7 +463,7 @@ export function TransportEncryptionSection({
                     disabled={disabled}
                     onClick={() => handleSelectMode(opt.value)}
                     className={cn(
-                      "flex items-start gap-2.5 rounded-lg border p-3 text-left transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-55",
+                      "flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-55",
                       active
                         ? "border-primary bg-primary-soft/50 text-foreground"
                         : "border-border bg-card text-foreground hover:border-border-hover hover:bg-hover-bg/60",
@@ -475,19 +471,14 @@ export function TransportEncryptionSection({
                   >
                     <span
                       className={cn(
-                        "mt-0.5 shrink-0",
+                        "shrink-0",
                         active ? "text-primary" : "text-muted-foreground",
                       )}
                     >
                       {opt.icon}
                     </span>
-                    <span className="min-w-0 space-y-0.5">
-                      <span className="block text-xs font-semibold">
-                        {opt.label}
-                      </span>
-                      <span className="block text-[11px] leading-snug text-muted-foreground">
-                        {opt.desc}
-                      </span>
+                    <span className="text-xs font-semibold truncate">
+                      {opt.label}
                     </span>
                   </button>
                 );
@@ -577,7 +568,7 @@ export function TransportEncryptionSection({
         onConfirm={() => void handleConfirmRotateKey()}
         loading={rotating}
         danger={false}
-        title={t("common.tips")}
+        title={t("tenant.transportEncryption.actions.rotateKey")}
         confirmLabel={t("tenant.transportEncryption.actions.rotateKey")}
         description={t("tenant.transportEncryption.messages.rotateKeyConfirm")}
       />
@@ -589,7 +580,7 @@ export function TransportEncryptionSection({
         onConfirm={() => void handleConfirmDeleteKey()}
         loading={deleting}
         danger
-        title={t("common.tips")}
+        title={t("tenant.transportEncryption.actions.delete")}
         confirmLabel={t("common.confirm")}
         description={t("tenant.transportEncryption.messages.deleteKeyConfirm")}
       />

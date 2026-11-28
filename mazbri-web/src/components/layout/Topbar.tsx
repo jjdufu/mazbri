@@ -61,9 +61,7 @@ export function Topbar({ onOpenCommandPalette }: TopbarProps = {}) {
           : "";
 
   const isZh = locale === LanguageEnum.ZH;
-  const localeTooltip = isZh
-    ? "当前语言：中文（点击切换 English）"
-    : "Language: English (Switch to 中文)";
+  const localeTooltip = isZh ? "English" : "中文";
   const themeTooltip = formatThemeTooltip(theme, isZh);
 
   const handleConfirmLogout = async () => {
@@ -93,9 +91,7 @@ export function Topbar({ onOpenCommandPalette }: TopbarProps = {}) {
             <span className="inline-flex items-center gap-2 min-w-0">
               <Search className="h-3.5 w-3.5 text-xblue shrink-0" />
               <span className="hidden sm:inline truncate">
-                {isZh
-                  ? "搜索菜单、功能视图与快捷动作…"
-                  : "Search pages, views, and quick actions…"}
+                {isZh ? "搜索…" : "Search…"}
               </span>
             </span>
             <kbd className="rounded bg-background/90 px-1.5 py-0.5 text-[10px] font-mono-tech text-muted-foreground shadow-2xs shrink-0">

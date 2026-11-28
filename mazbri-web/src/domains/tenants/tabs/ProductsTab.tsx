@@ -513,7 +513,7 @@ export function ProductsTab({ tenantCode }: ProductsTabProps) {
         onConfirm={() => void handleConfirmRevoke()}
         loading={revoking}
         danger
-        title={t("common.tips")}
+        title={t("authorization.list.actions.revoke")}
         confirmLabel={t("common.confirm")}
         description={
           revokeTarget

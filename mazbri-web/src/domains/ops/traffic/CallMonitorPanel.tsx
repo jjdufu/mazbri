@@ -810,7 +810,6 @@ export function CallMonitorPanel({
     <div className="flex flex-col flex-1 min-h-0 gap-4 min-w-0">
       <ChartCard
         title={t("ops.calls.histogram.title")}
-        info={t("ops.calls.histogram.brushHint")}
         loading={histogramLoading}
         empty={histogramEmpty}
         emptyText={t("operations.monitoring.empty.noData")}

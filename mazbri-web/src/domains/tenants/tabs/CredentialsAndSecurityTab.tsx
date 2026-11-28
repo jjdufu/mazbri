@@ -443,7 +443,7 @@ export function CredentialsAndSecurityTab({
         onConfirm={() => void handleConfirmRotate()}
         loading={Boolean(rotatingPrefix)}
         danger={false}
-        title={t("common.tips")}
+        title={t("tenant.actions.rotateApiKey")}
         confirmLabel={t("common.confirm")}
         description={t("tenant.messages.rotateApiKeyConfirm")}
       />
@@ -455,7 +455,7 @@ export function CredentialsAndSecurityTab({
         onConfirm={() => void handleConfirmRevoke()}
         loading={revokingKey}
         danger
-        title={t("common.tips")}
+        title={t("tenant.actions.revokeApiKey")}
         confirmLabel={t("tenant.actions.revokeApiKey")}
         description={t("tenant.messages.revokeApiKeyConfirm")}
       />

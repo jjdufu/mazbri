@@ -1,10 +1,9 @@
 import { useMemo, useState } from "react";
-import { GripVertical, HelpCircle, Plus, Trash2 } from "lucide-react";
+import { GripVertical, Plus, Trash2 } from "lucide-react";
 import type { AssertionSpec } from "@/api/upstream-connectors";
 import {
   IconButton,
   Input,
-  Popover,
   Select,
   cn,
   type SelectOptionItem,
@@ -41,7 +40,6 @@ export function WorkbenchAssertEditor({
   disabled = false,
 }: WorkbenchAssertEditorProps) {
   const { t } = useT();
-  const [helpOpen, setHelpOpen] = useState(false);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
 
   const typeOptions: SelectOptionItem[] = useMemo(
@@ -104,26 +102,6 @@ export function WorkbenchAssertEditor({
           {t("upstreamConnector.assertTab")}
         </span>
         <div className="flex items-center gap-0.5">
-          <Popover
-            open={helpOpen}
-            onOpenChange={setHelpOpen}
-            align="right"
-            contentClassName="w-72 p-2.5"
-            trigger={
-              <IconButton
-                size="sm"
-                title={t("upstreamConnector.assertHelpTitle")}
-                aria-label={t("upstreamConnector.assertHelpTitle")}
-                onClick={() => setHelpOpen((v) => !v)}
-              >
-                <HelpCircle className="h-3.5 w-3.5" />
-              </IconButton>
-            }
-          >
-            <p className="text-xs leading-relaxed text-foreground">
-              {t("upstreamConnector.assertHelp")}
-            </p>
-          </Popover>
 
           <IconButton
             size="sm"

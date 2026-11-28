@@ -304,9 +304,6 @@ export function PlatformLicenseTab() {
               <div className="text-xs font-medium text-foreground">
                 {t("certificate.authorizationManagement.filePicker.title")}
               </div>
-              <div className="text-[11px] text-muted-foreground">
-                {t("certificate.authorizationManagement.filePicker.hint")}
-              </div>
             </>
           )}
         </div>

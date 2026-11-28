@@ -4,7 +4,6 @@ import {
   DateRangePicker,
   IconButton,
   Popover,
-  Tooltip,
   cn,
   type DateRangeValue,
 } from "@/components/ui";
@@ -71,12 +70,11 @@ export function AutoRefreshControl({
   if (hasAutoRefresh && onRefresh) {
     return (
       <div className="inline-flex h-8 items-stretch rounded-md border border-control-border bg-control-bg hover:border-border-hover overflow-hidden transition-colors">
-        <Tooltip content={t("ops.autoRefresh.refreshNow")}>
-          <button
+        <button
             type="button"
             onClick={onRefresh}
             disabled={loading}
-            aria-label={t("ops.autoRefresh.refreshNow")}
+            aria-label={t("common.actions.refresh")}
             className={cn(
               "inline-flex h-full items-center gap-1.5 px-2.5 text-xs transition-colors hover:bg-control-hover active:bg-active-bg disabled:opacity-45 cursor-pointer",
               activeRefreshShort
@@ -93,7 +91,6 @@ export function AutoRefreshControl({
               </span>
             )}
           </button>
-        </Tooltip>
         <Popover
           open={refreshMenuOpen}
           onOpenChange={setRefreshMenuOpen}
@@ -141,17 +138,15 @@ export function AutoRefreshControl({
 
   if (onRefresh) {
     return (
-      <Tooltip content={t("ops.autoRefresh.refreshNow")}>
-        <IconButton
+      <IconButton
           size="md"
           onClick={onRefresh}
           disabled={loading}
-          aria-label={t("ops.autoRefresh.refreshNow")}
+          aria-label={t("common.actions.refresh")}
           className="border border-control-border bg-control-bg"
         >
           <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
         </IconButton>
-      </Tooltip>
     );
   }
 

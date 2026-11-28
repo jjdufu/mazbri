@@ -122,26 +122,18 @@ export function UserResetPasswordModal({
       onClose={onClose}
       onSubmit={handleSubmit}
       title={t("userManagement.resetPasswordDialog.title")}
+      subtitle={admin?.username}
       size="md"
       submitLabel={t("common.confirm")}
       cancelLabel={t("common.cancel")}
       submitting={submitting}
       testId="user-reset-password-modal"
     >
-      {admin && (
-        <div className="rounded-md border border-border bg-card px-3 py-2 text-xs text-foreground">
-          {t("userManagement.resetPasswordDialog.alert", {
-            username: admin.username,
-          })}
-        </div>
-      )}
-
       <FormField
         label={t("userManagement.resetPasswordDialog.fields.newPassword")}
         htmlFor="reset-user-password"
         required
         error={error}
-        hint={t("userManagement.resetPasswordDialog.tips.passwordGenerated")}
       >
         <div className="flex items-center gap-1.5">
           <div className="flex-1 min-w-0">

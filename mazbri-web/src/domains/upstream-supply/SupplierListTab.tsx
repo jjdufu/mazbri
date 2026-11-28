@@ -522,7 +522,7 @@ export function SupplierListTab({
         open={Boolean(deleteTarget)}
         onClose={() => setDeleteTarget(null)}
         onConfirm={() => void handleConfirmSingleDelete()}
-        title={t("common.tips")}
+        title={t("common.actions.delete")}
         description={
           deleteTarget
             ? t("supplier.messages.deleteConfirm", { name: deleteTarget.name })
@@ -537,7 +537,7 @@ export function SupplierListTab({
         open={Boolean(batchDeleteIds)}
         onClose={() => setBatchDeleteIds(null)}
         onConfirm={() => void handleConfirmBatchDelete()}
-        title={t("common.tips")}
+        title={t("common.actions.delete")}
         description={t("supplier.messages.deleteConfirm", {
           name: `${batchDeleteIds?.length ?? 0}`,
         })}

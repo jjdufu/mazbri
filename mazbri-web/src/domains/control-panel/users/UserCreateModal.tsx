@@ -299,7 +299,6 @@ export function UserCreateModal({
         htmlFor="create-user-password"
         required
         error={errors.password}
-        hint={t("userManagement.createDialog.tips.passwordGenerated")}
       >
         <div className="flex items-center gap-1.5">
           <div className="flex-1 min-w-0">
@@ -347,13 +346,8 @@ export function UserCreateModal({
 
       <div className="rounded-lg border border-border divide-y divide-border bg-card">
         <div className="flex items-center justify-between gap-4 px-3.5 py-2.5">
-          <div className="min-w-0 space-y-0.5">
-            <div className="text-xs font-medium text-foreground">
-              {t("userManagement.createDialog.fields.firstLogin")}
-            </div>
-            <div className="text-[11px] text-muted-foreground">
-              {t("userManagement.createDialog.tips.forcePasswordReset")}
-            </div>
+          <div className="text-xs font-medium text-foreground">
+            {t("userManagement.createDialog.fields.firstLogin")}
           </div>
           <Switch
             checked={form.force_password_reset}
@@ -364,13 +358,8 @@ export function UserCreateModal({
           />
         </div>
         <div className="flex items-center justify-between gap-4 px-3.5 py-2.5">
-          <div className="min-w-0 space-y-0.5">
-            <div className="text-xs font-medium text-foreground">
-              {t("userManagement.createDialog.fields.mfaRequired")}
-            </div>
-            <div className="text-[11px] text-muted-foreground">
-              {t("userManagement.createDialog.tips.mfaRequired")}
-            </div>
+          <div className="text-xs font-medium text-foreground">
+            {t("userManagement.createDialog.fields.mfaRequired")}
           </div>
           <Switch
             checked={form.mfa_required}

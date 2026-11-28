@@ -538,9 +538,7 @@ export function WhitelistSection({ tenantCode }: WhitelistSectionProps) {
     >
       {isCompactEmpty ? (
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-          <span>
-            {t("tenant.whitelist.emptyHint1")} · {t("tenant.whitelist.emptyHint2")}
-          </span>
+          <span>{t("tenant.whitelist.emptyHint1")}</span>
         </div>
       ) : (
         <DataTablePage<WhitelistEntry>

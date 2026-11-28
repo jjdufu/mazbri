@@ -3,7 +3,6 @@ import {
   AlertTriangle,
   Gauge,
   Inbox,
-  Info,
   RefreshCw,
   Timer,
 } from "lucide-react";
@@ -16,7 +15,6 @@ import {
   Card,
   DataTablePage,
   StatCard,
-  Tooltip,
   type DataTableColumn,
 } from "@/components/ui";
 import { fetchBillingFailures, fetchBillingFunnel } from "@/api/billing-ops";
@@ -399,12 +397,6 @@ export function BillingPipelinePanel({
     funnel?.mode === "sync_pass_through"
       ? t("ops.billing.pipelineHealth")
       : t("ops.billing.funnel");
-  const funnelHint =
-    funnel?.mode === "sync_pass_through"
-      ? t("ops.billing.noBacklog")
-      : funnel?.mode === "async_funnel"
-        ? t("ops.billing.asyncFunnelHint")
-        : undefined;
 
   return (
     <div className="space-y-4 min-w-0">
@@ -456,13 +448,7 @@ export function BillingPipelinePanel({
             <h3 className="text-xs font-semibold text-foreground">
               {funnelTitle}
             </h3>
-            {funnelHint && (
-              <Tooltip content={funnelHint}>
-                <span className="inline-flex text-muted-foreground hover:text-foreground cursor-help">
-                  <Info className="h-3.5 w-3.5" />
-                </span>
-              </Tooltip>
-            )}
+
           </div>
           <DataTablePage
             columns={funnelColumns}

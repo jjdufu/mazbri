@@ -6,11 +6,10 @@ import {
   ChevronRight,
   Edit3,
   GripVertical,
-  HelpCircle,
   Plus,
   Trash2,
 } from "lucide-react";
-import { IconButton, Popover, Textarea, cn } from "@/components/ui";
+import { IconButton, Textarea, cn } from "@/components/ui";
 import { useT } from "@/locales";
 import {
   duplicateKvKeys,
@@ -196,7 +195,6 @@ export function WorkbenchKvRows({
   const { t } = useT();
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkText, setBulkText] = useState("");
-  const [helpOpen, setHelpOpen] = useState(false);
   const [forceShow, setForceShow] = useState(false);
   const [userFolded, setUserFolded] = useState<boolean | null>(null);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
@@ -231,7 +229,6 @@ export function WorkbenchKvRows({
 
   const canClear = rows.length > 0;
   const dupKeys = useMemo(() => duplicateKvKeys(rows), [rows]);
-  const helpText = helpTitle || t("upstreamConnector.kvHelpDetail");
 
   const tableVisible = useMemo(() => {
     if (rows.length === 0) return false;
@@ -383,26 +380,6 @@ export function WorkbenchKvRows({
           className="flex items-center gap-0.5 shrink-0"
           onClick={(e) => e.stopPropagation()}
         >
-          <Popover
-            open={helpOpen}
-            onOpenChange={setHelpOpen}
-            align="right"
-            contentClassName="w-72 p-2.5"
-            trigger={
-              <IconButton
-                size="sm"
-                title={helpTitle || t("upstreamConnector.kvHelp")}
-                aria-label={helpTitle || t("upstreamConnector.kvHelp")}
-                onClick={() => setHelpOpen((v) => !v)}
-              >
-                <HelpCircle className="h-3.5 w-3.5" />
-              </IconButton>
-            }
-          >
-            <p className="text-xs leading-relaxed text-foreground">
-              {helpText}
-            </p>
-          </Popover>
 
           <IconButton
             size="sm"

@@ -37,7 +37,7 @@ import type {
   TrafficKpis,
 } from "@/types/api/monitoring";
 import type { ExemplarRow } from "@/types/api/olap";
-import { formatWallClockHm, formatWallClockMdHm } from "@/utils/format";
+import { formatWallClockHm } from "@/utils/format";
 import {
   TRAFFIC_PATH,
   buildAlertsRoute,
@@ -249,15 +249,6 @@ export function OverviewPage() {
   const traffic = overview?.traffic ?? null;
   const realtime = overview?.realtime ?? null;
 
-  const windowSemantics = useMemo(() => {
-    const w = overview?.window ?? chartWindow;
-    if (!w) return t("ops.overview.followsWindow");
-    return t("ops.overview.windowSemantics", {
-      start: formatWallClockMdHm(w.start * 1000),
-      end: formatWallClockMdHm(w.end * 1000),
-      label: t(`ops.timeRange.presets.${timeRange.preset}`),
-    });
-  }, [overview?.window, chartWindow, timeRange.preset, t]);
 
   const realtimeSemantics = useMemo(() => {
     if (!realtime) return t("ops.overview.realtimeNow");
@@ -400,11 +391,6 @@ export function OverviewPage() {
 
   return (
     <div className="space-y-5 min-w-0">
-      {isViewer && (
-        <div className="rounded-lg border border-primary/25 bg-primary-soft px-3.5 py-2 text-xs text-primary">
-          {t("ops.overview.viewerSlim")}
-        </div>
-      )}
 
       <PageHeaderActions>
         <OpsTimeBar
@@ -434,14 +420,9 @@ export function OverviewPage() {
 
       {/* Window KPI section */}
       <section className="space-y-2.5">
-        <div className="flex items-baseline gap-2.5 min-w-0">
-          <h2 className="text-sm font-semibold text-foreground shrink-0 whitespace-nowrap">
-            {t("ops.overview.sections.kpi")}
-          </h2>
-          <span className="text-xs text-muted-foreground font-mono-tech truncate">
-            {windowSemantics}
-          </span>
-        </div>
+        <h2 className="text-sm font-semibold text-foreground">
+          {t("ops.overview.sections.kpi")}
+        </h2>
 
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
           <OverviewKpiCard

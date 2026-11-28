@@ -318,9 +318,7 @@ export function WorkbenchResponsePane({ className }: WorkbenchResponsePaneProps)
               ? t("upstreamConnector.urlMissingSend")
               : t("upstreamConnector.responseIdle")}
           </p>
-          <p className="text-[11px] text-muted-foreground">
-            {t("upstreamConnector.responseIdleHint")}
-          </p>
+
           <Button
             type="button"
             variant="outline"

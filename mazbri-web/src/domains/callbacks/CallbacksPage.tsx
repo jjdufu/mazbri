@@ -837,7 +837,7 @@ export function CallbacksPage() {
         open={Boolean(deleteTarget)}
         onClose={() => setDeleteTarget(null)}
         onConfirm={() => void handleConfirmSingleDelete()}
-        title={t("common.tips")}
+        title={t("common.actions.delete")}
         description={t("callbacks.messages.deleteConfirm")}
         confirmLabel={t("common.confirm")}
         cancelLabel={t("common.cancel")}
@@ -848,7 +848,7 @@ export function CallbacksPage() {
         open={Boolean(batchDeleteIds)}
         onClose={() => setBatchDeleteIds(null)}
         onConfirm={() => void handleConfirmBatchDelete()}
-        title={t("common.tips")}
+        title={t("common.actions.delete")}
         description={t("callbacks.messages.deleteConfirm")}
         confirmLabel={t("common.confirm")}
         cancelLabel={t("common.cancel")}

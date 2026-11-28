@@ -496,7 +496,7 @@ export function ConfigCenterPage() {
         open={deleteTarget !== null}
         onClose={() => setDeleteTarget(null)}
         onConfirm={() => void handleConfirmDelete()}
-        title={t("common.tips")}
+        title={t("common.actions.delete")}
         description={t("configCenter.messages.deleteServiceConfigConfirm", {
           serviceName: deleteTarget?.service_name ?? "",
         })}

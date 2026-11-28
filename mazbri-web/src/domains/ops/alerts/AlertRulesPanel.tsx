@@ -710,10 +710,9 @@ export function AlertRulesPanel() {
 
         <div className="grid grid-cols-1 gap-3 rounded-lg border border-border p-3 sm:grid-cols-2">
           <div className="flex items-center justify-between gap-2">
-            <LabelWithHint
-              label={t("ops.alerts.rules.form.notifyEnabled")}
-              hint={t("ops.alerts.rules.form.notifyEnabledHint")}
-            />
+            <span className="text-xs text-foreground">
+              {t("ops.alerts.rules.form.notifyEnabled")}
+            </span>
             <Switch
               checked={form.notifyEnabled}
               onCheckedChange={(notifyEnabled) =>
@@ -722,10 +721,9 @@ export function AlertRulesPanel() {
             />
           </div>
           <div className="flex items-center justify-between gap-2">
-            <LabelWithHint
-              label={t("ops.alerts.rules.form.evaluateEnabled")}
-              hint={t("ops.alerts.rules.form.evaluateEnabledHint")}
-            />
+            <span className="text-xs text-foreground">
+              {t("ops.alerts.rules.form.evaluateEnabled")}
+            </span>
             <Switch
               checked={form.enabled}
               onCheckedChange={(enabled) => setForm((f) => ({ ...f, enabled }))}

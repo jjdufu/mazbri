@@ -333,7 +333,7 @@
     "last7Days": "Last 7 Days",
     "last30Days": "Last 30 Days",
     "importDialog": {
-      "dragToUpload": "Drag the {type} file here, or click to upload",
+      "dragToUpload": "Select or drop {type} file",
       "fileTip": ".{ext} only, ≤{size}",
       "newItems": "New: {count} items",
       "duplicateItems": "Duplicate: {count} items (will be skipped)",
@@ -500,7 +500,7 @@
       },
       "empty": {
         "noMatch": "No call records matched the filters",
-        "noMatchLatest": "No matches in the latest {size} calls; try adding a time range",
+        "noMatchLatest": "No matching call records",
         "noData": "No call records"
       },
       "messages": {
@@ -1343,8 +1343,8 @@
       "includeSelfAudit": "Show audit read logs"
     },
     "chain": {
-      "expandTooltip": "{flow} ({count} cross-service linked logs, click to expand mirror rows)",
-      "collapseTooltip": "{flow} (click to collapse mirror rows)",
+      "expandTooltip": "{flow} · {count} linked records",
+      "collapseTooltip": "{flow}",
       "mirrorPrefix": "↳ Mirror",
       "detailTitle": "Cross-Service Linked Records",
       "switchToService": "Switch",
@@ -2002,7 +2002,7 @@
         "updatedBy": "Updated By",
         "createdAt": "Time"
       },
-      "initialVersionNotice": "Current initial active version (historical snapshots will be recorded automatically after updates)",
+      "initialVersionNotice": "Initial version, no change history yet",
       "activeConfigTitle": "Current Active Config",
       "confirmTitle": "Confirm Rollback",
       "confirmMessage": "Are you sure you want to roll back to version {version}?",
@@ -2034,7 +2034,7 @@
       "sections": {
         "import": "License Import & Request Export",
         "detail": "Current License Details",
-        "emptyDetail": "No authorization file has been imported yet. Use the form on the left first."
+        "emptyDetail": "No license imported"
       },
       "status": {
         "active": "Activated",
@@ -2072,7 +2072,7 @@
         }
       },
       "filePicker": {
-        "title": "Click or drag to select a license file",
+        "title": "Select or drop .jws license file",
         "hint": "Supports importing platform-issued .jws license files or pasting license text",
         "selectedHint": "A file is selected. Click or drag to choose another one.",
         "selectedSize": "File size: {size}",
@@ -2359,7 +2359,7 @@
         "description": "Private keys are high-sensitivity credentials. Viewing or copying requires administrator MFA verification and is recorded in audit logs.",
         "unlockAction": "Unlock Private Key",
         "lockAction": "Lock & Hide",
-        "unlockedHint": "Private key temporarily unlocked; cleared from memory when closing the drawer"
+        "unlockedHint": "Temporarily unlocked"
       }
     },
     "issueDialog": {
@@ -2473,7 +2473,7 @@
         "role": "Please select a role"
       },
       "actions": {
-        "regeneratePassword": "Generate strong password matching policy",
+        "regeneratePassword": "Generate",
         "copyPassword": "Copy password"
       },
       "tips": {
@@ -2507,7 +2507,7 @@
         "newPassword": "Please enter a new password"
       },
       "actions": {
-        "regeneratePassword": "Generate strong password matching policy",
+        "regeneratePassword": "Generate",
         "copyPassword": "Copy password"
       },
       "tips": {
@@ -2609,7 +2609,7 @@
       "codePlaceholder": "SUP_A",
       "namePlaceholder": "Supplier A",
       "accessAddressPlaceholder": "127.0.0.1:8088",
-      "targetAddressPlaceholder": "e.g., https://upstream.example.com",
+      "targetAddressPlaceholder": "https://upstream.example.com",
       "saveAndBack": "Save",
       "cancelBack": "Cancel",
       "typeLockedHint": "Integration type is fixed after onboarding and cannot be changed"
@@ -2725,7 +2725,7 @@
     "reconciliation": {
       "guide": "Usage consistency: compare billing usage (OLTP) with analytics aggregates (OLAP). Two-sided check, not full three-way settlement.",
       "listTitle": "Discrepancy ledger",
-      "empty": "No reconciliation records in this period. Click 'Run Audit' at the top right to start verification.",
+      "empty": "No reconciliation records",
       "emptyNoMatch": "No matching reconciliation rows",
       "searchPlaceholder": "Date / status / scope / note / ID",
       "from": "From",
@@ -3028,7 +3028,7 @@
         "allowInsecureAdminOnly": "Only super admins can enable insecure algorithms",
         "legacyRisk": "Legacy weak algorithm selected ({algorithms}); use only during migration",
         "keyRequiredHint": "Generate a tenant secret key before enabling request or full encryption",
-        "mustCreateKeyBeforeEnable": "No secret key exists yet. Click Generate Key above before saving an encrypted mode."
+        "mustCreateKeyBeforeEnable": "Generate a transport key first"
       },
       "modes": {
         "none": "Off",
@@ -3196,7 +3196,7 @@
       "renewDays": "Renew Days",
       "createTitle": "Add API Key",
       "rotateTitle": "API Key Rotated",
-      "secretWarning": "This secret key is shown only once and cannot be viewed again after closing. Copy or download it immediately.",
+      "secretWarning": "Secret key is shown once and cannot be viewed again.",
       "secretLabel": "API Key",
       "downloadTxt": "Download .txt",
       "downloadJson": "Download .json",
@@ -3224,7 +3224,7 @@
         "product": "Select Product",
         "productPlaceholder": "Please select or search a product to grant",
         "unitPrice": "Unit Price",
-        "unitPricePlaceholder": "e.g. 0.001",
+        "unitPricePlaceholder": "0.001",
         "cbProFallback": "CBPRO"
       }
     },
@@ -3237,7 +3237,7 @@
       "import": "Import",
       "add": "Add IP",
       "emptyTitle": "No IP whitelist entries",
-      "emptyHint1": "Empty whitelist: all IPs allowed.",
+      "emptyHint1": "No whitelist configured (all IPs allowed)",
       "emptyHint2": "Once set, only listed IPs can access.",
       "selectedCount": "Selected {count} items",
       "batchDelete": "Batch Delete",
@@ -3252,16 +3252,16 @@
         "title": "Add IP Whitelist",
         "confirm": "Add",
         "ipAddresses": "IP Address",
-        "ipAddressesPlaceholder": "One IP or subnet per line, e.g.:\n192.168.1.100\n192.168.50.0/24\n10.0.0.0/8",
+        "ipAddressesPlaceholder": "192.168.1.100\n192.168.50.0/24\n10.0.0.0/8",
         "ipAddressesHint": "One IP or CIDR per line.",
         "description": "Description",
-        "descriptionPlaceholder": "e.g. office network, IDC room"
+        "descriptionPlaceholder": "Office network, IDC"
       },
       "importDialog": {
         "title": "Import IP Whitelist",
         "formatTitle": "CSV File Format",
         "formatHint": "The file must contain the header: ip_address,cidr,description",
-        "formatExample": "e.g. 192.168.1.100,32,office network",
+        "formatExample": "192.168.1.100,32,Office",
         "uploadText": "Drag the CSV file here, or",
         "clickToUpload": "click to upload",
         "tip": ".csv only, ≤100KB.",
@@ -3308,8 +3308,8 @@
       "apiKeyRevoked": "API key revoked",
       "apiKeyDownloaded": "API key file downloaded",
       "apiKeyDownloadFailed": "Failed to download API key",
-      "rotateApiKeyConfirm": "Rotate this API key? A new key will be issued atomically while the current key is immediately revoked for new token exchanges (previously issued short-lived Bearer JWTs expire naturally per their remaining TTL).",
-      "revokeApiKeyConfirm": "Revoke this API key? Once revoked, it can immediately no longer be exchanged for new access tokens (previously issued short-lived Bearer JWTs expire naturally per their remaining TTL). This action cannot be undone.",
+      "rotateApiKeyConfirm": "Rotate this API key? The current key will be revoked immediately.",
+      "revokeApiKeyConfirm": "Revoke this API key? This action cannot be undone.",
       "apiKeyMissing": "API key does not exist",
       "selectProductToGrant": "Please select a product to grant",
       "revokeProductConfirm": "Are you sure you want to revoke access to product \"{name}\"?",
@@ -3327,7 +3327,7 @@
       "apiOverrides": "API-level Differentiated Config",
       "warmupList": "Data Preload (Warmup)",
       "addRule": "Add Rule",
-      "apiPathPlaceholder": "e.g. chat.completions",
+      "apiPathPlaceholder": "chat.completions",
       "newWarmupKeyPlaceholder": "Add",
       "seconds": "s",
       "fields": {
@@ -3372,7 +3372,7 @@
     "apiOverridesEmpty": "No overrides",
     "fineGrainedOverrides": "Per-API overrides",
     "addOverride": "Add override",
-    "pathPlaceholder": "e.g. /posts or product:8000000001",
+    "pathPlaceholder": "/posts or product:8000000001",
     "overrideExceedsPlan": "Override for \"{path}\" ({limit} QPS) exceeds plan rate ({planQps}). Lower it before saving.",
     "overrideInvalidLimit": "Override for \"{path}\" has an invalid limit",
     "clientIpHint": "",
@@ -3495,7 +3495,7 @@
       "fallbackSection": "CBPRO",
       "billingSubscription": "Monthly Subscription",
       "unitPrice": "Unit Price",
-      "unitPricePlaceholder": "e.g. 0.001",
+      "unitPricePlaceholder": "0.001",
       "cbProFallback": "CBPRO",
       "cbProEnabledHint": "",
       "cbProDisabledHint": "CBPRO not enabled on product",
@@ -3514,7 +3514,7 @@
       "searchProductPlaceholder": "Search product name or code",
       "billingSubscription": "Monthly Subscription",
       "unitPrice": "Unit Price",
-      "unitPricePlaceholder": "e.g. 0.001",
+      "unitPricePlaceholder": "0.001",
       "cbProFallback": "CBPRO",
       "cbProEnabledHint": "",
       "cbProDisabledHint": "CBPRO not enabled on product",
@@ -3726,8 +3726,8 @@
     },
     "useAccessWizard": "Use the Access Upstream wizard to create",
     "placeholders": {
-      "name": "e.g. ACME Partner",
-      "channelName": "e.g. ACME default channel",
+      "name": "ACME Partner",
+      "channelName": "ACME Default Channel",
       "upstreamUrl": "host:port",
       "contractId": "A contract_id registered in the gateway",
       "productSelect": "Search product name or 10-digit code"
@@ -3737,7 +3737,7 @@
     "workbenchTitle": "Code-free Access",
     "codeFreeAccess": "Code-free Access",
     "draftsTitle": "Drafts",
-    "draftsEmpty": "No drafts yet. Open the workbench from Code-free Access on the supplier list.",
+    "draftsEmpty": "No drafts",
     "draftsNoMatch": "No matching drafts",
     "openDraft": "Continue",
     "continueEdit": "Continue editing",
@@ -3825,8 +3825,8 @@
     "authInherit": "Inherit session default",
     "authNone": "No HTTP Auth",
     "authSkip": "No HTTP Auth (skip session default)",
-    "authInheritDesc": "This endpoint inherits the session default HTTP auth ({profile}).",
-    "authSkipEmpty": "This endpoint explicitly skips session default HTTP auth.",
+    "authInheritDesc": "Inherits session auth ({profile})",
+    "authSkipEmpty": "Skips session default auth",
     "authVaultSection": "Session shared credentials & key vault",
     "authVaultOnlyTag": "Key vault only ({n} keys)",
     "authApiKey": "API Key",
@@ -3836,7 +3836,7 @@
     "authSignForm": "Sign form",
     "authGrpcMeta": "gRPC metadata",
     "authInheritHint": "This endpoint uses session auth_flow.profile; inherit cannot be published until a session profile is set.",
-    "authNoneEmpty": "This endpoint does not attach auth.",
+    "authNoneEmpty": "No authentication",
     "authSessionDefault": "Session default",
     "authSessionUnset": "Not set",
     "authSetSessionDefault": "Set as session default",
@@ -3880,7 +3880,7 @@
     "bodyTypeNone": "None",
     "bodyTypeJson": "JSON",
     "bodyTypeForm": "Form",
-    "bodyNoneEmpty": "This endpoint has no tenant body. The gateway will not send an HTTP body upstream.",
+    "bodyNoneEmpty": "No request body",
     "bodyNeedsJsonObject": "Please use a JSON object",
     "egressContentType": "Outbound Content-Type",
     "egressBodyEncoding": "Outbound body encoding",
@@ -4038,7 +4038,7 @@
     "wsAuthInFirstFrame": "First frame",
     "wsAuthInHint": "Handshake timeout and pool caps are in bypass config (ws_handshake_timeout_secs / ws_max_concurrent*); configure path / wrap / auth_in here.",
     "staticTokenHint": "Static token headers not taken over by auth flow: {headers} (hint, not blocked)",
-    "pipelineEmpty": "After a transform preview or business run, compare tenant request / upstream request / upstream response here",
+    "pipelineEmpty": "No pipeline comparison data",
     "pipeTenantReq": "Tenant request",
     "pipeUpstreamReq": "After transform (to upstream)",
     "pipeUpstreamRes": "Upstream response",
@@ -4201,9 +4201,9 @@
     "exportPostman": "Export Postman Collection",
     "envDrawerBtn": "Env vars ({n})",
     "envUndefined": "Undefined variable",
-    "sendProbeTooltip": "Sends via management probe directly to upstream (no gateway billing) · Ctrl+Enter",
-    "splitSideBySide": "Switch to side-by-side split",
-    "splitTopBottom": "Switch to top-bottom split",
+    "sendProbeTooltip": "Send (Ctrl+Enter)",
+    "splitSideBySide": "Side by Side",
+    "splitTopBottom": "Top and Bottom",
     "gatewayPrefixLabel": "Gateway prefix",
     "pathPrefixTooltip": "Gateway route matching prefix for tenant requests, distinct from the upstream path in the URL bar",
     "backToSupply": "Back",
@@ -4451,7 +4451,7 @@
     },
     "backupCodes": {
       "title": "Backup codes",
-      "hint": "Backup codes are shown only once and each can be used once. They are 8 uppercase letters or digits (excluding 0, 1, I and O) and are uppercased as you type. Use them to sign in, or to open one category elevation. Save them now.",
+      "hint": "Backup codes are shown once and single-use. Save them securely.",
       "regenerateConfirm": "Regenerating invalidates old backup codes. This is a two-step action; after verification this category will not ask again for a while. Continue?"
     },
     "disable": {
@@ -4866,7 +4866,7 @@
       },
       "scatter": {
         "title": "Duration distribution",
-        "summary": "{count} traces, click a point to open it",
+        "summary": "{count} traces",
         "currentPageSubtitle": "Current page trace duration distribution",
         "ok": "OK",
         "error": "With errors"
@@ -4930,7 +4930,7 @@
       },
       "fallback": {
         "title": "Trace not found",
-        "description": "The trace may have expired or was not sampled; related call logs are shown below."
+        "description": "Trace expired or not sampled"
       },
       "sampleTitle": "Error samples",
       "sampleHint": "Click an error code above to load samples, click a trace_id to open it",
@@ -4994,10 +4994,10 @@
           "labels": "Extra labels",
           "labelsInvalid": "One key=value per line",
           "emails": "Email recipients",
-          "emailsHint": "One email address per line (up to 20); notified on firing and resolution.",
+          "emailsHint": "One email per line, up to 20",
           "emailsInvalid": "Enter addresses in name{'@'}domain form",
           "webhooks": "Webhooks",
-          "webhooksHint": "One HTTP(S) URL per line; receives JSON payloads on firing and resolution.",
+          "webhooksHint": "One HTTP(S) URL per line",
           "required": "Required",
           "notifyEnabled": "Notify outbound",
           "notifyEnabledHint": "Requires at least one email or webhook when enabled; records events only when disabled.",

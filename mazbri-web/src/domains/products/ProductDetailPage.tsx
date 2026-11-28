@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import {
-  Info,
   Loader2,
   Pencil,
   Plus,
@@ -701,10 +700,7 @@ export function ProductDetailPage() {
         submitting={saving}
         testId="product-edit-modal"
       >
-        <div className="flex items-start gap-2 rounded-md border border-primary/30 bg-primary-soft/45 px-3 py-2 text-xs text-primary">
-          <Info className="h-4 w-4 shrink-0 mt-0.5" />
-          <span>{t("product.detail.lockedAlert")}</span>
-        </div>
+
 
         <div className="space-y-3">
           <div className="border-b border-border pb-1.5 text-xs font-semibold text-foreground">
@@ -893,7 +889,7 @@ export function ProductDetailPage() {
         open={deleteOpen}
         onClose={() => setDeleteOpen(false)}
         onConfirm={() => void handleConfirmDelete()}
-        title={t("common.tips")}
+        title={t("common.actions.delete")}
         description={t("product.messages.deleteProductConfirm", {
           name: product?.name ?? "",
         })}
@@ -906,7 +902,7 @@ export function ProductDetailPage() {
         open={Boolean(revokeTarget)}
         onClose={() => setRevokeTarget(null)}
         onConfirm={() => void handleConfirmRevokeTenant()}
-        title={t("common.tips")}
+        title={t("authorization.list.actions.revoke")}
         description={t("authorization.list.revokeConfirm")}
         confirmLabel={t("authorization.list.actions.revoke")}
         cancelLabel={t("common.cancel")}

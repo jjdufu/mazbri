@@ -895,16 +895,7 @@ export function RateLimitSection({ tenantCode }: RateLimitSectionProps) {
           )}
         </div>
 
-        {/* Upstream Footer Hint */}
-        <div className="text-[11px] text-muted-foreground">
-          <span>{t("rateLimit.upstreamFooter")}</span>
-          <Link
-            to="/operations/upstream-supply"
-            className="ml-1 font-medium text-primary hover:underline"
-          >
-            {t("rateLimit.upstreamFooterLink")}
-          </Link>
-        </div>
+
       </div>
 
       <ConfirmDialog
@@ -913,7 +904,7 @@ export function RateLimitSection({ tenantCode }: RateLimitSectionProps) {
         onConfirm={() => void handleConfirmOps()}
         loading={opsBusy}
         danger={pendingOps?.type === "deny" || pendingOps?.type === "cancel"}
-        title={t("common.tips")}
+        title={t("rateLimit.title")}
         confirmLabel={t("common.confirm")}
         description={pendingOpsDescription}
       />
