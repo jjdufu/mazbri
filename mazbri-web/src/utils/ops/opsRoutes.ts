@@ -23,11 +23,14 @@ export type { BillingLinkOptions, BillingTabId } from "./billing-link";
 export { TRAFFIC_PATH, buildCallsRoute } from "./calls-link";
 export type { CallsFilterKey, CallsLinkOptions, CallsTab } from "./calls-link";
 
-export {
-  RUNTIME_PATH,
-  buildRuntimeRoute,
-} from "./runtime-link";
-export type { RuntimeLinkOptions, RuntimeTabId } from "./runtime-link";
+export { NODES_PATH, buildNodesRoute } from "./nodes-link";
+export type { NodesLinkOptions } from "./nodes-link";
+
+export { INFRA_PATH, buildInfraRoute } from "./infra-link";
+export type { InfraLinkOptions, InfraTabId } from "./infra-link";
+
+export { PIPELINE_PATH, buildPipelineRoute } from "./pipeline-link";
+export type { PipelineLinkOptions, PipelineTabId } from "./pipeline-link";
 
 export { buildServiceDetailRoute } from "./services-link";
 

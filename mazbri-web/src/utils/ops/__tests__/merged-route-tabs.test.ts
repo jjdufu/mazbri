@@ -70,37 +70,34 @@ test("traffic customer/upstream ALL; traces ADMIN-only", () => {
   assert.equal(admin.activeTab, "traces");
 });
 
-test("runtime apps ALL; pipeline BIZ; middleware/hosts ADMIN-only", () => {
-  const tabs = [...getMergedRouteTabs("runtime")];
+test("infra middleware/hosts ADMIN-only; pipeline billing/control BIZ and storage ADMIN-only", () => {
+  const infraTabs = [...getMergedRouteTabs("infra")];
   assert.deepEqual(
-    tabs.map((tab) => tab.id),
-    ["apps", "middleware", "pipeline", "hosts"],
+    infraTabs.map((tab) => tab.id),
+    ["middleware", "hosts"],
   );
-  assert.deepEqual(tabs[0]?.roles, ROLES_ALL);
-  assert.deepEqual(tabs[1]?.roles, ROLES_ADMIN);
-  assert.deepEqual(tabs[2]?.roles, ROLES_BIZ);
-  assert.deepEqual(tabs[3]?.roles, ROLES_ADMIN);
-  const viewer = resolveOpsTab({
-    role: "R_VIEWER",
-    tabs,
-    queryTab: "pipeline",
-    preferredDefault: MERGED_DEFAULT_TAB.runtime,
-  });
+  assert.deepEqual(infraTabs[0]?.roles, ROLES_ADMIN);
+  assert.deepEqual(infraTabs[1]?.roles, ROLES_ADMIN);
+
+  const pipelineTabs = [...getMergedRouteTabs("pipeline")];
   assert.deepEqual(
-    viewer.visibleTabs.map((tab) => tab.id),
-    ["apps"],
+    pipelineTabs.map((tab) => tab.id),
+    ["billing", "control", "storage"],
   );
-  assert.equal(viewer.activeTab, "apps");
+  assert.deepEqual(pipelineTabs[0]?.roles, ROLES_BIZ);
+  assert.deepEqual(pipelineTabs[1]?.roles, ROLES_BIZ);
+  assert.deepEqual(pipelineTabs[2]?.roles, ROLES_ADMIN);
 
   const finance = resolveOpsTab({
     role: "R_FINANCE",
-    tabs,
-    queryTab: "pipeline",
-    preferredDefault: MERGED_DEFAULT_TAB.runtime,
+    tabs: pipelineTabs,
+    queryTab: "storage",
+    preferredDefault: MERGED_DEFAULT_TAB.pipeline,
   });
   assert.deepEqual(
     finance.visibleTabs.map((tab) => tab.id),
-    ["apps", "pipeline"],
+    ["billing", "control"],
   );
-  assert.equal(finance.activeTab, "pipeline");
+  assert.equal(finance.activeTab, "billing");
+  assert.equal(finance.fellBack, true);
 });

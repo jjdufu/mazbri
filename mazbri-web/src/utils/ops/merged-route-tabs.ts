@@ -2,7 +2,7 @@ import { ROLES_ADMIN, ROLES_ALL, ROLES_BIZ } from "./roles";
 import type { OpsTabDef } from "./tabs";
 
 /** 合并父路由的 Tab 定义（无 label；页面侧用 i18n 注入）。 */
-export type MergedOpsDomain = "runtime" | "alerts" | "traffic";
+export type MergedOpsDomain = "infra" | "pipeline" | "alerts" | "traffic";
 
 type TabSeed<T extends string> = Omit<OpsTabDef<T>, "label"> & { id: T };
 
@@ -18,17 +18,20 @@ const TRAFFIC_TABS = [
   { id: "traces", roles: ROLES_ADMIN },
 ] as const satisfies readonly TabSeed<"customer" | "upstream" | "traces">[];
 
-const RUNTIME_TABS = [
-  { id: "apps", roles: ROLES_ALL },
+const INFRA_TABS = [
   { id: "middleware", roles: ROLES_ADMIN },
-  { id: "pipeline", roles: ROLES_BIZ },
   { id: "hosts", roles: ROLES_ADMIN },
-] as const satisfies readonly TabSeed<
-  "apps" | "middleware" | "pipeline" | "hosts"
->[];
+] as const satisfies readonly TabSeed<"middleware" | "hosts">[];
+
+const PIPELINE_TABS = [
+  { id: "billing", roles: ROLES_BIZ },
+  { id: "control", roles: ROLES_BIZ },
+  { id: "storage", roles: ROLES_ADMIN },
+] as const satisfies readonly TabSeed<"billing" | "control" | "storage">[];
 
 const DOMAIN_TABS = {
-  runtime: RUNTIME_TABS,
+  infra: INFRA_TABS,
+  pipeline: PIPELINE_TABS,
   alerts: ALERTS_TABS,
   traffic: TRAFFIC_TABS,
 } as const;
@@ -40,7 +43,8 @@ export type MergedTabId<D extends MergedOpsDomain> =
 export const MERGED_DEFAULT_TAB: {
   readonly [D in MergedOpsDomain]: MergedTabId<D>;
 } = {
-  runtime: "apps",
+  infra: "middleware",
+  pipeline: "billing",
   alerts: "events",
   traffic: "customer",
 };

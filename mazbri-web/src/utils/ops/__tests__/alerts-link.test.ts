@@ -8,7 +8,7 @@ import {
   stripAlertEventIdQuery,
 } from "../alerts-link";
 import { TRAFFIC_PATH } from "../calls-link";
-import { RUNTIME_PATH } from "../runtime-link";
+import { PIPELINE_PATH } from "../pipeline-link";
 
 test("buildAlertsRoute defaults to bare path", () => {
   assert.deepEqual(buildAlertsRoute(), { path: ALERTS_PATH, query: {} });
@@ -35,7 +35,7 @@ test("stripAlertEventIdQuery preserves tab", () => {
   );
 });
 
-test("resolveAlertDrillRoute maps billing_dead_letters and mazbri_pipeline_freshness_seconds to /ops/runtime?tab=pipeline", () => {
+test("resolveAlertDrillRoute maps billing_dead_letters and mazbri_pipeline_freshness_seconds to /ops/pipeline", () => {
   const admin = { isAdmin: true, isBiz: true, isViewer: false };
   const finance = { isAdmin: false, isBiz: true, isViewer: false };
   const viewer = { isAdmin: false, isBiz: false, isViewer: true };
@@ -45,7 +45,7 @@ test("resolveAlertDrillRoute maps billing_dead_letters and mazbri_pipeline_fresh
       { labels: { category: "billing" }, expr: "billing_dead_letters" },
       admin,
     ),
-    { path: RUNTIME_PATH, query: { tab: "pipeline" } },
+    { path: PIPELINE_PATH, query: {} },
   );
   assert.deepEqual(
     resolveAlertDrillRoute(
@@ -55,7 +55,7 @@ test("resolveAlertDrillRoute maps billing_dead_letters and mazbri_pipeline_fresh
       },
       finance,
     ),
-    { path: RUNTIME_PATH, query: { tab: "pipeline" } },
+    { path: PIPELINE_PATH, query: {} },
   );
   assert.equal(
     resolveAlertDrillRoute(

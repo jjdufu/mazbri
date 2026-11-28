@@ -2,10 +2,17 @@ import React, { type ReactNode } from "react";
 import { Navigate, type RouteObject } from "react-router";
 import { useAuthStore } from "@/stores/auth";
 import type { AdminRole } from "@/types/api";
-import { ROLES_ADMIN, ROLES_ALL, canAccessRoles } from "@/utils/ops/roles";
+import {
+  ROLES_ADMIN,
+  ROLES_ALL,
+  ROLES_BIZ,
+  canAccessRoles,
+} from "@/utils/ops/roles";
 import { AlertsPage } from "./alerts/AlertsPage";
 import { OverviewPage } from "./overview/OverviewPage";
-import { RuntimePage } from "./runtime/RuntimePage";
+import { InfraPage } from "./runtime/InfraPage";
+import { NodesPage } from "./runtime/NodesPage";
+import { PipelinePage } from "./runtime/PipelinePage";
 import { ServiceDetailPage } from "./services/ServiceDetailPage";
 import { TraceDetailPage } from "./traces/TraceDetailPage";
 import { TrafficPage } from "./traffic/TrafficPage";
@@ -58,10 +65,26 @@ export const opsRoutes: RouteObject[] = [
     ),
   },
   {
-    path: "/ops/runtime",
+    path: "/ops/nodes",
     element: (
       <RequireOpsRole allowedRoles={ROLES_ALL}>
-        <RuntimePage />
+        <NodesPage />
+      </RequireOpsRole>
+    ),
+  },
+  {
+    path: "/ops/infra",
+    element: (
+      <RequireOpsRole allowedRoles={ROLES_ADMIN}>
+        <InfraPage />
+      </RequireOpsRole>
+    ),
+  },
+  {
+    path: "/ops/pipeline",
+    element: (
+      <RequireOpsRole allowedRoles={ROLES_BIZ}>
+        <PipelinePage />
       </RequireOpsRole>
     ),
   },

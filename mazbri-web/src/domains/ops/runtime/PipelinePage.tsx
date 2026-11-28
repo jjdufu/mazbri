@@ -15,19 +15,17 @@ import {
 } from "../shared/opsHelpers";
 import { BillingPipelinePanel } from "./BillingPipelinePanel";
 import { ControlPlanePipelinePanel } from "./ControlPlanePipelinePanel";
-import { HealthPanel } from "./HealthPanel";
 import { InfraMetricsPanel } from "./InfraMetricsPanel";
 
-type RuntimeTabId = MergedTabId<"runtime">;
+type PipelineTabId = MergedTabId<"pipeline">;
 
-const LABEL_MAP: Record<RuntimeTabId, string> = {
-  apps: "menus.mazbri.runtimeApps",
-  middleware: "menus.mazbri.infraMiddleware",
-  pipeline: "menus.mazbri.infraPipeline",
-  hosts: "menus.mazbri.infraHosts",
+const LABEL_MAP: Record<PipelineTabId, string> = {
+  billing: "menus.mazbri.pipelineBilling",
+  control: "menus.mazbri.pipelineControl",
+  storage: "menus.mazbri.pipelineStorage",
 };
 
-export function RuntimePage() {
+export function PipelinePage() {
   const { t } = useT();
   const { isAdmin, isBiz } = useOpsRole();
   const { timeRange, setTimeRange } = useOpsTimeRangeUrl("1h");
@@ -36,19 +34,19 @@ export function RuntimePage() {
 
   const tabDefs = useMemo(
     () =>
-      getMergedRouteTabs("runtime").map((seed) => ({
+      getMergedRouteTabs("pipeline").map((seed) => ({
         ...seed,
         label: t(LABEL_MAP[seed.id]),
       })),
     [t],
   );
 
-  const { visibleTabs, activeTab, setActiveTab } = useOpsTabUrl<RuntimeTabId>(
+  const { visibleTabs, activeTab, setActiveTab } = useOpsTabUrl<PipelineTabId>(
     tabDefs,
-    MERGED_DEFAULT_TAB.runtime,
+    MERGED_DEFAULT_TAB.pipeline,
   );
 
-  const tabOptions = useMemo<TabOption<RuntimeTabId>[]>(
+  const tabOptions = useMemo<TabOption<PipelineTabId>[]>(
     () =>
       visibleTabs.map((item) => ({
         key: item.id,
@@ -85,59 +83,24 @@ export function RuntimePage() {
         </div>
       </PageHeaderActions>
 
-      {activeTab === "apps" && (
-        <HealthPanel
-          mode="apps"
+      {activeTab === "billing" && isBiz && (
+        <BillingPipelinePanel
           timeRange={timeRange}
           reloadTick={reloadTick}
         />
       )}
 
-      {activeTab === "middleware" && (
-        <div className="space-y-4 min-w-0">
-          <HealthPanel
-            mode="infra"
-            timeRange={timeRange}
-            reloadTick={reloadTick}
-          />
-          <InfraMetricsPanel
-            tab="middleware"
-            noteKey="ops.infra.middlewareNote"
-            timeRange={timeRange}
-            reloadTick={reloadTick}
-          />
-        </div>
+      {activeTab === "control" && isBiz && (
+        <ControlPlanePipelinePanel
+          timeRange={timeRange}
+          reloadTick={reloadTick}
+        />
       )}
 
-      {activeTab === "pipeline" && (
-        <div className="space-y-4 min-w-0">
-          {isBiz && (
-            <>
-              <BillingPipelinePanel
-                timeRange={timeRange}
-                reloadTick={reloadTick}
-              />
-              <ControlPlanePipelinePanel
-                timeRange={timeRange}
-                reloadTick={reloadTick}
-              />
-            </>
-          )}
-          {isAdmin && (
-            <InfraMetricsPanel
-              tab="pipeline"
-              noteKey="ops.infra.pipelineNote"
-              timeRange={timeRange}
-              reloadTick={reloadTick}
-            />
-          )}
-        </div>
-      )}
-
-      {activeTab === "hosts" && (
+      {activeTab === "storage" && isAdmin && (
         <InfraMetricsPanel
-          tab="hosts"
-          noteKey="ops.infra.hostsNote"
+          tab="pipeline"
+          noteKey="ops.infra.pipelineNote"
           timeRange={timeRange}
           reloadTick={reloadTick}
         />

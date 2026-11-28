@@ -860,8 +860,7 @@
       "alertRules": "Alert rules",
       "opsTraces": "Traces",
       "opsTraceDetail": "Trace detail",
-      "infraPipeline": "Data & Control Pipeline",
-      "infraMiddleware": "Infra & Middleware",
+      "infraMiddleware": "Middleware",
       "infraHosts": "Hosts & Containers",
       "flowRatelimit": "Rate Limit",
       "flowCache": "Cache",
@@ -873,8 +872,11 @@
       "opsUpstream": "Upstream Health",
       "opsFlow": "Traffic Governance",
       "opsServices": "Services Overview",
-      "opsRuntime": "Runtime Metrics",
-      "runtimeApps": "App Topology & Nodes"
+      "opsNodes": "App Nodes",
+      "opsPipeline": "Data Pipelines",
+      "pipelineBilling": "Billing",
+      "pipelineControl": "Control Plane",
+      "pipelineStorage": "Messaging & Storage"
     }
   },
   "systemSettings": {

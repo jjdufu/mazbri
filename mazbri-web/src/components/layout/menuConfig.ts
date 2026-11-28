@@ -1,5 +1,7 @@
 import {
-  Activity,
+  Boxes,
+  HardDrive,
+  Workflow,
   Award,
   BellRing,
   Building2,
@@ -115,11 +117,25 @@ export const MENU_GROUPS: readonly MenuGroup[] = [
         roles: ROLES_ALL,
       },
       {
-        key: "ops-runtime",
-        path: "/ops/runtime",
-        titleKey: "menus.mazbri.opsRuntime",
-        icon: Activity,
+        key: "ops-nodes",
+        path: "/ops/nodes",
+        titleKey: "menus.mazbri.opsNodes",
+        icon: Boxes,
         roles: ROLES_ALL,
+      },
+      {
+        key: "ops-infra",
+        path: "/ops/infra",
+        titleKey: "menus.mazbri.opsInfra",
+        icon: HardDrive,
+        roles: ROLES_ADMIN,
+      },
+      {
+        key: "ops-pipeline",
+        path: "/ops/pipeline",
+        titleKey: "menus.mazbri.opsPipeline",
+        icon: Workflow,
+        roles: ROLES_BIZ,
       },
     ],
   },
@@ -196,7 +212,7 @@ const DETAIL_ROUTE_RULES: readonly DetailRouteRule[] = [
   {
     pattern: /^\/ops\/services\/[^/]+$/,
     groupKey: "ops",
-    activePath: "/ops/runtime",
+    activePath: "/ops/nodes",
   },
 ];
 

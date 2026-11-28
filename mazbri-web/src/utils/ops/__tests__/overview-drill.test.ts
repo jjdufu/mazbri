@@ -6,7 +6,8 @@ import {
   type OverviewDrillRole,
 } from "../overview-drill";
 import { TRAFFIC_PATH } from "../calls-link";
-import { RUNTIME_PATH } from "../runtime-link";
+import { NODES_PATH } from "../nodes-link";
+import { PIPELINE_PATH } from "../pipeline-link";
 
 const ADMIN: OverviewDrillRole = {
   isAdmin: true,
@@ -26,15 +27,13 @@ const VIEWER: OverviewDrillRole = {
 
 test("ADMIN can drill circuit / ratelimit / billing pipeline / latency", () => {
   assert.deepEqual(resolveOverviewDrill("3.2", ADMIN), {
-    path: RUNTIME_PATH,
-    query: { tab: "apps" },
+    path: NODES_PATH,
   });
   assert.deepEqual(resolveOverviewDrill("4.1", ADMIN), {
     path: TRAFFIC_PATH,
   });
   assert.deepEqual(resolveOverviewDrill("6.1", ADMIN), {
-    path: RUNTIME_PATH,
-    query: { tab: "pipeline" },
+    path: PIPELINE_PATH,
   });
   assert.deepEqual(resolveOverviewDrill("2.2", ADMIN), {
     path: TRAFFIC_PATH,
@@ -48,8 +47,7 @@ test("FINANCE cannot open breaker but can open ratelimit/billing pipeline", () =
     path: TRAFFIC_PATH,
   });
   assert.deepEqual(resolveOverviewDrill("6.1", FINANCE), {
-    path: RUNTIME_PATH,
-    query: { tab: "pipeline" },
+    path: PIPELINE_PATH,
   });
 });
 

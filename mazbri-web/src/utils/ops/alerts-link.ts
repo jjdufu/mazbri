@@ -1,6 +1,8 @@
 import type { LocationQueryRaw, RouteLocationRaw } from "@/types/router";
 import { TRAFFIC_PATH, buildCallsRoute } from "./calls-link";
-import { buildRuntimeRoute } from "./runtime-link";
+import { buildInfraRoute } from "./infra-link";
+import { buildNodesRoute } from "./nodes-link";
+import { buildPipelineRoute } from "./pipeline-link";
 
 /** 告警中心父路由（合并后唯一入口）。 */
 export const ALERTS_PATH = "/ops/alerts";
@@ -78,9 +80,9 @@ export function computeAlertDrillWindow(
 
 /**
  * 解析告警规则或事件对应的关联排障下钻路由：
- * - 计费队列/死信与数据管道新鲜度统一跳转至 `/ops/runtime?tab=pipeline`（需 ROLES_BIZ）；
- * - 服务/上游类跳转至 `/ops/runtime?tab=apps`；
- * - 中间件/主机跳转至对应 `/ops/runtime` 子视图（需 ROLES_ADMIN）；
+ * - 计费队列/死信与数据管道新鲜度统一跳转至 `/ops/pipeline`（需 ROLES_BIZ）；
+ * - 服务/上游类跳转至 `/ops/nodes`；
+ * - 中间件/主机跳转至 `/ops/infra` 对应子视图（需 ROLES_ADMIN）；
  * - 网关业务类跳转至 `/ops/traffic`（事件级下钻自动携带回溯时间窗）；证书安全类跳转至 `/control-panel/certificates`；SLO 跳转至 `/dashboard`。
  */
 export function resolveAlertDrillRoute(
@@ -99,16 +101,16 @@ export function resolveAlertDrillRoute(
     expr.includes("billing_oldest_pending_age") ||
     expr.includes("billing_charge_failures")
   ) {
-    return role.isBiz ? buildRuntimeRoute({ tab: "pipeline" }) : null;
+    return role.isBiz ? buildPipelineRoute() : null;
   }
   if (category === "middleware") {
-    return role.isAdmin ? buildRuntimeRoute({ tab: "middleware" }) : null;
+    return role.isAdmin ? buildInfraRoute({ tab: "middleware" }) : null;
   }
   if (category === "host") {
-    return role.isAdmin ? buildRuntimeRoute({ tab: "hosts" }) : null;
+    return role.isAdmin ? buildInfraRoute({ tab: "hosts" }) : null;
   }
   if (category === "service" || category === "upstream") {
-    return buildRuntimeRoute({ tab: "apps" });
+    return buildNodesRoute();
   }
   if (category === "business") {
     const win = computeAlertDrillWindow(

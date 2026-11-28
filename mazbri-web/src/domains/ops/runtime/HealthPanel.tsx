@@ -14,7 +14,8 @@ import { useT } from "@/locales";
 import type { ServiceHealthRow } from "@/types/api/monitoring";
 import { formatBytes, formatDateTime } from "@/utils/format";
 import { formatShortVersion } from "@/utils/ops/components-health";
-import { buildRuntimeRoute } from "@/utils/ops/runtime-link";
+import { buildInfraRoute } from "@/utils/ops/infra-link";
+import { buildPipelineRoute } from "@/utils/ops/pipeline-link";
 import {
   filterRowsByGroup,
   formatCpuCoresDisplay,
@@ -422,12 +423,9 @@ export function HealthPanel({
                     onClick={() =>
                       void navigate(
                         toLocationHref(
-                          buildRuntimeRoute({
-                            tab:
-                              selectedRow.service === "vector"
-                                ? "pipeline"
-                                : "hosts",
-                          }),
+                          selectedRow.service === "vector"
+                            ? buildPipelineRoute({ tab: "storage" })
+                            : buildInfraRoute({ tab: "hosts" }),
                         ),
                       )
                     }

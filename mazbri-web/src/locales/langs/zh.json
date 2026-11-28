@@ -860,8 +860,7 @@
       "alertRules": "告警规则",
       "opsTraces": "链路追踪",
       "opsTraceDetail": "链路详情",
-      "infraPipeline": "数据与控制面管道",
-      "infraMiddleware": "基础设施与中间件",
+      "infraMiddleware": "中间件",
       "infraHosts": "主机与容器",
       "flowRatelimit": "限流配额",
       "flowCache": "缓存",
@@ -873,8 +872,11 @@
       "opsUpstream": "上游健康",
       "opsFlow": "流量治理",
       "opsServices": "服务概览",
-      "opsRuntime": "运行指标",
-      "runtimeApps": "应用拓扑与节点"
+      "opsNodes": "应用节点",
+      "opsPipeline": "数据管道",
+      "pipelineBilling": "计费管道",
+      "pipelineControl": "控制面",
+      "pipelineStorage": "消息与存储"
     }
   },
   "systemSettings": {

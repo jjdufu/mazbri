@@ -28,7 +28,7 @@ import type {
   ServiceHealthRow,
 } from "@/types/api/monitoring";
 import { formatDateTime } from "@/utils/format";
-import { buildRuntimeRoute } from "@/utils/ops/runtime-link";
+import { buildNodesRoute } from "@/utils/ops/nodes-link";
 import {
   filterRowsByGroup,
   serviceHasPostgresPool,
@@ -283,7 +283,7 @@ export function ServiceDetailPage() {
       code={serviceKey}
       status={statusCode}
       onBack={() =>
-        void navigate(toLocationHref(buildRuntimeRoute({ tab: "apps" })))
+        void navigate(toLocationHref(buildNodesRoute()))
       }
       actions={
         <div className="flex flex-wrap items-center gap-2">
