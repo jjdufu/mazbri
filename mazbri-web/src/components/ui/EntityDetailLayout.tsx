@@ -59,10 +59,21 @@ export function EntityDetailLayout<K extends string = string>({
 }: EntityDetailLayoutProps<K>) {
   const { tx } = useUiTx();
   const resolvedBackLabel = backLabel ?? tx("返回", "Back");
+  const hasTabs = Boolean(
+    tabs && tabs.length > 0 && activeTab !== undefined && onTabChange,
+  );
+  const hasMeta = Boolean(
+    meta && (!isMetaItemList(meta) || meta.length > 0),
+  );
 
   return (
     <div data-testid={testId} className={cn("space-y-4 min-w-0", className)}>
-      <Card className="px-4 py-3.5 space-y-3">
+      <Card
+        className={cn(
+          "px-4 pt-3.5 space-y-3",
+          hasTabs ? "pb-0" : "pb-3.5",
+        )}
+      >
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex items-start gap-2.5 min-w-0">
             {onBack && (
@@ -101,28 +112,47 @@ export function EntityDetailLayout<K extends string = string>({
           )}
         </div>
 
-        {meta && (
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 border-t border-border-subtle pt-2.5 text-xs">
-            {isMetaItemList(meta)
-              ? meta.map((item, idx) => (
-                  <div
-                    key={idx}
-                    className="inline-flex items-center gap-1.5 min-w-0"
-                  >
-                    <span className="text-muted-foreground">{item.label}</span>
-                    <span className="font-medium text-foreground">
-                      {item.value}
-                    </span>
-                  </div>
-                ))
-              : meta}
+        {(hasMeta || hasTabs) && (
+          <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-1.5 border-t border-border-subtle pt-1.5">
+            {hasMeta && meta ? (
+              <div
+                className={cn(
+                  "flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs min-w-0",
+                  hasTabs ? "py-1.5" : "pt-1",
+                )}
+              >
+                {isMetaItemList(meta)
+                  ? meta.map((item, idx) => (
+                      <div
+                        key={idx}
+                        className="inline-flex items-center gap-1.5 min-w-0"
+                      >
+                        <span className="text-muted-foreground">
+                          {item.label}
+                        </span>
+                        <span className="font-medium text-foreground">
+                          {item.value}
+                        </span>
+                      </div>
+                    ))
+                  : meta}
+              </div>
+            ) : (
+              <span />
+            )}
+
+            {hasTabs && tabs && activeTab !== undefined && onTabChange && (
+              <Tabs
+                items={tabs}
+                value={activeTab}
+                onChange={onTabChange}
+                variant="inline"
+                className="ml-auto border-b-0"
+              />
+            )}
           </div>
         )}
       </Card>
-
-      {tabs && tabs.length > 0 && activeTab !== undefined && onTabChange && (
-        <Tabs items={tabs} value={activeTab} onChange={onTabChange} />
-      )}
 
       <div className="space-y-4 min-w-0">{children}</div>
     </div>

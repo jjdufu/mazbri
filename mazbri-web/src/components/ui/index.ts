@@ -35,6 +35,7 @@ export {
   type PopoverProps,
   type SelectOptionItem,
   type TabOption,
+  type TabsVariant,
   type TooltipProps,
 } from "./primitives";
 

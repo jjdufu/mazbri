@@ -4915,7 +4915,8 @@
         "stages": "阶段耗时",
         "billing": "计费流水",
         "upstreamDuration": "上游耗时 (ms)",
-        "outbox": "落账状态"
+        "outbox": "落账状态",
+        "relatedRecords": "关联记录"
       },
       "billing": {
         "retries": "重试",

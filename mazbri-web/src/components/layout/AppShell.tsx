@@ -9,6 +9,7 @@ import { useWatermarkStore } from "@/stores/watermark";
 import { GlobalCommandPalette } from "./GlobalCommandPalette";
 import { LockScreen } from "./LockScreen";
 import { MfaStepUpHost } from "./MfaStepUpHost";
+import { PageHeaderSlotContext } from "./PageHeaderActions";
 import { PersonalSecurityDrawer } from "./PersonalSecurityDrawer";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
@@ -33,10 +34,21 @@ export function AppShell() {
   const isLocked = useLockScreenStore((s) => s.isLocked);
   const [collapsed, setCollapsed] = useState<boolean>(readInitialCollapsed);
   const [cmdkOpen, setCmdkOpen] = useState(false);
+  const [headerActionsEl, setHeaderActionsEl] = useState<HTMLDivElement | null>(
+    null,
+  );
 
   const pageHeader = useMemo(
     () => resolveMenuPageHeader(location.pathname),
     [location.pathname],
+  );
+
+  const headerSlotValue = useMemo(
+    () => ({
+      hasHost: Boolean(pageHeader),
+      slotEl: pageHeader ? headerActionsEl : null,
+    }),
+    [pageHeader, headerActionsEl],
   );
 
   useEffect(() => {
@@ -102,12 +114,20 @@ export function AppShell() {
           {pageHeader && (
             <PageHeader
               title={t(pageHeader.titleKey)}
+              actions={
+                <div
+                  ref={setHeaderActionsEl}
+                  className="flex flex-wrap items-center justify-end gap-2 empty:hidden"
+                />
+              }
               className="mb-2.5 shrink-0"
             />
           )}
-          <div className="flex flex-col flex-1 min-h-0 min-w-0">
-            <Outlet />
-          </div>
+          <PageHeaderSlotContext.Provider value={headerSlotValue}>
+            <div className="flex flex-col flex-1 min-h-0 min-w-0">
+              <Outlet />
+            </div>
+          </PageHeaderSlotContext.Provider>
         </main>
       </div>
 

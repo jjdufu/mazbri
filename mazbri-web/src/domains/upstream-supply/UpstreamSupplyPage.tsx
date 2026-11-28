@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
+import { PageHeaderActions } from "@/components/layout";
 import { Tabs, type TabOption } from "@/components/ui";
 import { useT } from "@/locales";
 import { ChannelListTab } from "./ChannelListTab";
@@ -63,9 +64,14 @@ export function UpstreamSupplyPage() {
       className="flex flex-col flex-1 min-h-0 gap-4 min-w-0"
       data-testid="upstream-supply-page"
     >
-      <div className="shrink-0">
-        <Tabs items={tabItems} value={activeTab} onChange={handleTabChange} />
-      </div>
+      <PageHeaderActions>
+        <Tabs
+          variant="inline"
+          items={tabItems}
+          value={activeTab}
+          onChange={handleTabChange}
+        />
+      </PageHeaderActions>
 
       {loadedTabs.has("suppliers") && (
         <div

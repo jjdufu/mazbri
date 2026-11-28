@@ -7,3 +7,4 @@ export { Sidebar } from "./Sidebar";
 export { Topbar } from "./Topbar";
 export { WatermarkOverlay } from "./WatermarkOverlay";
 export * from "./menuConfig";
+export { PageHeaderActions, type PageHeaderActionsProps } from "./PageHeaderActions";

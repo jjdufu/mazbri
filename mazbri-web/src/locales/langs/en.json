@@ -4915,7 +4915,8 @@
         "stages": "Stage timings",
         "billing": "Billing",
         "upstreamDuration": "Upstream (ms)",
-        "outbox": "Outbox"
+        "outbox": "Outbox",
+        "relatedRecords": "Related Records"
       },
       "billing": {
         "retries": "Retries",

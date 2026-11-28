@@ -34,6 +34,7 @@ import {
   callbackDeliveriesCatalog,
   callbackSubscriptionsCatalog,
 } from "@/list-catalog/callbacks";
+import { PageHeaderActions } from "@/components/layout";
 import { useT } from "@/locales";
 import { useAuthStore } from "@/stores/auth";
 import type { ListFilter } from "@/types/list-query";
@@ -646,9 +647,14 @@ export function CallbacksPage() {
       className="flex flex-col flex-1 min-h-0 gap-4 min-w-0"
       data-testid="callbacks-page"
     >
-      <div className="shrink-0">
-        <Tabs items={tabItems} value={activeTab} onChange={handleTabChange} />
-      </div>
+      <PageHeaderActions>
+        <Tabs
+          variant="inline"
+          items={tabItems}
+          value={activeTab}
+          onChange={handleTabChange}
+        />
+      </PageHeaderActions>
 
       {loadedTabs.has("subscriptions") && (
         <div

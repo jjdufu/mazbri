@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 import { Award, Settings, ShieldCheck } from "lucide-react";
+import { PageHeaderActions } from "@/components/layout";
 import { ConfirmDialog, Tabs } from "@/components/ui";
 import { useT } from "@/locales";
 import { BasicSettingsTab } from "./BasicSettingsTab";
@@ -63,30 +64,33 @@ export function SystemSettingsPage() {
 
   return (
     <div className="space-y-4 min-w-0" data-testid="system-settings-page">
-      <Tabs<PlatformTab>
-        value={activeTab}
-        onChange={handleTabChange}
-        items={[
-          {
-            key: "basic",
-            label: t("systemSettings.tabs.basic"),
-            icon: <Settings className="h-3.5 w-3.5" />,
-            testId: "system-tab-basic",
-          },
-          {
-            key: "security",
-            label: t("systemSettings.tabs.security"),
-            icon: <ShieldCheck className="h-3.5 w-3.5" />,
-            testId: "system-tab-security",
-          },
-          {
-            key: "license",
-            label: t("systemSettings.tabs.license"),
-            icon: <Award className="h-3.5 w-3.5" />,
-            testId: "system-tab-license",
-          },
-        ]}
-      />
+      <PageHeaderActions>
+        <Tabs<PlatformTab>
+          variant="inline"
+          value={activeTab}
+          onChange={handleTabChange}
+          items={[
+            {
+              key: "basic",
+              label: t("systemSettings.tabs.basic"),
+              icon: <Settings className="h-3.5 w-3.5" />,
+              testId: "system-tab-basic",
+            },
+            {
+              key: "security",
+              label: t("systemSettings.tabs.security"),
+              icon: <ShieldCheck className="h-3.5 w-3.5" />,
+              testId: "system-tab-security",
+            },
+            {
+              key: "license",
+              label: t("systemSettings.tabs.license"),
+              icon: <Award className="h-3.5 w-3.5" />,
+              testId: "system-tab-license",
+            },
+          ]}
+        />
+      </PageHeaderActions>
 
       {activeTab === "basic" && (
         <BasicSettingsTab onDirtyChange={setTabDirty} />

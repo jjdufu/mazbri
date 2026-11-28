@@ -1,4 +1,5 @@
 import React, { useMemo } from "react";
+import { PageHeaderActions } from "@/components/layout";
 import { Tabs, type TabOption } from "@/components/ui";
 import { useT } from "@/locales";
 import {
@@ -48,7 +49,14 @@ export function AlertsPage() {
   return (
     <div className="flex flex-col flex-1 min-h-0 gap-4 min-w-0">
       {tabOptions.length > 1 && (
-        <Tabs items={tabOptions} value={activeTab} onChange={setActiveTab} />
+        <PageHeaderActions>
+          <Tabs
+            variant="inline"
+            items={tabOptions}
+            value={activeTab}
+            onChange={setActiveTab}
+          />
+        </PageHeaderActions>
       )}
 
       {activeTab === "events" && <AlertEventsPanel />}

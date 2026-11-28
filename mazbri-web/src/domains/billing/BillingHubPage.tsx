@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { BarChart3, CheckSquare, FileText } from "lucide-react";
+import { PageHeaderActions } from "@/components/layout";
 import { Tabs, type TabOption } from "@/components/ui";
 import { useT } from "@/locales";
 import { BillListPanel } from "./panels/BillListPanel";
@@ -78,7 +79,14 @@ export function BillingHubPage() {
       className="flex flex-col flex-1 min-h-0 gap-4 min-w-0"
       data-testid="billing-hub-page"
     >
-      <Tabs items={tabs} value={activeTab} onChange={handleTabChange} />
+      <PageHeaderActions>
+        <Tabs
+          variant="inline"
+          items={tabs}
+          value={activeTab}
+          onChange={handleTabChange}
+        />
+      </PageHeaderActions>
 
       {visited.has("overview") && (
         <div

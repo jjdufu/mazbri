@@ -1098,22 +1098,29 @@ export interface TabOption<K extends string = string> {
   readonly testId?: string;
 }
 
+export type TabsVariant = "default" | "inline";
+
 export function Tabs<K extends string>({
   items,
   value,
   onChange,
+  variant = "default",
   className,
 }: {
   items: readonly TabOption<K>[];
   value: K;
   onChange: (next: K) => void;
+  variant?: TabsVariant;
   className?: string;
 }) {
+  const isInline = variant === "inline";
   return (
     <div
       role="tablist"
       className={cn(
-        "flex items-center gap-1 border-b border-border-subtle overflow-x-auto",
+        isInline
+          ? "inline-flex max-w-full items-center gap-1 border-b border-border-subtle overflow-x-auto"
+          : "flex items-center gap-1 border-b border-border-subtle overflow-x-auto",
         className,
       )}
     >
@@ -1129,7 +1136,8 @@ export function Tabs<K extends string>({
             data-testid={item.testId}
             onClick={() => onChange(item.key)}
             className={cn(
-              "inline-flex items-center gap-1.5 rounded-t-md border-b-2 px-2.5 py-2 text-xs font-medium whitespace-nowrap shrink-0 transition-all duration-150 disabled:opacity-40 disabled:pointer-events-none cursor-pointer -mb-px [&_svg]:transition-colors",
+              "inline-flex items-center gap-1.5 rounded-t-md border-b-2 text-xs font-medium whitespace-nowrap shrink-0 transition-all duration-150 disabled:opacity-40 disabled:pointer-events-none cursor-pointer -mb-px [&_svg]:transition-colors",
+              isInline ? "px-2.5 py-1.5" : "px-2.5 py-2",
               active
                 ? "border-xblue text-xblue font-semibold"
                 : "border-transparent text-muted-foreground hover:text-foreground hover:bg-nav-hover-bg hover:border-border-hover hover:[&_svg]:text-xblue",

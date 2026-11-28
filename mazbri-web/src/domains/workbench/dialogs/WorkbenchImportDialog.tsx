@@ -103,40 +103,43 @@ function WorkbenchImportDialogBody({ showMode = true }: WorkbenchImportDialogPro
     >
       <div className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          {showMode && (
-            <SegmentedControl
-              items={modeItems}
-              value={importMode}
-              onChange={setImportMode}
-            />
-          )}
-
-          <div className="ml-auto">
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".json,.yaml,.yml,.txt,.curl"
-              aria-label={t("upstreamConnector.importFile")}
-              hidden
-              onChange={handleFileChange}
-            />
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => fileRef.current?.click()}
-            >
-              <Upload className="h-3.5 w-3.5" />
-              {t("upstreamConnector.importFile")}
-            </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            {showMode && (
+              <SegmentedControl
+                items={modeItems}
+                value={importMode}
+                onChange={setImportMode}
+              />
+            )}
+            <div>
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".json,.yaml,.yml,.txt,.curl"
+                aria-label={t("upstreamConnector.importFile")}
+                hidden
+                onChange={handleFileChange}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => fileRef.current?.click()}
+              >
+                <Upload className="h-3.5 w-3.5" />
+                {t("upstreamConnector.importFile")}
+              </Button>
+            </div>
           </div>
-        </div>
 
-        <Tabs
-          items={formatItems}
-          value={importTab}
-          onChange={setImportTab}
-        />
+          <Tabs
+            variant="inline"
+            className="ml-auto"
+            items={formatItems}
+            value={importTab}
+            onChange={setImportTab}
+          />
+        </div>
 
         {importTab === "curl" ? (
           <Textarea

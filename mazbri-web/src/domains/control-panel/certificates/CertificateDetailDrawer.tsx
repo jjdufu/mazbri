@@ -707,18 +707,21 @@ export function CertificateDetailDrawer({
 
             {/* 3. Certificate PEM Files */}
             <section className="space-y-2.5">
-              <h3 className="text-xs font-semibold text-foreground">
-                {t("certificate.detail.sections.files")}
-              </h3>
-              <Tabs<PemTab>
-                value={activePemTab}
-                onChange={setActivePemTab}
-                items={[
-                  { key: "cert", label: t("certificate.detail.tabs.certPem") },
-                  { key: "ca", label: t("certificate.detail.tabs.caPem") },
-                  { key: "key", label: t("certificate.detail.tabs.keyPem") },
-                ]}
-              />
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-xs font-semibold text-foreground">
+                  {t("certificate.detail.sections.files")}
+                </h3>
+                <Tabs<PemTab>
+                  variant="inline"
+                  value={activePemTab}
+                  onChange={setActivePemTab}
+                  items={[
+                    { key: "cert", label: t("certificate.detail.tabs.certPem") },
+                    { key: "ca", label: t("certificate.detail.tabs.caPem") },
+                    { key: "key", label: t("certificate.detail.tabs.keyPem") },
+                  ]}
+                />
+              </div>
 
               {activePemTab === "cert" && (
                 <div className="space-y-2">

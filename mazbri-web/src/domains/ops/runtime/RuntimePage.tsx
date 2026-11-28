@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { PageHeaderActions } from "@/components/layout";
 import { Tabs, type TabOption } from "@/components/ui";
 import { useT } from "@/locales";
 import {
@@ -58,17 +59,17 @@ export function RuntimePage() {
 
   return (
     <div className="flex flex-col flex-1 min-h-0 gap-4 min-w-0">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-2 shrink-0">
-        {tabOptions.length > 1 ? (
+      {tabOptions.length > 1 && (
+        <PageHeaderActions>
           <Tabs
+            variant="inline"
             items={tabOptions}
             value={activeTab}
             onChange={setActiveTab}
-            className="border-b-0 -mb-2"
           />
-        ) : (
-          <span />
-        )}
+        </PageHeaderActions>
+      )}
+      <div className="flex flex-wrap items-center justify-end gap-2 shrink-0">
         <OpsTimeBar
           value={timeRange}
           onChange={setTimeRange}

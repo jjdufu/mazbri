@@ -1129,8 +1129,13 @@ export function TraceDetailPage() {
 
       {/* Related Logs & Billing */}
       <Card className="overflow-hidden">
-        <div className="px-4 pt-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border-subtle px-4 pt-2">
+          <h3 className="text-xs font-semibold text-foreground pb-1.5">
+            {t("ops.traces.detail.relatedRecords")}
+          </h3>
           <Tabs
+            variant="inline"
+            className="border-b-0"
             value={bottomTab}
             onChange={setBottomTab}
             items={[

@@ -88,26 +88,32 @@ export function WorkbenchImportModal({
       }
     >
       <div className="space-y-3">
-        {showMode && onModeChange && (
-          <SegmentedControl
-            value={mode}
-            onChange={onModeChange}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          {showMode && onModeChange ? (
+            <SegmentedControl
+              value={mode}
+              onChange={onModeChange}
+              items={[
+                { key: "merge", label: t("upstreamConnector.importMerge") },
+                { key: "replace", label: t("upstreamConnector.importReplace") },
+              ]}
+            />
+          ) : (
+            <span />
+          )}
+
+          <Tabs<WorkbenchImportTab>
+            variant="inline"
+            className="ml-auto"
+            value={importTab}
+            onChange={onImportTabChange}
             items={[
-              { key: "merge", label: t("upstreamConnector.importMerge") },
-              { key: "replace", label: t("upstreamConnector.importReplace") },
+              { key: "curl", label: "cURL" },
+              { key: "postman", label: "Postman" },
+              { key: "openapi", label: "OpenAPI" },
             ]}
           />
-        )}
-
-        <Tabs<WorkbenchImportTab>
-          value={importTab}
-          onChange={onImportTabChange}
-          items={[
-            { key: "curl", label: "cURL" },
-            { key: "postman", label: "Postman" },
-            { key: "openapi", label: "OpenAPI" },
-          ]}
-        />
+        </div>
 
         {importTab === "curl" ? (
           <Textarea
