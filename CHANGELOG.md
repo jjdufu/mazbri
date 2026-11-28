@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.7.0](https://github.com/jjdufu/mazbri/compare/v0.6.8...v0.7.0) (2026-11-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* **webui,crypto,gateway,mgmt:** 传输加密信封、HKDF 派生盐与租户密钥 AAD 移除 key_version 分层，收敛为单租户唯一主密钥并更名默认推荐套件为 suite/aes-256-gcm；移除废弃的 request-keys / request_binding / signature_version 模块与配置；WebUI 移除旧 /ops/runtime 路由并拆分为 /ops/nodes、/ops/infra 与 /ops/pipeline。
+
+### Features
+
+* **webui,crypto,gateway,mgmt:** 完成 WebUI React 19 架构全面迁移与无版本单密钥协议重构 ([f6143c4](https://github.com/jjdufu/mazbri/commit/f6143c4b72beb68e7b1a6c6862593b6dedf3ea20))
+
 ## [0.6.8](https://github.com/jjdufu/mazbri/compare/v0.6.7...v0.6.8) (2026-11-27)
 
 
